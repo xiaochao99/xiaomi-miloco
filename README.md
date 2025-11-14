@@ -1,6 +1,6 @@
 # Xiaomi Miloco
 
-**Xiaomi Miloco** is a pre-research software solution for home AI hubs. Using Xiaomi Home cameras as the source of visual information and a self-developed large model as its core, it connects with all IoT devices throughout the house. Based on the development paradigm of LLM, it can define various family needs and rules in natural language to achieve broader and more creative smart device integration.
+**Xiaomi Local Copilot** is a future exploration solution for smart homes. Using Xiaomi Home cameras as the source of visual information and a self-developed LLM as its core, it connects all IoT devices throughout the house. Based on the development paradigm of LLM, it enables users to define various family needs and rules in natural language, achieving broader and more creative smart device integration.
 
 <div align="center">
 
@@ -15,8 +15,8 @@ English | [简体中文](README_zh_Hans.md)
 ## Key Features
 
 1. New Interaction Paradigm: Based on the development paradigm of LLM, rule-setting and complex device command control can be completed through natural language interaction.
-2. New Use for Visual Data: Using camera data streams as a source of perceptual information, the large model is used to analyze various home scene events contained in the visual data to respond to user queries.
-3. On-Device Large Model: The home scene tasks are split into two stages: planning and visual understanding. It provides Xiaomi's self-developed on-device model to realize on-device video understanding and ensure family privacy and security.
+2. New Use for Visual Data: Using camera data streams as a source of perceptual information, the LLM is used to analyze various home scene events contained in the visual data to respond to user queries.
+3. On-Device LLM: The home scene tasks are split into two stages: planning and visual understanding. It provides Xiaomi's self-developed on-device model to realize on-device video understanding and ensure family privacy and security.
 4. Xiaomi Home Ecosystem: It connects with the Xiaomi Home ecosystem, supports the retrieval and execution of Mi Home devices and scenes, and supports sending customized content for Xiao Home notifications.
 
     <img src="assets/images/ai_center.jpg" width="60%" />
@@ -56,7 +56,7 @@ Or download the source code first, then execute the one-click installation scrip
 ```bash
 git clone https://github.com/XiaoMi/xiaomi-miloco.git
 
-bash script/install.sh
+bash scripts/install.sh
 ```
 For detailed installation steps, please refer to the [Docker Deployment Documentation](docs/environment-setup.md).
 

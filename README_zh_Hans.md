@@ -1,6 +1,6 @@
 # Xiaomi Miloco
 
-**Xiaomi Miloco** 是一个家庭 AI 中心软件预研方案。以米家摄像机为视觉信息来源，以自研大模型为核心，打通全屋 IoT 设备。基于大模型的开发范式，能够以自然语言定义家庭的各种需求和规则，实现更广泛、更具创意的智能联动。
+智能家居未来探索方案 **Xiaomi Local Copilot** ，以米家摄像机为视觉信息来源，以自研大模型为核心，打通全屋 IoT 设备。基于大模型的开发范式，让用户能够以自然语言定义家庭的各种需求和规则，实现更广泛、更具创意的智能联动。
 
 <div align="center">
 
@@ -56,7 +56,7 @@ bash -c "$(wget -qO- https://xiaomi-miloco.cnbj1.mi-fds.com/xiaomi-miloco/instal
 ```bash
 git clone https://github.com/XiaoMi/xiaomi-miloco.git
 
-bash script/install.sh
+bash scripts/install.sh
 ```
 详细的安装步骤请参考 [Docker部署文档](docs/environment-setup_zh-Hans.md)。
 
