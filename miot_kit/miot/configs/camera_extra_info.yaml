@@ -25,6 +25,10 @@ extra_info:
     channel_count: 2
     name: 小米智能摄像机C500双摄版
     vendor: 上海摩象网络科技有限公司
+  xiaomi.camera.082ac1:
+    channel_count: 2
+    name: 小米智能摄像机 4 双摄版
+    vendor: 小米
 blacklist:
   - chuangmi.camera.ipc004b
   - miir.camera.ir01
