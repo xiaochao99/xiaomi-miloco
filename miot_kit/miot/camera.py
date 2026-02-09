@@ -101,6 +101,7 @@ class MIoTCameraInstance:
     _reconnect_timeout: int
 
     _decoders: List[MIoTMediaDecoder]
+    _vision_img_resolution: int  # Target resolution for AI vision analysis (width)
 
     def __init__(
         self,
@@ -109,6 +110,7 @@ class MIoTCameraInstance:
         enable_hw_accel: bool,
         camera_info: MIoTCameraInfo,
         main_loop: Optional[asyncio.AbstractEventLoop] = None,
+        vision_img_resolution: int = 0,  # 0 means use original resolution
     ):
         self._manager = manager
         self._main_loop = main_loop or asyncio.get_event_loop()
@@ -117,6 +119,7 @@ class MIoTCameraInstance:
         self._did = camera_info.did
         self._frame_interval = frame_interval
         self._enable_hw_accel = enable_hw_accel
+        self._vision_img_resolution = vision_img_resolution
         self._callback_refs = {}
 
         self._video_qualities = [MIoTCameraVideoQuality.LOW]
@@ -195,7 +198,8 @@ class MIoTCameraInstance:
                 audio_callback=self.__on_audio_decode_callback,
                 enable_hw_accel=self._enable_hw_accel,
                 enable_audio=self._enable_audio,
-                main_loop=self._main_loop
+                main_loop=self._main_loop,
+                vision_img_resolution=self._vision_img_resolution
             )
             self._decoders.append(decoder)
             decoder.daemon = True
@@ -605,6 +609,7 @@ class MIoTCamera:
     _access_token: str
     _frame_interval: int
     _enable_hw_accel: bool
+    _vision_img_resolution: int  # Target resolution for AI vision analysis (width)
     # key: did, value: MIoTCameraInstance
     _camera_map: Dict[str, MIoTCameraInstance]
     # logger handler
@@ -617,7 +622,7 @@ class MIoTCamera:
 
     def __init__(
             self, cloud_server: str, access_token: str, frame_interval: int = 500, enable_hw_accel: bool = True,
-            loop: Optional[asyncio.AbstractEventLoop] = None
+            loop: Optional[asyncio.AbstractEventLoop] = None, vision_img_resolution: int = 0
     ) -> None:
         """Init."""
         if not isinstance(cloud_server, str) or not isinstance(access_token, str):
@@ -629,6 +634,7 @@ class MIoTCamera:
         self._access_token = access_token
         self._frame_interval = frame_interval
         self._enable_hw_accel = enable_hw_accel
+        self._vision_img_resolution = vision_img_resolution
         self._camera_map = {}
 
         # lib init
@@ -680,6 +686,7 @@ class MIoTCamera:
         camera_info: MIoTCameraInfo | Dict,
         frame_interval: Optional[int] = None,
         enable_hw_accel: Optional[bool] = None,
+        vision_img_resolution: Optional[int] = None,
     ) -> MIoTCameraInstance:
         """Create camera."""
         camera: MIoTCameraInfo = (
@@ -694,7 +701,8 @@ class MIoTCamera:
             frame_interval=frame_interval or self._frame_interval,
             enable_hw_accel=enable_hw_accel or self._enable_hw_accel,
             camera_info=camera,
-            main_loop=self._main_loop
+            main_loop=self._main_loop,
+            vision_img_resolution=vision_img_resolution if vision_img_resolution is not None else self._vision_img_resolution
         )
         return self._camera_map[did]
 

@@ -8,7 +8,7 @@ import logging
 from typing import Optional
 
 from pydantic.dataclasses import dataclass
-from miloco_server.schema.miot_schema import CameraImgSeq
+from schema.miot_schema import CameraImgSeq
 from thespian.actors import Actor, ActorAddress, ActorExitRequest
 
 from miloco_server import actor_system
@@ -87,7 +87,7 @@ class VisionChatTool(Actor):
                     request_id=self._request_id,
                     location=self._location_info,
                     choose_camera_device_ids=self._user_choosed_camera_dids)
-                camera_list, all_cameras = await device_chooser.run()
+                camera_list, all_cameras, _, _ = await device_chooser.run()
 
                 if len(camera_list) == 0:
                     camera_list = all_cameras

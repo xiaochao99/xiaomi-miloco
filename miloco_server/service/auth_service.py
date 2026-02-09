@@ -10,7 +10,7 @@ import logging
 from miloco_server.dao.kv_dao import AuthConfigKeys, KVDao
 from miloco_server.schema.auth_schema import (
     LoginRequest, RegisterRequest, RegisterData, RegisterStatusData,
-    UserLanguage, UserLanguageData
+    LoginResponseData, UserLanguage, UserLanguageData
 )
 from miloco_server.middleware import (
     BusinessException,
@@ -86,9 +86,10 @@ class AuthService:
         logger.info("Check register status API returned - Is registered: %s", is_registered)
         return RegisterStatusData(is_registered=is_registered)
 
-    def login_user(self, login_data: LoginRequest, response) -> RegisterData:
+    def login_user(self, login_data: LoginRequest, response) -> LoginResponseData:
         """
         User login business logic
+        Returns access token for API authentication
         """
         logger.info("Login API called - data=%s", login_data.username)
 
@@ -113,7 +114,11 @@ class AuthService:
         set_auth_cookie(response, access_token)
 
         logger.info("Login API returned - Login successful: username=%s", login_data.username)
-        return RegisterData(username=ADMIN_USERNAME)
+        return LoginResponseData(
+            username=ADMIN_USERNAME,
+            access_token=access_token,
+            token_type="bearer"
+        )
 
     def logout_user(self, response) -> None:
         """

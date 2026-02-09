@@ -102,6 +102,7 @@ class MIoTMediaDecoder(threading.Thread):
     _frame_interval: int
     _enable_hw_accel: bool
     _enable_audio: bool
+    _vision_img_resolution: int  # Target resolution for AI vision analysis (width)
 
     # format: did, data, ts, channel
     _video_callback: Callable[[bytes, int, int], Coroutine]
@@ -125,6 +126,7 @@ class MIoTMediaDecoder(threading.Thread):
         enable_hw_accel: bool = False,
         enable_audio: bool = False,
         main_loop: Optional[asyncio.AbstractEventLoop] = None,
+        vision_img_resolution: int = 0,  # 0 means use original resolution
     ) -> None:
         super().__init__()
         self._main_loop = main_loop or asyncio.get_running_loop()
@@ -132,6 +134,7 @@ class MIoTMediaDecoder(threading.Thread):
         self._frame_interval = frame_interval
         self._enable_hw_accel = enable_hw_accel
         self._enable_audio = enable_audio
+        self._vision_img_resolution = vision_img_resolution
 
         self._video_callback = video_callback
         if enable_audio:
@@ -216,8 +219,23 @@ class MIoTMediaDecoder(threading.Thread):
             # _LOGGER.debug("video frame, %d, %d", frame.height, frame.width)
             rgb_frame: VideoFrame = frame.to_rgb()
             img: Image.Image = rgb_frame.to_image()
+
+            # Resize image for AI vision analysis if configured
+            if self._vision_img_resolution > 0 and img.width > self._vision_img_resolution:
+                # Calculate new height maintaining aspect ratio
+                aspect_ratio = img.height / img.width
+                new_height = int(self._vision_img_resolution * aspect_ratio)
+                img = img.resize(
+                    (self._vision_img_resolution, new_height),
+                    Image.Resampling.LANCZOS
+                )
+                _LOGGER.debug(
+                    "Resized image for vision analysis: %dx%d -> %dx%d",
+                    frame.width, frame.height, img.width, img.height
+                )
+
             buf: BytesIO = BytesIO()
-            img.save(buf, format="JPEG", quality=90)
+            img.save(buf, format="JPEG", quality=85)
             jpeg_data = buf.getvalue()
             self._main_loop.call_soon_threadsafe(
                 self._main_loop.create_task,

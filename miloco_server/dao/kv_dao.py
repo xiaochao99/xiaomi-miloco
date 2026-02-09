@@ -198,6 +198,23 @@ class KVDao:
             logger.error("Error checking kv existence: key=%s, error=%s", key, e)
             return False
 
+    def get_all_keys(self) -> List[str]:
+        """
+        获取所有配置项的 key 列表
+
+        Returns:
+            List[str]: key 列表
+        """
+        try:
+            sql = "SELECT key FROM kv ORDER BY key"
+            results = self.db_connector.execute_query(sql)
+            keys = [row["key"] for row in results]
+            logger.debug("Retrieved %d keys", len(keys))
+            return keys
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
+            logger.error("Error retrieving all keys: error=%s", e)
+            return []
+
 
 class AuthConfigKeys:
     ADMIN_PASSWORD_KEY = "ADMIN_PASSWORD_KEY"

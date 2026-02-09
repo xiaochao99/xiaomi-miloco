@@ -6,8 +6,7 @@
 import React, { useRef, useEffect, useCallback } from 'react'
 import { message } from 'antd'
 import ReactMarkdown from 'react-markdown'
-import { useTranslation } from 'react-i18next';
-import { useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next'
 import { useChatStore, useSessionChatStore } from '@/stores/chatStore';
 import { useGlobalSocket } from '@/hooks/useGlobalSocket';
 import { useAutoScroll } from '@/hooks/useAutoScroll';
@@ -65,6 +64,8 @@ const ChatDialog = () => {
   // check if there is a conversation
   const hasMessages = messages.length > 0;
 
+  const { saveStateBeforeLeave } = socketActions;
+
   // component initialization, restore state
   useEffect(() => {
     // check if there is a temporary chat state to restore
@@ -97,7 +98,7 @@ const ChatDialog = () => {
     // use global send message method, handle all common logic
     const messageData = await globalSendMessage(
       content,
-      ['miot_manual_scenes', 'miot_devices', 'ha_automations'], // default MCP list for welcome message
+      ['miot_manual_scenes', 'miot_devices', 'ha_automations', 'ha_devices'], // default MCP list for welcome message
       {
         onBeforeSend: () => {
 
@@ -120,17 +121,23 @@ const ChatDialog = () => {
       const { setIsAnswering } = useChatStore.getState();
       setIsAnswering(false);
     }
-  }, [globalSendMessage, socketActions]);
+  }, [globalSendMessage, socketActions, t]);
 
+
+  const stateRef = useRef({ messages, isAnswering });
+  useEffect(() => {
+    stateRef.current = { messages, isAnswering };
+  }, [messages, isAnswering]);
 
   useEffect(() => {
     return () => {
-      if (messages.length > 0 || isAnswering) {
+      const { messages: currentMessages, isAnswering: currentIsAnswering } = stateRef.current;
+      if (currentMessages.length > 0 || currentIsAnswering) {
         console.log('ChatDialog component unmount, save current state');
-        socketActions.saveStateBeforeLeave();
+        saveStateBeforeLeave();
       }
     };
-  }, [messages.length, isAnswering]);
+  }, [saveStateBeforeLeave]);
 
   return (
     <div className={styles.chatDialogWrap}>

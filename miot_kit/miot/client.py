@@ -64,6 +64,7 @@ class MIoTClient:
     _device_buffer: Optional[Dict[str, MIoTDeviceInfo]]
 
     _init_done: bool
+    _vision_img_resolution: int  # Target resolution for AI vision analysis (width)
 
     def __init__(
         self,
@@ -73,7 +74,8 @@ class MIoTClient:
         lang: Optional[str] = None,
         oauth_info: Optional[MIoTOauthInfo | Dict] = None,
         cloud_server: Optional[str] = None,
-        loop: Optional[asyncio.AbstractEventLoop] = None
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+        vision_img_resolution: int = 0
     ) -> None:
         """MIoT Client init.
         **MUST call `init_async` after initialization.**
@@ -107,6 +109,7 @@ class MIoTClient:
         self._last_lan_ping_ts = 0
         self._callbacks_lan_device_status_changed = {}
         self._device_buffer = None
+        self._vision_img_resolution = vision_img_resolution
 
         self._init_done = False
 
@@ -191,7 +194,8 @@ class MIoTClient:
         self._camera_client = MIoTCamera(
             cloud_server=self._cloud_server,
             access_token=self._oauth_info.access_token if self._oauth_info else "",
-            loop=self._main_loop)
+            loop=self._main_loop,
+            vision_img_resolution=self._vision_img_resolution)
         await self._camera_client.init_async()
         self._init_done = True
 
