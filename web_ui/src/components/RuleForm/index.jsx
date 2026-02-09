@@ -5,8 +5,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { Select, Input, Button, Checkbox, Form, Tooltip, Spin, message, Switch } from 'antd';
+const { Option } = Select;
 import { QuestionCircleOutlined, ReloadOutlined, UpOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { refreshHaAutomation } from '@/api';
 import TimeSelector from '@/components/TimeSelector';
 import {
   TRIGGER_PERIOD_OPTIONS,
@@ -32,7 +34,7 @@ import SelectTagRender from './selectTagRender';
  * @param {boolean} [props.loading=false] - Loading state for submit button
  * @param {Function} [props.onCancel] - Cancel callback function
  * @param {Array} [props.cameraOptions=[]] - Available camera options
- * @param {Array} [props.actionOptions=[]] - Available action options
+ * @param {Array} [props.haDeviceOptions=[]] - Available HA device options
  * @param {boolean} [props.enableCameraRefresh=false] - Whether to enable camera refresh
  * @param {Function} [props.onRefreshCameras] - Camera refresh callback function
  * @param {boolean} [props.enableActionRefresh=false] - Whether to enable action refresh
@@ -48,8 +50,8 @@ const RuleForm = ({
   loading = false,
   onCancel,
   cameraOptions = [],
+  haDeviceOptions: passedHaDeviceOptions = [],
   actionOptions = [],
-  enableCameraRefresh = false,
   onRefreshCameras,
   enableActionRefresh = false,
   onRefreshActions,
@@ -57,9 +59,21 @@ const RuleForm = ({
   actionLoading = false,
 }) => {
   const { t } = useTranslation();
-  const [form] = Form.useForm();
+
+// Temporary translation override for debugging
+const translations = {
+  'smartCenter.conditionType': 'Condition Type'
+};
+
+const [form] = Form.useForm();
   const { openModal } = useLogViewerStore();
-  const { availableMcpServices } = useChatStore();
+  const {
+    availableMcpServices,
+    haDeviceOptions: globalHaDeviceOptions,
+    fetchHaDeviceOptions,
+    haDeviceLoading: globalHaLoading,
+    haDeviceFetched: globalHaFetched
+  } = useChatStore();
 
   const formData = useRuleFormData(initialRule);
   const { aiGeneratedActions, setAiGeneratedActions } = useLogViewerStore();
@@ -74,11 +88,52 @@ const RuleForm = ({
   const [sendNotification, setSendNotification] = useState(false);
   const [notificationText, setNotificationText] = useState('');
 
+  const [triggerDeviceOptions, setTriggerDeviceOptions] = useState([]);
+
+  useEffect(() => {
+    if (passedHaDeviceOptions?.length === 0 && !globalHaFetched) {
+      fetchHaDeviceOptions();
+    }
+  }, [passedHaDeviceOptions, fetchHaDeviceOptions, globalHaFetched]);
+
+  useEffect(() => {
+    const newOptions = [];
+    if (cameraOptions?.length > 0) {
+      newOptions.push({
+        label: t('smartCenter.cameras'),
+        options: cameraOptions.map(item => ({
+          label: `${item.name}(${item.room_name || ''})`,
+          value: item.did,
+          _type: 'camera'
+        }))
+      });
+    }
+
+    const haOptions = passedHaDeviceOptions?.length > 0
+      ? passedHaDeviceOptions.map(item => ({
+          label: `${item.name}${item.room_name ? ` (${item.room_name})` : ''}`,
+          value: item.did,
+          _type: 'ha'
+        }))
+      : globalHaDeviceOptions;
+
+    if (haOptions?.length > 0) {
+      newOptions.push({
+        label: t('smartCenter.haDevices') || 'HA Devices',
+        options: haOptions
+      });
+    }
+    setTriggerDeviceOptions(newOptions);
+  }, [cameraOptions, passedHaDeviceOptions, globalHaDeviceOptions, t, mode]);
+
   const [checkedMcpServices, setCheckedMcpServices] = useState([]);
   const [aiRecommendExecuteType, setAiRecommendExecuteType] = useState('dynamic');
   const [aiRecommendActionDescriptions, setAiRecommendActionDescriptions] = useState([]);
   const [aiRecommendActions, setAiRecommendActions] = useState([]);
   const [actionDescriptionError, setActionDescriptionError] = useState(false);
+
+  // Condition type: 'llm' or 'direct'
+  const [conditionType, setConditionType] = useState('llm');
 
   const [advancedOptionsVisible, setAdvancedOptionsVisible] = useState(false);
   const [triggerPeriod, setTriggerPeriod] = useState('all_day');
@@ -92,19 +147,41 @@ const RuleForm = ({
     }
     setAiRecommendActions(aiGeneratedActions);
     setAiRecommendExecuteType(aiGeneratedActions.length > 0 ? 'static' : 'dynamic');
-  }, [aiGeneratedActions]);
+  }, [aiGeneratedActions, mode]);
 
-  useEffect(() => {
+useEffect(() => {
     if (mode === 'create') {
       setAiGeneratedActions([]);
     }
     if (mode !== 'create' && formData) {
+      const cameras = formData.cameras?.map(camera =>
+        typeof camera === 'object' ? camera.did : camera
+      ) || [];
+      const ha_devices = formData.ha_devices?.map(device =>
+        typeof device === 'object' ? device.did : device
+      ) || [];
+
       form.setFieldsValue({
         name: formData.name,
         condition: formData.condition,
-        cameras: formData.cameras?.map(camera =>
-          typeof camera === 'object' ? camera.did : camera
-        ) || [],
+        ha_condition: formData.ha_condition || '',
+        trigger_devices: [...cameras, ...ha_devices],
+      });
+
+      // Set condition_type from formData
+      if (formData.condition_type) {
+        setConditionType(formData.condition_type);
+        form.setFieldsValue({ condition_type: formData.condition_type });
+        console.log('Restoring condition type from formData:', formData.condition_type);
+      }
+      
+      // Log all formData for debugging
+      console.log('FormData loaded:', {
+        name: formData.name,
+        condition: formData.condition,
+        cameras: formData.cameras,
+        ha_devices: formData.ha_devices,
+        condition_type: formData.condition_type
       });
 
       if (initialSelectedKeys && initialSelectedKeys.length > 0) {
@@ -138,7 +215,7 @@ const RuleForm = ({
         // setAdvancedOptionsVisible(true);
       }
     }
-  }, [mode, formData, form, initialSelectedKeys, selectedActionObjects]);
+  }, [mode, formData, form, initialSelectedKeys, selectedActionObjects, setAiGeneratedActions]);
 
 
 
@@ -235,14 +312,34 @@ const RuleForm = ({
         introduction: action.introduction || '',
       }));
 
-    const cameras = values.cameras.map(did => {
-      const camera = cameraOptions.find(c => c.did === did);
-      return camera || did;
+    // Split trigger_devices into cameras and ha_devices
+    const selectedDevices = values.trigger_devices || [];
+    const cameras = [];
+    const ha_devices = [];
+
+    // Helper to check if ID is camera or HA
+    const isCamera = (id) => cameraOptions.some(c => c.did === id);
+    const isHaDevice = (id) => (passedHaDeviceOptions?.some(d => d.did === id) || globalHaDeviceOptions.some(d => d.value === id));
+
+    selectedDevices.forEach(id => {
+      if (isCamera(id)) {
+        const camera = cameraOptions.find(c => c.did === id);
+        cameras.push(camera || id);
+      } else if (isHaDevice(id)) {
+        ha_devices.push(id);
+      } else {
+        // Fallback
+        cameras.push(id);
+      }
     });
+
     const formData = {
       name: values.name,
       cameras,
-      condition: values.condition,
+      ha_devices,
+      condition: conditionType === 'direct' ? values.ha_condition : values.condition,
+      condition_type: conditionType,
+      ha_condition: values.ha_condition,
       automation_actions,
       ai_recommend_execute_type: aiRecommendExecuteType,
       ai_recommend_action_descriptions: aiRecommendActionDescriptions,
@@ -288,8 +385,8 @@ const RuleForm = ({
     }
   };
 
-  const handleFormValuesChange = (changedValues, allValues) => {
-    if ('cameras' in changedValues) {
+  const handleFormValuesChange = (changedValues) => {
+    if ('trigger_devices' in changedValues) {
       setAiRecommendActions([]);
       setAiRecommendExecuteType('dynamic');
     }
@@ -312,24 +409,29 @@ const RuleForm = ({
 
       <Form.Item
         className={styles.customFormLabel}
-        label={t('smartCenter.selectCameras')}
-        name="cameras"
-        rules={[{ required: true, message: t('smartCenter.pleaseSelectCameras') }]}
+        label={t('smartCenter.selectTriggerDevices')}
+        name="trigger_devices"
+        rules={[{ required: true, message: t('smartCenter.pleaseSelectTriggerDevices') }]}
       >
         <Select
           mode="multiple"
           allowClear
-          placeholder={t('smartCenter.pleaseSelectCameras')}
+          placeholder={t('smartCenter.pleaseSelectTriggerDevices')}
           disabled={isSubmitDisabled}
-          options={cameraOptions?.map?.(item => ({
-            label: `${item.name}(${item.room_name || ''})`,
-            value: item.did
-          }))}
+          options={triggerDeviceOptions}
           className={styles.select}
-          dropdownRender={enableCameraRefresh && onRefreshCameras
-            ? renderDropdownWithRefresh(cameraLoading, t('smartCenter.refreshCameras'), onRefreshCameras)
-            : undefined
-          }
+          dropdownRender={renderDropdownWithRefresh(
+            globalHaLoading || cameraLoading,
+            t('common.refresh'),
+            async () => {
+              if (onRefreshCameras) {
+                await refreshMiotInfo(onRefreshCameras);
+              }
+              await refreshMiotInfo(refreshHaAutomation);
+              await fetchHaDeviceOptions(true);
+              return { code: 0 };
+            }
+          )}
         />
       </Form.Item>
 
@@ -337,32 +439,182 @@ const RuleForm = ({
         className={styles.customFormLabel}
         label={
           <span>
-            {t('smartCenter.triggerCondition')}
+            {t('smartCenter.conditionType') || '条件类型'}
             <Tooltip
               placement="right"
               title={
-                <div>
-                  <div>{t('smartCenter.triggerConditionTip1')}</div>
-                  <div style={{ marginTop: 8 }}>{t('smartCenter.triggerConditionTip2')}</div>
-                  <div style={{ marginTop: 4 }}>• {t('smartCenter.triggerConditionExample1')}</div>
-                  <div>• {t('smartCenter.triggerConditionExample2')}</div>
-                  <div>• {t('smartCenter.triggerConditionExample3')}</div>
-                  <div>• {t('smartCenter.triggerConditionExample4')}</div>
-                  <div>• ...</div>
-                  <div style={{ marginTop: 8 }}>{t('smartCenter.triggerConditionTip3')}</div>
+                <div style={{ padding: '8px', maxWidth: '400px' }}>
+                  <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>{t('smartCenter.conditionTypeSelect') || 'Condition Type Selection'}</div>
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ fontWeight: 'bold' }}>{t('smartCenter.llmModeLabel') || 'LLM Mode:'}</div>
+                    <div style={{ marginLeft: '8px', marginBottom: '8px' }}>{t('smartCenter.conditionTypeTip2')}</div>
+                  </div>
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ fontWeight: 'bold' }}>{t('smartCenter.directModeLabel') || 'Direct Mode:'}</div>
+                    <div style={{ marginLeft: '8px', marginBottom: '8px' }}>{t('smartCenter.conditionTypeTip3')}</div>
+                  </div>
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ fontWeight: 'bold' }}>{t('smartCenter.hybridModeLabel') || 'Hybrid Mode:'}</div>
+                    <div style={{ marginLeft: '8px', marginBottom: '8px' }}>{t('smartCenter.conditionTypeTip4')}</div>
+                  </div>
+                  <div style={{ marginTop: '8px', fontStyle: 'italic' }}>
+                    {t('smartCenter.conditionTypeTip5')}
+                  </div>
                 </div>
               }>
               <QuestionCircleOutlined style={{ marginLeft: 4, color: '#999' }} />
             </Tooltip>
           </span>}
-        name="condition"
-        rules={[{ required: true, message: t('smartCenter.pleaseEnterTriggerCondition') }]}
+        name="condition_type"
       >
-        <Input
-          placeholder={t('smartCenter.exampleMove')}
-          disabled={isReadonly || loading}
-        />
+        {/* Condition Type Selector */}
+        <div className={styles.conditionTypeSelector}>
+          <Select
+            className={styles.conditionTypeSelect}
+            value={conditionType}
+            onChange={(value) => {
+              setConditionType(value);
+              const triggerDevices = form.getFieldValue('trigger_devices') || [];
+              const hasHaDevice = triggerDevices.some(id => {
+                return (passedHaDeviceOptions?.some(d => d.did === id) ||
+                  globalHaDeviceOptions.some(d => d.value === id));
+              });
+              const hasCamera = triggerDevices.some(id => {
+                return cameraOptions.some(c => c.did === id);
+              });
+              console.log('Condition Type changed:', value, 'Has HA:', hasHaDevice, 'Has Camera:', hasCamera);
+              if (value === 'direct' && !hasHaDevice) {
+                message.info(t('smartCenter.directMode') + ' ' + t('smartCenter.conditionTypeTip3'));
+              }
+              if (value === 'hybrid' && (!hasHaDevice || !hasCamera)) {
+                message.info(t('smartCenter.hybridMode') + ' ' + t('smartCenter.conditionTypeTip4'));
+              }
+            }}
+            disabled={isSubmitDisabled}
+          >
+            <Option value="llm">{t('smartCenter.llmMode')}</Option>
+            <Option value="direct">{t('smartCenter.directMode')}</Option>
+            <Option value="hybrid">{t('smartCenter.hybridMode')}</Option>
+          </Select>
+        </div>
       </Form.Item>
+
+      {/* 混合模式：先显示HA设备状态条件（Step 1） */}
+      {conditionType === 'hybrid' && (
+        <Form.Item
+          className={styles.customFormLabel}
+          label={
+            <span>
+              {t('smartCenter.haCondition') || '设备状态'}
+              <Tooltip
+                placement="right"
+                title={
+                  <div>
+                    <div style={{ fontWeight: 'bold' }}>{t('smartCenter.haConditionTooltipTitle') || 'Device State (Hybrid Mode Step 1)'}</div>
+                    <div style={{ marginTop: 8 }}>{t('smartCenter.haConditionTooltipDesc') || 'Use direct mode to quickly check HA device state:'}</div>
+                    <div>• {t('smartCenter.haConditionTooltipSkip') || 'If this condition is not met, skip camera analysis'}</div>
+                    <div>• {t('smartCenter.haConditionTooltipProceed') || 'If this condition is met, proceed to camera analysis'}</div>
+                    <div style={{ marginTop: 8 }}>{t('smartCenter.examples') || 'Examples:'}</div>
+                    <div>• state == on</div>
+                    <div>• state in [on,open]</div>
+                    <div>{'• temperature > 25'}</div>
+                  </div>
+                }>
+                <QuestionCircleOutlined style={{ marginLeft: 4, color: '#999' }} />
+              </Tooltip>
+            </span>}
+          name="ha_condition"
+          rules={[{ required: true, message: t('smartCenter.pleaseEnterTriggerCondition') }]}
+        >
+          <Input
+            placeholder="例如：state == on"
+            disabled={isReadonly || loading}
+          />
+        </Form.Item>
+      )}
+
+      {/* 直接模式：设备状态 */}
+      {conditionType === 'direct' && (
+        <Form.Item
+          className={styles.customFormLabel}
+          label={
+            <span>
+              {t('smartCenter.haCondition') || '设备状态'}
+              <Tooltip
+                placement="right"
+                title={
+                  <div>
+                    <div style={{ fontWeight: 'bold' }}>{t('smartCenter.directModeTooltipTitle') || 'Direct Mode - Device State'}</div>
+                    <div style={{ marginTop: 8 }}>{t('smartCenter.directModeTooltipDesc') || 'Use direct mode to check device state (zero token):'}</div>
+                    <div>• {t('smartCenter.directModeTooltipFast') || 'Fast local state matching without LLM'}</div>
+                    <div>• {t('smartCenter.directModeTooltipHaOnly') || 'Only for HA devices (no cameras)'}</div>
+                    <div style={{ marginTop: 8 }}>{t('smartCenter.examples') || 'Examples:'}</div>
+                    <div>• state == on</div>
+                    <div>• state in [on,open]</div>
+                    <div>{'• temperature > 25'}</div>
+                  </div>
+                }>
+                <QuestionCircleOutlined style={{ marginLeft: 4, color: '#999' }} />
+              </Tooltip>
+            </span>}
+          name="ha_condition"
+          rules={[{ required: true, message: t('smartCenter.pleaseEnterTriggerCondition') }]}
+        >
+          <Input
+            placeholder="例如：state == on"
+            disabled={isReadonly || loading}
+          />
+        </Form.Item>
+      )}
+
+      {/* LLM模式和混合模式：触发条件 */}
+      {conditionType !== 'direct' && (
+        <Form.Item
+          className={styles.customFormLabel}
+          label={
+            <span>
+              {conditionType === 'hybrid' 
+                ? (t('smartCenter.cameraCondition') || '触发条件') 
+                : t('smartCenter.triggerCondition')}
+              <Tooltip
+                placement="right"
+                title={
+                  conditionType === 'hybrid' ? (
+                    <div>
+                      <div style={{ fontWeight: 'bold' }}>{t('smartCenter.cameraConditionTooltipTitle') || 'Trigger Condition (Hybrid Mode Step 2)'}</div>
+                      <div style={{ marginTop: 8 }}>{t('smartCenter.cameraConditionTooltipDesc') || 'LLM will use this condition to analyze camera images:'}</div>
+                      <div>• {t('smartCenter.cameraConditionTooltipWhen') || 'Only checked when device state condition is met'}</div>
+                      <div>• {t('smartCenter.cameraConditionTooltipUse') || 'Used for visual analysis (person detection, behavior, etc.)'}</div>
+                      <div style={{ marginTop: 8 }}>{t('smartCenter.examples') || 'Examples:'}</div>
+                      <div>• {t('smartCenter.cameraConditionExample1') || 'Is there a person sleeping?'}</div>
+                      <div>• {t('smartCenter.cameraConditionExample2') || 'Is there a person moving in the room?'}</div>
+                      <div>• {t('smartCenter.cameraConditionExample3') || 'Is there a pet on the sofa?'}</div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div>{t('smartCenter.triggerConditionTip1')}</div>
+                      <div style={{ marginTop: 8 }}>{t('smartCenter.triggerConditionTip2')}</div>
+                      <div style={{ marginTop: 4 }}>• {t('smartCenter.triggerConditionExample1')}</div>
+                      <div>• {t('smartCenter.triggerConditionExample2')}</div>
+                      <div>• {t('smartCenter.triggerConditionExample3')}</div>
+                      <div>• {t('smartCenter.triggerConditionExample4')}</div>
+                      <div>• ...</div>
+                      <div style={{ marginTop: 8 }}>{t('smartCenter.triggerConditionTip3')}</div>
+                    </div>
+                  )
+                }>
+                <QuestionCircleOutlined style={{ marginLeft: 4, color: '#999' }} />
+              </Tooltip>
+            </span>}
+          name="condition"
+          rules={[{ required: true, message: t('smartCenter.pleaseEnterTriggerCondition') }]}
+        >
+          <Input
+            placeholder={conditionType === 'hybrid' ? "例如：客厅是否有人？" : t('smartCenter.exampleMove')}
+            disabled={isReadonly || loading}
+          />
+        </Form.Item>
+      )}
 
       <Form.Item
         label={t('smartCenter.executionAction')}

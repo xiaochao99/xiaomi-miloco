@@ -18,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 
 from miloco_server.config import APP_CONFIG, IMAGE_DIR, SERVER_CONFIG, STATIC_DIR
 from miloco_server.controller import (
+    ai_chat_router,
+    api_token_router,
     auth_router,
     chat_router,
     ha_router,
@@ -61,6 +63,8 @@ app.include_router(chat_router, prefix="/api")
 app.include_router(trigger_router, prefix="/api")
 app.include_router(model_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api")
+app.include_router(api_token_router, prefix="/api")
+app.include_router(ai_chat_router, prefix="/api")
 
 
 @app.get("/{full_path:path}")
@@ -96,6 +100,51 @@ async def startup_event():
     except Exception as e:
         logger.error("Manager initialization failed: %s", e)
         raise
+
+    # 启动后自动初始化 MIoT（如果已登录）
+    await _init_miot_after_startup()
+
+
+async def _init_miot_after_startup():
+    """启动后自动初始化 MIoT 设备和 MCP 客户端"""
+    try:
+        manager = get_manager()
+        miot_proxy = manager.miot_proxy
+
+        # 检查是否已登录
+        if not miot_proxy._oauth_info:
+            logger.info("MIoT not logged in, skipping auto-initialization")
+            return
+
+        logger.info("Auto-initializing MIoT after startup...")
+
+        # 1. 刷新 token（如果需要）
+        try:
+            await miot_proxy._check_and_refresh_token()
+            logger.info("MIoT token check completed")
+        except Exception as e:
+            logger.warning("MIoT token refresh failed: %s", e)
+
+        # 2. 刷新设备信息（包括摄像头）
+        try:
+            await miot_proxy.refresh_miot_info()
+            logger.info("MIoT devices refreshed successfully")
+        except Exception as e:
+            logger.warning("MIoT devices refresh failed: %s", e)
+
+        # 3. 初始化 MCP 客户端（MIoT 场景等）
+        try:
+            mcp_service = manager.mcp_service
+            if hasattr(mcp_service, 'init_miot_mcp_clients'):
+                await mcp_service.init_miot_mcp_clients()
+                logger.info("MCP MIoT clients initialized")
+        except Exception as e:
+            logger.warning("MCP MIoT clients initialization failed: %s", e)
+
+        logger.info("Auto-initialization completed")
+
+    except Exception as e:
+        logger.error("Auto-initialization failed: %s", e)
 
 
 @app.on_event("shutdown")

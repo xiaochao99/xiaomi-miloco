@@ -53,6 +53,9 @@ export const getHAAuth = () => getApi('/api/ha/get_config');
 export const getHaList = () => getApi('/api/ha/automations');
 export const getHaAutomationActions = () => getApi('/api/ha/automation_actions');
 export const refreshHaAutomation = () => getApi('/api/ha/refresh_ha_automations');
+export const getHADeviceList = () => getApi('/api/ha/devices');
+export const getHaDevicesGrouped = () => getApi('/api/ha/devices_grouped');
+export const controlHADevice = (data) => postApi('/api/ha/control', data);
 
 // mcp
 export const getMCPService = () => getApi('/api/mcp');
@@ -66,3 +69,8 @@ export const reconnectMCPService = (id) => postApi(`/api/mcp/reconnect/${id}`);
 export const getHistoryList = () => getApi('/api/chat/historys');
 export const getHistoryDetail = (id) => getApi(`/api/chat/history/${id}`);
 export const deleteChatHistory = (id) => deleteApi(`/api/chat/history/${id}`);
+
+// API Token management
+export const getAPITokenList = () => getApi('/api/tokens/list');
+export const createAPIToken = (data) => postApi('/api/tokens/create', data);
+export const deleteAPIToken = (data) => postApi('/api/tokens/delete', data);

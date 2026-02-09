@@ -33,6 +33,13 @@ class RegisterData(BaseModel):
     username: Optional[str] = Field(None, description="Username")
 
 
+class LoginResponseData(BaseModel):
+    """Login response data model"""
+    username: str = Field(..., description="Username")
+    access_token: str = Field(..., description="JWT access token for API authentication")
+    token_type: str = Field("bearer", description="Token type")
+
+
 class RegisterStatusData(BaseModel):
     """Registration status response data model"""
     is_registered: bool = Field(..., description="Whether already registered")

@@ -191,16 +191,86 @@ def verify_jwt_token(token: Optional[str]) -> str:
             detail=exc.message
         ) from exc
 
+def _verify_api_token(token: str) -> Optional[str]:
+    """
+    验证 API Token
+    
+    Args:
+        token: API Token 字符串
+        
+    Returns:
+        Optional[str]: 用户名，验证失败返回 None
+    """
+    from miloco_server.service.manager import get_manager
+    try:
+        manager = get_manager()
+        if hasattr(manager, 'api_token_service'):
+            return manager.api_token_service.verify_token(token)
+    except Exception as e:
+        logger.debug("API token verification failed: %s", e)
+    return None
+
+
 def verify_token(request: Request) -> str:
-    """Verify JWT token and return username (from Cookie)"""
-    # Get token from Cookie
+    """
+    验证 JWT token 或 API Token 并返回用户名
+    
+    优先级:
+    1. Cookie 中的 access_token (JWT)
+    2. Authorization Header 中的 Bearer Token (JWT 或 API Token)
+    """
+    # 1. 尝试从 Cookie 获取 JWT token
     token = request.cookies.get("access_token")
+    
+    # 2. 如果 Cookie 没有，尝试从 Authorization Header 获取
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header:
+            # 支持 "Bearer <token>" 格式
+            parts = auth_header.split()
+            if len(parts) == 2 and parts[0].lower() == "bearer":
+                token = parts[1]
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token not found, please login first"
+        )
+    
+    # 3. 首先尝试验证为 API Token (以 apt_ 开头的)
+    if token.startswith("apt_"):
+        username = _verify_api_token(token)
+        if username:
+            return username
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired API token"
+        )
+    
+    # 4. 否则验证为 JWT token
     return verify_jwt_token(token)
 
 def verify_websocket_token(websocket: WebSocket) -> str:
-    """Verify JWT token for WebSocket connection"""
-    # Get token from query parameters
-    token = websocket.cookies.get("access_token")
+    """Verify JWT token or API Token for WebSocket connection"""
+    # Get token from query parameters or cookies
+    token = websocket.query_params.get("token") or websocket.cookies.get("access_token")
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token not found"
+        )
+    
+    # 尝试验证为 API Token
+    if token.startswith("apt_"):
+        username = _verify_api_token(token)
+        if username:
+            return username
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired API token"
+        )
+    
     return verify_jwt_token(token)
 
 def set_auth_cookie(response: Response, access_token: str) -> None:

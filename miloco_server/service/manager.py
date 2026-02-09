@@ -33,7 +33,8 @@ from miloco_server.service.trigger_rule_service import TriggerRuleService
 from miloco_server.service.model_service import ModelService
 from miloco_server.service.mcp_service import McpService
 from miloco_server.service.chat_history_service import ChatHistoryService
-from miloco_server.config.normal_config import MIOT_CONFIG
+from miloco_server.service.api_token_service import ApiTokenService
+from miloco_server.config.normal_config import MIOT_CONFIG, RTSP_CAMERA_CONFIG
 from miloco_server.utils.chat_companion import ChatCompanion
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,8 @@ class Manager:
             uuid=self.device_uuid,
             redirect_uri="https://mico.api.mijia.tech/login_redirect",
             kv_dao=self._kv_dao,
-            cloud_server=MIOT_CONFIG["cloud_server"])
+            cloud_server=MIOT_CONFIG["cloud_server"],
+            rtsp_cameras=RTSP_CAMERA_CONFIG)
 
         self._ha_proxy = HAProxy(kv_dao=self._kv_dao)
 
@@ -104,6 +106,7 @@ class Manager:
         self._trigger_rule_runner = TriggerRuleRunner(
             trigger_rules=self._trigger_rule_dao.get_all(enabled_only=False),
             miot_proxy=self._miot_proxy,
+            ha_proxy=self._ha_proxy,
             get_llm_proxy_by_purpose=self.get_llm_proxy_by_purpose,
             get_language=self.get_language,
             tool_executor=self._tool_executor,
@@ -115,15 +118,21 @@ class Manager:
         self._miot_service = MiotService(
             self._miot_proxy, self._mcp_client_manager, self._default_preset_action_manager)
         self._ha_service = HaService(self._ha_proxy, self._mcp_client_manager, self._default_preset_action_manager)
+
+        # Initialize HA devices MCP client
+        await self._ha_service.initialize_ha_devices_mcp()
+
         self._model_service = ModelService(self._kv_dao, self._third_party_model_dao)
         self._mcp_service = McpService(self._mcp_config_dao, self._mcp_client_manager)
         self._chat_service = ChatHistoryService(self._chat_history_dao, self._chat_companion)
+        self._api_token_service = ApiTokenService(self._kv_dao)
         self._trigger_rule_service = TriggerRuleService(
             self._trigger_rule_dao,
             self._trigger_rule_log_dao,
             self._trigger_rule_runner,
             self._miot_proxy,
-            self._mcp_client_manager
+            self._mcp_client_manager,
+            self._ha_service
         )
 
         self._trigger_rule_runner.start_periodic_task()
@@ -168,6 +177,10 @@ class Manager:
     @property
     def chat_service(self) -> ChatHistoryService:
         return self._chat_service
+
+    @property
+    def api_token_service(self) -> ApiTokenService:
+        return self._api_token_service
 
     @property
     def chat_companion(self) -> ChatCompanion:

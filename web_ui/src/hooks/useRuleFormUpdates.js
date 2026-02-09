@@ -102,10 +102,28 @@ export const useRuleFormUpdates = () => {
   const handleToggleRule = async (rule, checked) => {
     try {
       const { mcp_list = [], ...rest } = rule.execute_info || {};
+      
+      // Build camera IDs array
+      const camera_dids = rule.cameras 
+        ? Array.isArray(rule.cameras) 
+          ? rule.cameras.map(camera => typeof camera === 'object' ? camera.did : camera) 
+          : rule.cameras 
+        : [];
+      
+      // Build HA device IDs array
+      const ha_device_dids = rule.ha_devices
+        ? Array.isArray(rule.ha_devices)
+          ? rule.ha_devices.map(device => typeof device === 'object' ? device.did : device)
+          : rule.ha_devices
+        : [];
+      
       const updateData = {
         name: rule.name,
-        cameras: rule.cameras? Array.isArray(rule.cameras) ? rule.cameras.map(camera => typeof camera === 'object' ? camera.did : camera) : rule.cameras : [],
+        cameras: camera_dids,
+        ha_devices: ha_device_dids,
         condition: rule.condition,
+        condition_type: rule.condition_type || 'llm',
+        ha_condition: rule.ha_condition || '',
         execute_info: {
           ...rest,
           mcp_list: mcp_list?.length > 0 ? mcp_list.map(mcp => mcp.client_id) : [],

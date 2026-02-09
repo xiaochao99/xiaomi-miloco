@@ -9,7 +9,7 @@ Load configuration from server_config.yaml
 
 import os
 from pathlib import Path
-from miloco_server.config.config_loader import load_yaml_config, get_project_root
+from .config_loader import load_yaml_config, get_project_root
 
 # Get project root directory
 PROJECT_ROOT = get_project_root()
@@ -100,11 +100,19 @@ TRIGGER_RULE_RUNNER_CONFIG = {
 # Camera configuration
 CAMERA_CONFIG = {
     "frame_interval": _config["camera"]["frame_interval"],
+    "video_quality": _config["camera"].get("video_quality", "HIGH"),
+    "vision_img_resolution": _config["camera"].get("vision_img_resolution", 640),
     "camera_img_cache_max_size": max(
         TRIGGER_RULE_RUNNER_CONFIG["vision_use_img_count"],
         CHAT_CONFIG["vision_use_img_count"]
     ),
 }
+
+# RTSP server configuration
+RTSP_SERVER_CONFIG = _config["camera"]["rtsp_server"]
+
+# RTSP camera configuration
+RTSP_CAMERA_CONFIG = _config.get("rtsp_cameras", [])
 
 # MIoT dynamic configuration
 MIOT_CONFIG = {

@@ -4,10 +4,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typography, Segmented} from 'antd';
+import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typography, Segmented, Table, Popconfirm, Tag, Tooltip, Alert} from 'antd';
 import { useTranslation } from 'react-i18next';
-import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined } from '@ant-design/icons';
-import { setHAAuth, getHAAuth, getLanguage, setLanguage } from '@/api';
+import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined, PlusOutlined, CopyOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken } from '@/api';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSettingStore } from '@/stores/settingStore';
 import { Card, Header } from '@/components';
@@ -37,6 +37,14 @@ const Setting = () => {
     base_url: '',
     token: ''
   });
+
+  // API Token states
+  const [apiTokens, setApiTokens] = useState([]);
+  const [tokenModalVisible, setTokenModalVisible] = useState(false);
+  const [tokenForm] = Form.useForm();
+  const [createdToken, setCreatedToken] = useState(null);
+  const [tokenDetailModalVisible, setTokenDetailModalVisible] = useState(false);
+  const [loadingTokens, setLoadingTokens] = useState(false);
 
 
   // language options
@@ -95,6 +103,25 @@ const Setting = () => {
     fetchHAAuth();
   }, []);
 
+  // Load API Tokens
+  useEffect(() => {
+    fetchAPITokens();
+  }, []);
+
+  const fetchAPITokens = async () => {
+    setLoadingTokens(true);
+    try {
+      const res = await getAPITokenList();
+      if (res && res.code === 0) {
+        setApiTokens(res.data?.tokens || []);
+      }
+    } catch (error) {
+      console.error('Failed to load API tokens:', error);
+    } finally {
+      setLoadingTokens(false);
+    }
+  };
+
 
   // handle language change
   const handleLanguageChange = async (value) => {
@@ -149,6 +176,64 @@ const Setting = () => {
   const handleHaAuthCancel = () => {
     setHaModalVisible(false);
     form.resetFields();
+  };
+
+  // API Token handlers
+  const handleCreateToken = () => {
+    setTokenModalVisible(true);
+  };
+
+  const handleTokenModalConfirm = async () => {
+    try {
+      const values = await tokenForm.validateFields();
+      const res = await createAPIToken(values);
+      if (res && res.code === 0) {
+        message.success(t('setting.tokenCreateSuccess'));
+        setCreatedToken(res.data);
+        setTokenModalVisible(false);
+        setTokenDetailModalVisible(true);
+        tokenForm.resetFields();
+        fetchAPITokens();
+      } else {
+        message.error(res?.message || t('setting.tokenCreateFailed'));
+      }
+    } catch (error) {
+      console.error('Create token failed:', error);
+    }
+  };
+
+  const handleTokenModalCancel = () => {
+    setTokenModalVisible(false);
+    tokenForm.resetFields();
+  };
+
+  const handleDeleteToken = async (tokenId) => {
+    try {
+      const res = await deleteAPIToken({ token_id: tokenId });
+      if (res && res.code === 0) {
+        message.success(t('setting.tokenDeleteSuccess'));
+        fetchAPITokens();
+      } else {
+        message.error(res?.message || t('setting.tokenDeleteFailed'));
+      }
+    } catch (error) {
+      console.error('Delete token failed:', error);
+      message.error(t('setting.tokenDeleteFailed'));
+    }
+  };
+
+  const handleCopyToken = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      message.success(t('setting.tokenCopied'));
+    }).catch(() => {
+      message.error(t('setting.tokenCopyFailed'));
+    });
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleString();
   };
 
 
@@ -223,6 +308,77 @@ const Setting = () => {
           </div>
         </Card>
 
+        {/* API Token management */}
+        <Card className={styles.settingCard} contentClassName={styles.settingCardContent}>
+          <div className={styles.settingCardTitle}>{t('setting.apiTokenManagement')}</div>
+          <div className={styles.settingCardItemList}>
+            <div className={styles.tokenHeader}>
+              <Text type="secondary">{t('setting.apiTokenDescription')}</Text>
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateToken}>
+                {t('setting.createToken')}
+              </Button>
+            </div>
+            <Table
+              dataSource={apiTokens}
+              rowKey="id"
+              loading={loadingTokens}
+              pagination={false}
+              size="small"
+              columns={[
+                {
+                  title: t('setting.tokenName'),
+                  dataIndex: 'name',
+                  key: 'name',
+                },
+                {
+                  title: t('setting.tokenPreview'),
+                  dataIndex: 'token_preview',
+                  key: 'token_preview',
+                },
+                {
+                  title: t('setting.tokenStatus'),
+                  dataIndex: 'is_active',
+                  key: 'is_active',
+                  render: (isActive) => (
+                    <Tag color={isActive ? 'success' : 'default'}>
+                      {isActive ? t('setting.active') : t('setting.inactive')}
+                    </Tag>
+                  ),
+                },
+                {
+                  title: t('setting.tokenExpiresAt'),
+                  dataIndex: 'expires_at',
+                  key: 'expires_at',
+                  render: (expiresAt) => formatDate(expiresAt),
+                },
+                {
+                  title: t('setting.tokenCreatedAt'),
+                  dataIndex: 'created_at',
+                  key: 'created_at',
+                  render: (createdAt) => formatDate(createdAt),
+                },
+                {
+                  title: t('common.operation'),
+                  key: 'action',
+                  render: (_, record) => (
+                    <Popconfirm
+                      title={t('setting.deleteTokenConfirm')}
+                      description={t('setting.deleteTokenConfirmDesc')}
+                      onConfirm={() => handleDeleteToken(record.id)}
+                      okText={t('common.confirm')}
+                      cancelText={t('common.cancel')}
+                    >
+                      <Button type="link" danger icon={<DeleteOutlined />}>
+                        {t('common.delete')}
+                      </Button>
+                    </Popconfirm>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        </Card>
+
       </div>
 
       {/* Home Assistant authorization configuration modal */}
@@ -259,6 +415,84 @@ const Setting = () => {
             <Input.Password placeholder={t('setting.pleaseEnterHomeAssistantToken')} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Create API Token Modal */}
+      <Modal
+        title={t('setting.createToken')}
+        open={tokenModalVisible}
+        onOk={handleTokenModalConfirm}
+        onCancel={handleTokenModalCancel}
+        okText={t('common.confirm')}
+        cancelText={t('common.cancel')}
+      >
+        <Form
+          form={tokenForm}
+          layout="vertical"
+        >
+          <Form.Item
+            name="name"
+            label={t('setting.tokenName')}
+            rules={[
+              { required: true, message: t('setting.pleaseEnterTokenName') },
+              { max: 50, message: t('setting.tokenNameTooLong') }
+            ]}
+          >
+            <Input placeholder={t('setting.tokenNamePlaceholder')} />
+          </Form.Item>
+          <Form.Item
+            name="description"
+            label={t('setting.tokenDescription')}
+            rules={[
+              { max: 200, message: t('setting.tokenDescriptionTooLong') }
+            ]}
+          >
+            <Input.TextArea placeholder={t('setting.tokenDescriptionPlaceholder')} rows={3} />
+          </Form.Item>
+          <Form.Item
+            name="expires_days"
+            label={t('setting.tokenExpiresDays')}
+            initialValue={365}
+            rules={[
+              { required: true, message: t('setting.pleaseEnterExpiresDays') }
+            ]}
+          >
+            <Input type="number" min={1} max={3650} placeholder={t('setting.tokenExpiresDaysPlaceholder')} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Token Detail Modal (show created token) */}
+      <Modal
+        title={t('setting.tokenCreated')}
+        open={tokenDetailModalVisible}
+        onCancel={() => setTokenDetailModalVisible(false)}
+        footer={[
+          <Button key="copy" type="primary" icon={<CopyOutlined />} onClick={() => handleCopyToken(createdToken?.token)}>
+            {t('setting.copyToken')}
+          </Button>,
+          <Button key="close" onClick={() => setTokenDetailModalVisible(false)}>
+            {t('common.close')}
+          </Button>
+        ]}
+      >
+        <div style={{ padding: '16px 0' }}>
+          <Alert
+            message={t('setting.tokenWarning')}
+            description={t('setting.tokenWarningDesc')}
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+          <div style={{ background: '#f5f5f5', padding: 16, borderRadius: 4, wordBreak: 'break-all' }}>
+            <Text code style={{ fontSize: 14 }}>{createdToken?.token}</Text>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <Text type="secondary">{t('setting.tokenName')}: {createdToken?.name}</Text>
+            <br />
+            <Text type="secondary">{t('setting.tokenExpiresAt')}: {formatDate(createdToken?.expires_at)}</Text>
+          </div>
+        </div>
       </Modal>
     </div>
   );
