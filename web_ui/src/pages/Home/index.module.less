@@ -1,0 +1,131 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+
+.homeSider {
+  background: var(--bg-color-sider);
+  box-sizing: border-box;
+  height: 100%;
+  position: relative;
+  min-width: 64px;
+  .siderToggleArrow {
+    position: absolute;
+    top: 24px;
+    right: -5px;
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  
+  .siderMenuContainer{
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    .homeTitle{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 20px;
+      padding-right: 20px;
+      color: var(--text-color);
+      .title{
+        font-size: 18px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+    }
+    .siderMenu {
+      background-color: transparent;
+      flex: 1;
+      overflow-y: auto;
+    }
+    .sliderIcon{
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .userInfoAvatar {
+      margin: 16px 12px;
+      cursor: pointer;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      flex-shrink: 0;
+      transition: all 0.3s ease;
+      position: relative;
+      
+      &.collapsed {
+        margin: 10px auto;
+        
+        img {
+          margin-right: 0;
+        }
+        
+        .name {
+          display: none;
+        }
+      }
+      
+      img {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        object-fit: cover;
+        margin-right: 12px;
+        transition: all 0.3s ease;
+        flex-shrink: 0;
+      }
+      .name{
+        text-align: left;
+        font-weight: 330;
+        font-size: 16px;
+        color: var(--text-color-149);
+        transition: all 0.3s ease;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+      }
+      .logoutIcon{
+        margin-left: 10px;
+        cursor: pointer;
+        color: var(--text-color-149);
+      }
+    }
+  }
+  
+  .splitterContainer {
+    height: 100vh;
+    width: 100%;
+  }
+}
+.homeLayout {
+  min-width: 800px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  
+  .homeContent {
+    margin: 0;
+    height: 100%;
+    overflow-x: hidden;
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    background: var(--bg-color-container);
+    flex-direction: column;
+    justify-content: flex-start;
+    position: relative;
+  }
+}
+
+
+
+
+

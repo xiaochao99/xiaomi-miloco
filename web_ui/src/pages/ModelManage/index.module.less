@@ -1,0 +1,239 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+@import '../../theme/global.module.less';
+
+.modelManageContainer {
+  width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: var(--spacing-lg);
+}
+
+.modelManageContent {
+  width: 915px;
+  height: 100vh;
+  :global(.ant-card) {
+    background: none;
+  }
+}
+
+.modelServiceCard {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-radius: 0px;
+  min-height: 0;
+  padding-bottom: 30px;
+  
+  :global(.ant-card-head) {
+    padding: 0px;
+    margin-bottom: 0px;
+  }
+  
+  :global(.ant-card-body) {
+    padding: 0px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+}
+
+.rightContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border: none;
+  border-radius: 0px;
+  padding: 22px 90px;
+}
+
+.modelConfigCard {
+  border: none;
+  border-radius: 0px;
+  flex-shrink: 0;
+  margin-bottom: 16px;
+
+  :global(.ant-card-head) {
+    border-bottom: 0px solid var(--border-color);
+    padding: 0px;
+  }
+  
+  :global(.ant-card-body) {
+    background-color: var(--bg-color-card);
+    border-radius: 12px;
+  }
+}
+
+.modelConfigCardContent {
+  padding: 0px;
+  background-color: var(--bg-color-card);
+  border-radius: 12px;
+}
+
+.modelConfigCardTitle {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-color);
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-color-240);
+}
+
+.modelList {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  
+  .modelCategory {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 16px;
+    min-height: 0;
+    
+    &:last-child {
+      margin-bottom: 0;
+    }
+    
+    :global(.ant-typography) {
+      margin-bottom: 12px;
+      color: var(--text-color);
+      font-weight: 500;
+    }
+  }
+  
+  .modelCategoryContent{
+    padding: 0px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  
+  .modelCategoryTitle{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-color-240);
+    flex-shrink: 0;
+    
+    .addModelIcon {
+      cursor: pointer;
+    }
+  }
+  
+  .contentWrap {
+    padding: 0px 24px 16px;
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    max-height: 100%;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    &::-webkit-scrollbar-track {
+      background: transparent;
+      border-radius: 3px;
+    }
+    
+    &::-webkit-scrollbar-thumb {
+      background: var(--border-color-240);
+      border-radius: 3px;
+      
+      &:hover {
+        background: var(--border-color);
+      }
+    }
+    
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color-240) transparent;
+  }
+}
+
+.modelItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color-240);
+  padding: 16px 0px 10px;
+  
+  .modelInfo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    .modelIcon {
+      width: 22px;
+      height: 22px;
+    }
+    
+    .modelNameContainer {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 2px;
+      flex: 1;
+    }
+    
+    .modelName {
+      font-weight: 500;
+      color: var(--text-color);
+      flex: 1;
+    }
+    
+    .vramUsage {
+      font-size: 12px;
+      color: var(--text-color-secondary);
+      font-weight: 400;
+    }
+  }
+  
+  .modelActions {
+    display: flex;
+    gap: 4px;
+    
+    :global(.ant-btn) {
+      padding: 4px 8px;
+      height: 28px;
+      
+      &:hover {
+        background-color: #f0f0f0;
+      }
+    }
+  }
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.modelConfigList {
+  padding: 0px 24px;
+  .configItem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border-color-240);
+    
+    &:last-child {
+      border-bottom: none;
+    }
+    
+    .configLabel {
+      font-weight: 500;
+      color: var(--text-color);
+      min-width: 120px;
+    }
+  }
+}

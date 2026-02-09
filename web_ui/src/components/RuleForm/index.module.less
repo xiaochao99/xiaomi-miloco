@@ -1,0 +1,177 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.actionGroup {
+  padding: 0px 16px;
+  padding-bottom: 0px;
+}
+
+.actionItem {
+  margin-bottom: 16px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+  
+  .actionLabel {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text-color-85);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    
+    .ant-checkbox-wrapper {
+      margin-bottom: 0;
+    }
+  }
+
+  .actionControl {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0; 
+    
+    :global(.ant-select) {
+      flex: 1;
+      min-width: 0; 
+      max-width: 100
+    }
+  } 
+  .actionControl2 {
+    margin-top: 8px;
+  }
+}
+
+.actionControlSelect {
+  :global(.ant-select-selector) {
+    padding-inline-end: 80px !important;
+  }
+}
+
+.actionControlButton {
+  cursor: pointer;
+  pointer-events: all;
+  padding:4px 8px !important;
+  font-size: 13px !important;
+  height: auto;
+  box-shadow: none !important;
+}
+
+.advancedOptionsSection {
+  margin: 0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.advancedOptionsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0px 16px 16px;
+  cursor: pointer;
+  
+  .advancedOptionsTitle {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text-color-5);
+  }
+  
+  .anticon {
+    font-size: 12px;
+  }
+}
+
+.advancedOptionsContent {
+  padding: 16px;
+  padding-top: 0px;
+}
+
+.advancedOptionItem {
+  margin-bottom: 16px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+  
+  .advancedOptionLabel {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text-color-85);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    
+    .ant-checkbox-wrapper {
+      margin-bottom: 0;
+    }
+  }
+  
+// Condition Type Selector
+.conditionTypeSelector {
+  margin-top: 8px;
+}
+
+.conditionTypeSelect {
+  width: 100%;
+}
+
+.advancedOptionLabel {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text-color-85);
+    margin-bottom: 8px;
+  }
+  
+  .advancedSelect {
+    width: 100%;
+  }
+}
+
+.triggerIntervalDescription,
+.triggerFrequencyDescription {
+  font-size: 12px;
+  color: var(--text-color-6);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.triggerIntervalSelector {
+  margin-top: 8px;
+}
+
+.frequencyLimitGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  
+  span {
+    font-size: 14px;
+    color: var(--text-color-85);
+    white-space: nowrap;
+  }
+  
+  .frequencyPeriodSelector {
+    width: auto;
+  }
+  
+  .frequencyCountSelect {
+    width: 100px;
+    min-width: 100px;
+  }
+}
+
+.saveBtnWrap {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  .saveBtn {
+    border: none;
+    padding: 8px 12px;
+    width: auto;
+  }
+}

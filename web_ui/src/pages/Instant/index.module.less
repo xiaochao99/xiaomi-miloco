@@ -1,0 +1,202 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.instantLayout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.leftSidebar {
+  height: 100%;
+  border-right: 1px solid var(--border-color);
+  transition: width 0.3s ease;
+  overflow: hidden;
+  z-index: 20;
+}
+
+.rightSidebar {
+  height: 100%;
+  border-left: 1px solid var(--border-color);
+  transition: width 0.3s ease;
+  overflow: hidden;
+  z-index: 20;
+}
+
+.historyContent {
+  width: 239px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 25px 16px;
+}
+
+.historyHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-weight: 500;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.closeButton {
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--text-color-6);
+  
+  &:hover {
+    color: var(--text-color);
+  }
+}
+
+.historyList {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.historyItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  color: var(--text-color-6);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+  flex-shrink: 0;
+  min-height: 0;
+
+  &:hover {
+    color: var(--text-color);
+    
+    .deleteIcon {
+      opacity: 1;
+      visibility: visible;
+    }
+  }
+}
+
+.historyTitle {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deleteIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 8px;
+  cursor: pointer;
+  color: var(--text-color-6);
+  border-radius: 3px;
+  flex-shrink: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+
+  &:hover {
+    color: var(--text-color);
+    background-color: rgba(0, 0, 0, 0.05);
+  }
+}
+
+.leftToggleButton {
+  position: absolute;
+  top: 24px;
+  left: 16px;
+  z-index: 10;
+  cursor: pointer;
+  transition: opacity 1s ease;
+}
+
+.rightToggleButton {
+  position: absolute;
+  top: 22px;
+  right: 12px;
+  z-index: 10;
+  cursor: pointer;
+  transition: opacity 1s ease;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.toggleIcon {
+
+}
+
+.toggleText {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 1);
+  margin-left: 4px;
+}
+
+.chatBg {
+  position: absolute; 
+  background: linear-gradient(180deg, rgba(247, 247, 247, 0) 19.14%, #F7F7F7 61.41%);
+  z-index: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.openDrawer {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  z-index: 10;
+  cursor: pointer;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  .openDrawerIcon{
+    width: 18px;
+    height: 18px;
+  }
+  .openDrawerText{
+    font-size: 12px;
+    color: rgba(0, 0, 0, 1);
+    margin-left: 4px;
+  }
+}
+
+:global(.ant-drawer-content){
+  background-color: transparent !important;
+}
+:global(.ant-drawer-content-wrapper){
+  box-shadow: none !important;
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
+}
+:global(.ant-drawer-body){
+  overflow: hidden !important;
+}
+
+.chatDialogArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+  overflow-x: scroll;
+}

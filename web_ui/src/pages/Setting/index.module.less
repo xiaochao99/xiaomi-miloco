@@ -1,0 +1,155 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.settingContainer {
+  width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: var(--spacing-lg);
+}
+
+.settingContent {
+  width: 912px;
+}
+
+.settingTitle {
+  margin-bottom: 32px !important;
+  color: var(--text-color-149);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  
+  .anticon {
+    font-size: 24px;
+    color: var(--primary-color);
+  }
+}
+
+.settingCard {
+  margin-bottom: 24px;
+  border-radius: 12px;
+  .settingCardContent{
+    padding: 0;
+  }
+  .settingCardTitle{
+    font-size: 16px;
+    font-weight: 500;
+    padding: 16px 22px;
+    color: var(--text-color-31);
+    border-bottom: 1px solid var(--border-color-240);
+  }
+}
+.settingCardItemList{
+  padding: 0 24px;
+}
+
+.settingItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-color-240);
+  
+  &:last-child {
+    border-bottom: none;
+  }
+  
+  .settingLabel {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text-color-149);
+    font-weight: 500;
+    
+    .anticon {
+      font-size: 16px;
+      color: var(--primary-color);
+    }
+  }
+}
+
+.themeButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  
+  &.ant-btn-primary {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    
+    &:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+  }
+}
+
+.themeIcon {
+  font-size: 16px;
+}
+
+.themeSegmented {
+  :global(.ant-segmented) {
+    background-color: var(--border-color-240);
+    border-radius: 8px;
+    padding: 4px;
+  }
+  
+  :global(.ant-segmented-item) {
+    border-radius: 6px;
+    transition: all 0.3s ease;
+
+    span{
+      font-size: 14px;
+      color: var(--text-color-secondary);
+      text-align: center;
+      width: 100%;
+    }
+    &:hover {
+      background-color: var(--primary-color);
+      span{
+        color: var(--text-color-inverse);
+      }
+    }
+  }
+  
+  :global(.ant-segmented-item-selected) {
+    span{
+      color: var(--text-color-inverse);
+    }
+    background-color: var(--primary-color);
+  }
+}
+
+.segmentedOption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 14px;
+  width: 105px;
+}
+
+.segmentedIcon {
+  font-size: 14px;
+}
+
+.tokenHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}

@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "miloco_ai_engine"
+version = "0.0.1"
+description = "LLaMA-MICO AI Engine for MICO Server"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    {name = "Mico Team", email = "xxxx@xiaomi.com"}
+]
+dependencies = [
+    "fastapi>=0.115.3",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-multipart>=0.0.18",
+    "numpy>=1.24.0",
+    "typing-extensions==4.8.0",
+    "psutil>=7.0.0",
+    "aiohttp>=3.12.14",
+    "requests>=2.32.4",
+    "thespian>=3.10.0",
+    "Pillow>=10.3.0",
+]
+
+[project.scripts]
+mico-ai-engine = "miloco_ai_engine.main:start_server"
+
+[tool.setuptools.packages.find]
+where = [".."]
+include = ["miloco_ai_engine*"]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# Markers for different test types
+markers = [
+    "integration: Integration tests that require real services (Model Manager, GPU, etc.)",
+    "unit: Fast unit tests (default)"
+]
+

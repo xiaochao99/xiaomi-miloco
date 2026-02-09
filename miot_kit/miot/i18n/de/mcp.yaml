@@ -1,0 +1,169 @@
+miot_manual_scenes:
+  name: "Xiaomi Home Manueller Steuerungsszenen-MCP-Dienst"
+  instructions: "Kann die Liste der manuellen Steuerungsszenen von Xiaomi Home abrufen, eine manuelle Steuerungsszene ausführen und eine Benachrichtigung an die Xiaomi Home-App senden."
+  tools:
+    get_manual_scenes:
+      description: "Liste der manuellen Steuerungsszenen (Automatisierungen) von Xiaomi Home abrufen."
+    trigger_manual_scene:
+      description: "Manuelle Steuerungsszene (Automatisierung) ausführen:\n
+        1. Die korrekte Szenen-ID muss verwendet werden;\n
+        2. Wenn die Liste der manuellen Steuerungsszenen nicht zuvor abgerufen wurde, muss diese zuerst abgerufen werden."
+      params:
+        scene_id: "ID der manuellen Steuerungsszene (Automatisierung)"
+    send_app_notify:
+      description: "Eine Benachrichtigung an die Xiaomi Home-App senden."
+      params:
+        content: "Inhalt der Benachrichtigung"
+  prompts:
+  errors:
+    invalid_scene_id: "Szenen-ID ({{scene_id}}) existiert nicht. Bitte verwenden Sie das Tool `get_manual_scenes`, um die korrekte Szenen-ID abzurufen und fortzufahren"
+miot_devices:
+  name: "Xiaomi Home Gerätesteuerungs-MCP-Dienst"
+  instructions: "Bietet die Möglichkeit zur Abfrage und Steuerung von Xiaomi Home-Geräten."
+  tools:
+    get_area_info:
+      description: "Liste der Xiaomi Home-Bereiche (Haushalte oder Räume) abrufen."
+      other:
+        home_name_default: "Mein Zuhause"
+    get_device_classes:
+      description: "Liste der Gerätetypen von Xiaomi Home abrufen."
+    get_devices:
+      description: "
+        Liste der Xiaomi Home-Geräte abrufen.\n
+        {{extra_device_params}}\n
+        {{extra_device_infos}}\n
+        "
+      params:
+        area_id: "Bereichs-ID, Xiaomi Home-Haushalt oder Raum-ID, optional"
+        device_class: "Gerätetyp in Xiaomi Home, optional"
+    get_device_spec:
+      description: "SPEC-Definition des Xiaomi Home-Geräts abrufen."
+      params:
+        did: "Geräte-DID in Xiaomi Home"
+    send_ctrl_rpc:
+      description:
+        "Du bist ein Tool zur Steuerung von Xiaomi Home-Geräten. Bitte befolge die folgenden Schritte.\n
+        ### Steuerungsschritte:\n
+        1. Rufe `{{tool_name_get_devices}}` auf\n
+        - Abrufen der Liste steuerbarer Geräte\n
+        - Falls es mehrere steuerbare Geräte gibt, muss der Nutzer das Zielgerät eindeutig angeben\n
+        \n
+        2. Rufe `{{tool_name_get_device_spec}}` auf\n
+        - Verwende die `did` des Zielgeräts\n
+        - Abfrage der SPEC-Instanzdefinition des Geräts\n
+        - Bestimmen der zu steuernden SPEC-Instanz\n
+        \n
+        3. Erzeuge den Steuerungswert `value` gemäß der SPEC-Definition\n
+        - Falls SPEC ein **Action-Typ** ist, ist `value` ein Array\n
+        - Die Array-Elemente enthalten die zu setzenden Werte, deren Format muss der SPEC-Definition entsprechen\n
+        \n
+        4. Rufe `{{tool_name_send_ctrl_rpc}}` auf\n
+        - Übergib die Parameter `did`, `iid` und `value`\n
+        - Sende den Steuerbefehl zur Steuerung des Geräts"
+      params:
+        did: "Geräte-DID in Xiaomi Home"
+        iid: "SPEC-Instanz-ID"
+        value: "Steuerungswert, Format muss der SPEC-Definition entsprechen"
+    send_get_rpc:
+      description:
+        "Du bist ein Tool zur Abfrage von Geräteeigenschaften in Xiaomi Home. Bitte befolge die folgenden Schritte.\n
+        ### Abfrageschritte:\n
+        1. Rufe `{{tool_name_get_devices}}` auf\n
+        - Abrufen der Liste steuerbarer Geräte\n
+        - Falls es mehrere steuerbare Geräte gibt, muss der Nutzer das Zielgerät eindeutig angeben\n
+        \n
+        2. Rufe `{{tool_name_get_device_spec}}` auf\n
+        - Verwende die `did` des Zielgeräts\n
+        - Abfrage der SPEC-Instanzdefinition des Geräts\n
+        - Bestimmen der zu abfragenden SPEC-Instanz\n
+        \n
+        3. Rufe `{{tool_name_send_get_rpc}}` auf\n
+        - Übergib die Parameter `did`, `iid`\n
+        - Sende den Befehl zum Abrufen des Gerätestatus"
+      params:
+        did: "Geräte-DID in Xiaomi Home"
+        iid: "SPEC-Instanz-ID"
+  prompts:
+    prompt_send_ctrl_rpc:
+      description: "Vorlage zur Steuerung von Xiaomi Home-Geräten."
+      content:
+        "Du bist ein Tool zur Steuerung von Xiaomi Home-Geräten. Bitte befolge die folgenden Schritte.\n
+        ### Steuerungsschritte:\n
+        1. Rufe `{{tool_name_get_devices}}` auf\n
+        - Abrufen der Liste steuerbarer Geräte\n
+        - Falls es mehrere steuerbare Geräte gibt, muss der Nutzer das Zielgerät eindeutig angeben\n
+        \n
+        2. Rufe `{{tool_name_get_device_spec}}` auf\n
+        - Verwende die `did` des Zielgeräts\n
+        - Abfrage der SPEC-Instanzdefinition des Geräts\n
+        - Bestimmen der zu steuernden SPEC-Instanz\n
+        \n
+        3. Erzeuge den Steuerungswert `value` gemäß der SPEC-Definition\n
+        - Falls SPEC ein **Action-Typ** ist, ist `value` ein Array\n
+        - Die Array-Elemente enthalten die zu setzenden Werte, deren Format muss der SPEC-Definition entsprechen\n
+        \n
+        4. Rufe `{{tool_name_send_ctrl_rpc}}` auf\n
+        - Übergib die Parameter `did`, `iid` und `value`\n
+        - Sende den Steuerbefehl zur Steuerung des Geräts\n
+        \n
+        ### Ausgabebedingungen:\n
+        - Rufe direkt das Tool gemäß den Schritten auf\n
+        - Gib außer dem Ausführungsergebnis keine weiteren Texte aus"
+    prompt_send_get_rpc:
+      description: "Vorlage zum Abrufen des Status eines Xiaomi Home-Geräts."
+      content:
+        "Du bist ein Tool zur Abfrage von Geräteeigenschaften in Xiaomi Home. Bitte befolge die folgenden Schritte.\n
+        ### Abfrageschritte:\n
+        1. Rufe `{{tool_name_get_devices}}` auf\n
+        - Abrufen der Liste steuerbarer Geräte\n
+        - Falls es mehrere steuerbare Geräte gibt, muss der Nutzer das Zielgerät eindeutig angeben\n
+        \n
+        2. Rufe `{{tool_name_get_device_spec}}` auf\n
+        - Verwende die `did` des Zielgeräts\n
+        - Abfrage der SPEC-Instanzdefinition des Geräts\n
+        - Bestimmen der zu abfragenden SPEC-Instanz\n
+        \n
+        3. Rufe `{{tool_name_send_get_rpc}}` auf\n
+        - Übergib die Parameter `did`, `iid`\n
+        - Sende den Befehl zum Abrufen des Gerätestatus\n
+        \n
+        ### Ausgabebedingungen:\n
+        - Rufe direkt das Tool gemäß den Schritten auf\n
+        - Gib außer dem Ausführungsergebnis keine weiteren Texte aus"
+  errors:
+    empty_devices: "Keine steuerbaren Geräte gefunden. Bitte importiere zuerst Geräte und fahre dann fort."
+    invalid_area_id: "Keine steuerbaren Geräte gefunden. Bitte prüfen, ob im Bereich ({{area_id}}) Geräte vorhanden sind."
+    invalid_device_class: "Keine steuerbaren Geräte gefunden. Bitte prüfen, ob ein Gerät des Typs ({{device_class}}) vorhanden ist."
+    invalid_area_id_and_device_class: "Keine steuerbaren Geräte gefunden. Bitte prüfen, ob im Bereich {{area_id}} Geräte des Typs {{device_class}} vorhanden sind."
+    spec_invalid_devices: "Gerät ({{did}}) existiert nicht. Bitte verwende das Tool `get_devices`, um die korrekte Geräte-ID zu erhalten und fortzufahren."
+    spec_get_failed: "Abrufen der SPEC-Funktionsdefinition für Gerät ({{did}}) fehlgeschlagen. Bitte erneut versuchen."
+    invalid_spec_iid: "Ungültige SPEC-Instanz-ID ({{iid}}). Bitte verwende `get_device_spec`, um die korrekte SPEC-Instanz-ID zu erhalten und fortzufahren."
+    spec_only_allow_prop: "Eigenschaftsabruf unterstützt nur prop-Typ SPEC-Instanzen."
+    ctrl_without_response: "Steuerung des Geräts ({{did}}) fehlgeschlagen. Keine Antwort. Bitte erneut versuchen."
+    ctrl_failed: "Steuerung des Geräts ({{did}}) fehlgeschlagen. {{err_msg}}"
+  extra:
+    device_infos: "\n
+      ### Gerätebereiche und Typinformationen\n
+      Beim Abrufen der Geräteliste basierend auf der Benutzerbeschreibung den korrekten Bereichs-ID (`area_id`) aus den folgenden Bereichen auswählen:\n
+      \n
+      {{extra_area_infos}}\n
+      \n
+      Beim Abrufen der Geräteliste basierend auf der Benutzerbeschreibung den korrekten Geräte-Typ-ID (`device_class`) aus den folgenden Typen auswählen:\n
+      \n
+      {{extra_device_classes}}\n
+      Wenn der Benutzer keinen Bereich oder Typ auswählt, kann dieser Parameter weggelassen werden."
+    device_params: "- Übergabeparameter sind Bereichs-ID und Geräte-Typ-ID\n"
+ha_automations:
+  name: "Home Assistant Automatisierungs-MCP-Dienst"
+  instructions: "Bietet die Möglichkeit zum Abrufen und Ausführen von Home Assistant-Automatisierungen."
+  tools:
+    get_automations:
+      description: "Liste der Home Assistant-Automatisierungen (Szenen) abrufen."
+    trigger_automation:
+      description: "Home Assistant-Automatisierung (Szene) ausführen:\n
+        1. Die korrekte Szenen-ID muss verwendet werden;\n
+        2. Wenn die Szenenliste nicht zuvor abgerufen wurde, muss diese zuerst abgerufen werden."
+      params:
+        automation_id: "ID der Home Assistant-Automatisierung (Szene)"
+  errors:
+    invalid_automation_id: "Szene ({{automation_id}}) nicht gefunden. Bitte verwenden Sie das Tool `get_automations`, um die korrekte Szenen-ID abzurufen und fortzufahren."

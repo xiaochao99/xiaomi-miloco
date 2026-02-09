@@ -1,0 +1,145 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.sendWrap {
+  width: 100%;
+  position: relative;
+  box-shadow: 0px 4px 20px 0px rgba(0, 0, 0, 0.05);
+
+}
+:global(.ant-input) {
+
+}
+
+:global(.ant-sender) {
+  border-radius: 12px !important;
+  padding: 16px !important;
+  background: var(--bg-color-chat-send) !important;
+  box-shadow: none;
+  
+  :global(.ant-sender-input) {
+    border-radius: 8px !important;
+  }
+
+
+}
+:global(.ant-sender):focus-within:after {
+  border-width: 1px !important;
+  border-color: var(--border-send) !important;
+}
+:global(.ant-sender-content){
+  padding: 0 !important;
+  flex-direction: column;
+  align-items: flex-start !important;
+  
+  textarea {
+    max-height: 45px !important;
+    min-height: 45px !important;
+  }
+}
+
+:global(.ant-sender-footer){
+  padding: 0;
+  padding-inline-start: 0px !important;
+  padding-inline-end: 0px !important;
+  padding-block-end: 0px !important;
+  padding-block-start: 0px !important;
+}
+
+:global(.ant-sender-prefix) {
+
+
+}
+
+.senderContainer {
+  position: relative;
+  width: 100%;
+}
+
+.buttonContainer {
+  position: relative;
+  display: inline-block;
+}
+
+.sendFooter {
+  margin-top: 8px;
+  gap: 8px;
+  
+
+}
+.chatBtn {
+  display: flex;
+  align-items: center;
+  justify-self: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  color: var(--text-color-button-text);
+  cursor: pointer;
+  font-size: 16px;
+  span{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    font-weight: 400;
+    font-size: 12px;
+  }
+  &.disabled {
+    background: var(--bg-color-button-disabled);
+    cursor: not-allowed !important;
+  }
+}
+
+.sendBtn {
+  background: var(--bg-color-button-active);
+  border: none !important;
+  border-radius: 20px !important;
+  padding: 8px 15px !important;
+  cursor: pointer !important;
+  transition: background 0.2s !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  box-shadow: none !important;
+  
+  &:disabled {
+    background: var(--bg-color-button-disabled);
+    cursor: not-allowed !important;
+  }
+  .sendBtnText{
+    color: var(--text-color-send-text) !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    &.disabled{
+      color: var(--text-color-send-text-disabled) !important;
+    }
+  }
+}
+
+.sendWrapCentered {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  max-width: 720px;
+  z-index: 10;
+}
+
+.sendWrapBottom {
+  position: relative;
+  width: 100%;
+}
+
+.selectedItemsContainer{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}

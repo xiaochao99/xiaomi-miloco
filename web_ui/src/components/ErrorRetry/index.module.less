@@ -1,0 +1,51 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.errorRetry {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  background-color: var(--bg-color);
+  padding: 20px;
+  
+  
+  .retryButton {
+    height: 40px;
+    padding: 0 24px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+    
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+  }
+}
+
+:global(.ant-result) {
+  padding: 48px 32px;
+  
+  .ant-result-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text-color, #262626);
+    margin-bottom: 16px;
+  }
+  
+  .ant-result-subtitle {
+    font-size: 16px;
+    color: var(--text-color-secondary, #8c8c8c);
+    line-height: 1.6;
+    margin-bottom: 32px;
+  }
+  
+  .ant-result-extra {
+    margin-top: 32px;
+  }
+}

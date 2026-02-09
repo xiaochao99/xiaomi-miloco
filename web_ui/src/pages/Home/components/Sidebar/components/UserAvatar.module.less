@@ -1,0 +1,120 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.userAvatar {
+  margin: 16px 12px;
+  cursor: pointer;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+  position: relative;
+  padding: 8px;
+
+  &.dragging {
+    transition: none !important;
+
+    .avatar {
+      transition: none !important;
+    }
+
+    .userInfo {
+      transition: none !important;
+    }
+
+    .logoutIcon {
+      transition: none !important;
+    }
+  }
+
+  &:hover {
+    background-color: var(--bg-color-hover, rgba(0, 0, 0, 0.04));
+  }
+
+  &.collapsed {
+    margin: 16px auto;
+    justify-content: center;
+    width: fit-content;
+    padding: 8px;
+
+    .avatar {
+      margin-right: 0;
+    }
+
+    .userInfo {
+      display: none;
+    }
+
+    .logoutIcon {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      background: var(--bg-color, #fff);
+      border-radius: 50%;
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      border: 1px solid var(--border-color, #e8e8e8);
+    }
+  }
+
+  .avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-right: 12px;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+    border: 2px solid var(--border-color-light, rgba(0, 0, 0, 0.08));
+
+    &:hover {
+      border-color: var(--primary-color, #1890ff);
+    }
+  }
+
+  .userInfo {
+    flex: 1;
+    min-width: 0;
+
+    .nickname {
+      text-align: left;
+      font-weight: 330;
+      font-size: 16px;
+      color: var(--text-color-149);
+      transition: all 0.3s ease;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+  }
+
+  .logoutIcon {
+    margin-left: 8px;
+    cursor: pointer;
+    color: var(--text-color-149);
+    font-size: 14px;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+
+    &:hover {
+      color: var(--error-color, #f5222d);
+      background-color: var(--error-bg, rgba(245, 34, 45, 0.1));
+    }
+
+    &:active {
+      transform: scale(0.95);
+    }
+  }
+}

@@ -1,0 +1,227 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.listItem {
+  display: flex;
+  align-items: flex-start;
+  border-radius: 12px;
+  gap: 16px;
+  position: relative;
+  height: 154px;
+  overflow: hidden;
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 10px;
+}
+
+.defaultCameraBg{
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  filter: blur(2px);
+  img{
+    width: 100%;
+    height: 100%;
+  }
+}
+
+.itemContent {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  position: relative;
+  z-index: 999;
+  .itemContentWrap{
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 100%;
+    height: 100%;
+    .icon{
+      width: 32px;
+      height: 32px;
+      margin-right: 8px;
+    }
+    .info {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 9px 12px;
+      .infoTop {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        .top{
+          display: flex;
+          align-items: center;
+          justify-content: flex-start;
+          .name {
+            font-size: 16px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 1);
+            transition: color 0.3s ease;
+          }
+          .status {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            margin-left: 10px;
+            
+            img {
+              width: 16px;
+              height: 16px;
+            }
+          }
+        }
+        .bottom{
+          font-weight: 330;
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.8);
+          margin-top: 6px;
+        }
+      }
+  
+
+    }
+    .playIconWrap{
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      position: relative;
+
+      .playIcon {
+        width: 32px;
+        height: 32px;
+        cursor: pointer;
+        background-color: var(--bg-color-button-play);
+        border-radius: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        top: 0px;
+
+      }
+      .playPosition{
+        top: 45px;
+      }
+    }
+    
+
+  }
+
+}
+.channelView{
+  position: absolute;
+  bottom: 0px;
+  left: 0px;
+  .channelItem{
+
+    color: var(--text-color);
+    cursor: pointer;
+  }
+
+}
+.zoomView{
+  position: absolute;
+  bottom: 0px;
+  right: 0px;
+}
+.videoOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: #fff;
+  border-radius: 12px;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.videoContainer {
+  width: 100%;
+  background: #000;
+  border-radius: 8px;
+  position: relative;
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.videoFadeIn {
+  animation: fadeIn 0.3s;
+  opacity: 1;
+  transition: opacity 0.3s;
+  display: flex;
+  align-items: center;
+}
+
+.videoFadeOut {
+  animation: fadeOut 0.3s;
+  opacity: 0;
+  transition: opacity 0.3s;
+  display: flex;
+  align-items: center;
+}
+
+@keyframes fadeIn {
+  from { 
+    opacity: 0; 
+    transform: scale(0.9);
+  }
+  to { 
+    opacity: 1; 
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeOut {
+  from { 
+    opacity: 1; 
+    transform: scale(1);
+  }
+  to { 
+    opacity: 0; 
+    transform: scale(0.9);
+  }
+}
+
+.videoMoreAngle {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  z-index: 10;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  padding: 2px;
+  
+  .angleItem {
+    color: rgba(255, 255, 255, 0.5);
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 330;
+    width: 50px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .active {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}

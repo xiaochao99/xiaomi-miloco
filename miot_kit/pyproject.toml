@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61", "wheel", "toml>=0.10.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "miot_kit"
+version = "0.1.15"
+description = "MIoT Kit"
+authors = [{ name = "MIoT Development Team" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "aiocache>=0.12",
+    "aiofiles>=24.1",
+    "asyncio>=4.0.0",
+    "aiohttp>=3.12.14",
+    "psutil>=7.0.0",
+    "pydantic>=2.4.0",
+    "fastmcp>=2.11",
+    "zeroconf>=0.147",
+    "av>=15.0",
+    "pillow>=10.3.0",
+    "toml>=0.10.2",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["miot*"]
+
+[tool.setuptools.package-data]
+miot_kit = ["libs/**/*.*", "specs/*", "i18n/**/*.*", "configs/*"]
+ha = []

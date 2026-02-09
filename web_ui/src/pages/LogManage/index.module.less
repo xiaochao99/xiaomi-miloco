@@ -1,0 +1,114 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.container {
+  width: 100%;
+  padding-top: var(--spacing-lg);
+}
+.wrapper{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 912px;
+  margin: 0 auto;
+}
+
+.record{
+
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+
+  .statsRow {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+    
+  .statCard {
+    flex: 1;
+    text-align: center;
+    border-radius: 12px;
+
+  }
+  .statCardContent{
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+    .statCardTitle {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      flex: 1;
+      .title{
+        font-size: 18px;
+        color: var(--text-color);
+        font-weight: 450;
+      }
+      .subtitle{
+        font-size: 14px;
+        color: var(--text-color-7);
+        font-weight: 380;
+        line-height: 20px;
+        text-align: left;
+      }
+    }
+    
+    .statCardValue {
+      flex: 1;
+      font-weight: 450;
+      font-size: 30px;
+      line-height: 32px;
+      text-align: right;
+      color: var(--text-color);
+    }
+  }
+}
+.recordCard {
+  flex: 1;
+  width: 100%;
+  height: auto;
+
+  .statList {
+    font-weight: 450;
+    font-size: 16px;
+    line-height: 24px;
+    color: var(--text-color);
+    margin-bottom: 8px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    .statListTitle {
+      font-weight: 450;
+    }
+    .update {
+      flex: 1;
+      display: flex;
+      justify-content: flex-end;
+      cursor: pointer;
+      
+      img {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+      }
+    }
+  }
+}
+
+
+.table {
+  margin-top: 12px;
+}
+
+.tableFont {
+  font-weight: 400;
+  color: red;
+}

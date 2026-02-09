@@ -1,0 +1,78 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.sidebarMenu {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  
+  .customMenu {
+    background-color: transparent;
+    border: none;
+    width: 100%;
+
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+    
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    
+    &::-webkit-scrollbar-thumb {
+      background-color: var(--border-color, rgba(0, 0, 0, 0.1));
+      border-radius: 2px;
+      
+      &:hover {
+        background-color: var(--border-color-dark, rgba(0, 0, 0, 0.2));
+      }
+    }
+  }
+}
+
+:global(.ant-menu-inline) {
+  border-right: none !important;
+}
+
+:global(.ant-menu-item) {
+  margin: 4px 8px !important;
+  border-radius: 8px !important;
+  height: 44px !important;
+  line-height: 44px !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+  
+  &:hover {
+    background-color: var(--bg-color-hover, rgba(24, 144, 255, 0.1)) !important;
+  }
+  
+  &.ant-menu-item-selected {
+    background-color: var(--primary-color, #1890ff) !important;
+    color: white !important;
+    
+    .ant-menu-item-icon {
+      color: white !important;
+    }
+  }
+}
+
+:global(.ant-menu-item-icon) {
+  font-size: 16px !important;
+  margin-right: 12px !important;
+  vertical-align: middle !important;
+}
+
+:global(.ant-menu-inline-collapsed) {
+  :global(.ant-menu-item) {
+    padding-left: 0 !important;
+    text-align: center !important;
+    margin: 4px 8px !important;
+    
+    .ant-menu-item-icon {
+      margin-right: 0 !important;
+      font-size: 18px !important;
+    }
+  }
+}

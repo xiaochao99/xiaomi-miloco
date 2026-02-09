@@ -1,0 +1,68 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.layout {
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  
+  .sidebarPanel {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .contentPanel {
+    min-width: 800px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-color-container, #fff);
+    
+    .mainContent {
+      height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      
+      &::-webkit-scrollbar {
+        width: 6px;
+      }
+      
+      &::-webkit-scrollbar-track {
+        background: var(--bg-color-track, #f1f1f1);
+      }
+      
+      &::-webkit-scrollbar-thumb {
+        background-color: var(--scrollbar-thumb, #c1c1c1);
+        border-radius: 3px;
+        
+        &:hover {
+          background-color: var(--scrollbar-thumb-hover, #a8a8a8);
+        }
+      }
+    }
+  }
+}
+
+:global(.ant-splitter-bar) {
+  width: 1px !important;
+  z-index: 999;
+}
+
+:global(.ant-splitter-bar-dragger){
+  &:before{
+    background-color: rgba(0, 189, 195, 0) !important;
+  }
+  &:after{
+    background: rgba(0, 0, 0, 0) !important;
+    width: 0px !important;
+  }
+}
+
+

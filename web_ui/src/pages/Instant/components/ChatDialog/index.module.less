@@ -1,0 +1,211 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.chatDialogWrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 22px 40px 20px 40px;
+  width: 100%;
+  min-width: 550px;
+  position: relative;
+}
+.chatDialogHeader{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  .chatDialogHeaderTitle{
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text-color-7);
+  }
+  .chatDialogHeaderNewChat{
+    cursor: pointer;
+    margin-left: 17px;
+    color: var(--text-color-7);
+  }
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding:0px 20px;
+  &::-webkit-scrollbar {
+    width: 0px;
+  }
+
+}
+
+.sendContainerBottom {
+  position: relative;
+  width: 100%;
+  margin-top: auto;
+  opacity: 1;
+}
+
+.question {
+  align-self: flex-end;
+  color: var(--text-color-chat-question);
+  font-weight: 500;
+  font-size: 16px;
+  padding: 10px 20px;
+  border-radius: 18px;
+  border-top-right-radius: 6px;
+  background: var(--bg-color-chat-question);
+  p{
+    display: inline;
+  }
+}
+.answer {
+  text-align: left;
+  margin: 8px 0;
+  font-weight: 500;
+}
+.imgList {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.img {
+  max-width: 200px;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid #eee;
+  display: block;
+}
+.aiGenerated{
+  font-size: 12px;
+  color: var(--text-color-7);
+  font-weight: 330;
+  margin-top: 8px;
+  text-align: left;
+}
+.welcomeWrap{
+  position: relative;
+  height: calc(100% - 200px);
+}
+.welcome{
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 700px;
+  
+  .welcomeTextTitle{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+    img{
+      width: 26.5px;
+      height: 26.5px;
+    }
+    span{
+      font-size: 30px;
+      color: var(--text-color-9);
+      font-weight: 500;
+    }
+  }
+  .welcomeTextContent{
+    font-size: 18px;
+    color: var(--text-color-7);
+    font-weight: 400;
+    text-align: center;
+  }
+  
+  .featuresGrid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    margin-top: 36px;
+    .featureCard {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: 1px solid #e9ecef;
+      width: 330px;
+      &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+      
+      &:nth-child(1) {
+        background: var(--bg-color-feature-card1);
+        border: 0.3px solid rgba(0, 0, 0, 0.05);
+        
+        &:hover {
+          background: var(--bg-color-feature-card1-hover);
+        }
+      }
+      
+      &:nth-child(2) {
+        background: var(--bg-color-feature-card2);
+        border: 0.3px solid rgba(0, 0, 0, 0.05);
+        
+        &:hover {
+          background: var(--bg-color-feature-card2-hover);
+        }
+      }
+      
+      &:nth-child(3) {
+        background: var(--bg-color-feature-card3);
+        border: 0.3px solid rgba(0, 0, 0, 0.05);
+        
+        &:hover {
+          background: var(--bg-color-feature-card3-hover);
+        }
+      }
+      
+      &:nth-child(4) {
+        background: var(--bg-color-feature-card4);
+        border: 0.3px solid rgba(0, 0, 0, 0.05);
+        
+        &:hover {
+          background: var(--bg-color-feature-card4-hover);
+        }
+      }
+      
+      .featureTitle {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-color-60);
+        margin-bottom: 8px;
+        line-height: 1.4;
+      }
+      
+      .featureContent {
+
+        font-weight: 400;
+        
+        .clickableContent {
+          cursor: pointer;
+          padding: 0px;
+          font-size: 12px;
+          color: rgba(150, 150, 150, 1);
+          line-height: 1.66;
+          
+          &:hover {
+            color: var(--text-color);
+          }
+        }
+      }
+    }
+  }
+}

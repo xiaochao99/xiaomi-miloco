@@ -1,0 +1,5 @@
+recursive-include miot/libs *
+include miot/specs/*
+include miot/configs/*
+recursive-include miot/i18n *
+include miot/*.py

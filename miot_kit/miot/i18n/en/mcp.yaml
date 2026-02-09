@@ -1,0 +1,169 @@
+miot_manual_scenes:
+  name: "Xiaomi Home Manual Control Scene MCP Service"
+  instructions: "You can get the list of Xiaomi Home manual control scenes, execute a manual control scene, and send a notification to the Xiaomi Home app."
+  tools:
+    get_manual_scenes:
+      description: Get the list of Xiaomi Home manual control scenes (automation).
+    trigger_manual_scene:
+      description: "Execute a Xiaomi Home manual control scene (automation):\n
+        1. You need to use the correct scene ID;\n
+        2. If you have not retrieved the manual control scene list, you need to get the scene list first."
+      params:
+        scene_id: "Manual control scene (automation) ID"
+    send_app_notify:
+      description: "Send a notification message to the Xiaomi Home app."
+      params:
+        content: "Notification content"
+  prompts:
+  errors:
+    invalid_scene_id: "Scene ID ({{scene_id}}) does not exist. Please use the tool `get_manual_scenes` to get the correct scene ID before continuing."
+miot_devices:
+  name: "Xiaomi Home Device Control MCP Service"
+  instructions: "Provides capabilities for querying and controlling Xiaomi Home devices."
+  tools:
+    get_area_info:
+      description: "Get the list of Xiaomi Home areas (home or room)."
+      other:
+        home_name_default: "My Home"
+    get_device_classes:
+      description: "Get the list of Xiaomi Home device types"
+    get_devices:
+      description: "
+        Get the list of Xiaomi Home devices.\n
+        {{extra_device_params}}\n
+        {{extra_device_infos}}\n
+        "
+      params:
+        area_id: "Area ID, Xiaomi Home family or room ID, optional"
+        device_class: "Xiaomi Home device type, optional"
+    get_device_spec:
+      description: "Get the SPEC definition of a Xiaomi Home device."
+      params:
+        did: "Xiaomi Home device DID"
+    send_ctrl_rpc:
+      description:
+        "You are a tool for Xiaomi Home device control, please follow the steps below.\n
+        ### Control Steps:\n
+        1. Call `{{tool_name_get_devices}}`\n
+        - Get the list of controllable devices\n
+        - If multiple controllable devices exist, the user must specify the target device\n
+        \n
+        2. Call `{{tool_name_get_device_spec}}`\n
+        - Use the target device's `did`\n
+        - Query the SPEC instance definition of the device\n
+        - Identify the SPEC instance to control\n
+        \n
+        3. Generate the control `value` based on the SPEC definition\n
+        - When SPEC is of **action type**, `value` is an array\n
+        - The array elements are the values of each property to be set, in the format defined by SPEC\n
+        \n
+        4. Call `{{tool_name_send_ctrl_rpc}}`\n
+        - Pass parameters `did`, `iid`, and `value`\n
+        - Send control command to operate the device"
+      params:
+        did: "Xiaomi Home device DID"
+        iid: "SPEC instance ID"
+        value: "Control value, format must comply with SPEC definition"
+    send_get_rpc:
+      description:
+        "You are a tool for querying Xiaomi Home device properties. Please follow the steps below.\n
+        ### Query Steps:\n
+        1. Call `{{tool_name_get_devices}}`\n
+        - Get the list of controllable devices\n
+        - If multiple controllable devices exist, the user must specify the target device\n
+        \n
+        2. Call `{{tool_name_get_device_spec}}`\n
+        - Use the target device's `did`\n
+        - Query the SPEC instance definition of the device\n
+        - Identify the SPEC instance to query\n
+        \n
+        3. Call `{{tool_name_send_get_rpc}}`\n
+        - Pass parameters `did`, `iid`\n
+        - Send command to get the device status"
+      params:
+        did: "Xiaomi Home device DID"
+        iid: "SPEC instance ID"
+  prompts:
+    prompt_send_ctrl_rpc:
+      description: "Template for controlling Xiaomi Home devices."
+      content:
+        "You are a tool for Xiaomi Home device control, please follow the steps below.\n
+        ### Control Steps:\n
+        1. Call `{{tool_name_get_devices}}`\n
+        - Retrieve the list of controllable devices\n
+        - If multiple controllable devices exist, the user must specify the target device\n
+        \n
+        2. Call `{{tool_name_get_device_spec}}`\n
+        - Use the target device's `did`\n
+        - Query the SPEC instance definition of the device\n
+        - Identify the SPEC instance to control\n
+        \n
+        3. Generate the control `value` based on the SPEC definition\n
+        - When SPEC is of **action type**, `value` is an array\n
+        - The array elements are the values of each property to be set, in the format defined by SPEC\n
+        \n
+        4. Call `{{tool_name_send_ctrl_rpc}}`\n
+        - Pass parameters `did`, `iid`, and `value`\n
+        - Send control command to operate the device\n
+        \n
+        ### Output Requirements:\n
+        - Directly call the tool to execute the above steps\n
+        - Output nothing except the execution result"
+    prompt_send_get_rpc:
+      description: "Template for querying Xiaomi Home device status."
+      content:
+        "You are a tool for querying Xiaomi Home device properties. Please follow the steps below.\n
+        ### Query Steps:\n
+        1. Call `{{tool_name_get_devices}}`\n
+        - Retrieve the list of controllable devices\n
+        - If multiple controllable devices exist, the user must specify the target device\n
+        \n
+        2. Call `{{tool_name_get_device_spec}}`\n
+        - Use the target device's `did`\n
+        - Query the SPEC instance definition of the device\n
+        - Identify the SPEC instance to query\n
+        \n
+        3. Call `{{tool_name_send_get_rpc}}`\n
+        - Pass parameters `did`, `iid`\n
+        - Send command to get the device status\n
+        \n
+        ### Output Requirements:\n
+        - Directly call the tool to execute the above steps\n
+        - Output nothing except the execution result"
+  errors:
+    empty_devices: "No controllable devices found. Please import devices before continuing."
+    invalid_area_id: "No controllable devices found. Please check if there are devices in area ({{area_id}})."
+    invalid_device_class: "No controllable devices found. Please check if there are devices of type ({{device_class}})."
+    invalid_area_id_and_device_class: "No controllable devices found. Please check if area {{area_id}} has devices of type {{device_class}}."
+    spec_invalid_devices: "Device ({{did}}) does not exist. Please use the tool `get_devices` to get the correct device ID before continuing."
+    spec_get_failed: "Failed to get the SPEC function definition for device ({{did}}). Please try again"
+    invalid_spec_iid: "Invalid SPEC instance ID ({{iid}}). Please use the tool `get_device_spec` to get the correct SPEC instance ID before continuing."
+    spec_only_allow_prop: "Getting properties only supports SPEC instances of prop type."
+    ctrl_without_response: "Device ({{did}}) control failed, no response. Please try again"
+    ctrl_failed: "Device ({{did}}) control failed, {{err_msg}}"
+  extra:
+    device_infos: "\n
+      ### Device Area and Type Information\n
+      When getting the device list, select the correct area ID (area_id) from the following area info according to user description, and pass it as a parameter in the format `Area ID: Area Name`:\n
+      \n
+      {{extra_area_infos}}\n
+      \n
+      When getting the device list, select the correct type ID (device_class) from the following device type info according to user description, and pass it as a parameter in the format `Type ID: Type Name`\n
+      \n
+      {{extra_device_classes}}\n
+      User may choose not to pass area and type parameters if not specified."
+    device_params: "- Pass parameters as area ID and device type ID\n"
+ha_automations:
+  name: "Home Assistant Automation MCP Service"
+  instructions: "Provides capabilities for querying and executing Home Assistant automations"
+  tools:
+    get_automations:
+      description: "Get the list of Home Assistant automations (scenes)."
+    trigger_automation:
+      description: "Execute a Home Assistant automation (scene):\n
+        1. You need to use the correct scene ID;\n
+        2. If you have not retrieved the scene list, you need to get the scene list first."
+      params:
+        automation_id: "Home Assistant automation (scene) ID"
+  errors:
+    invalid_automation_id: "Scene ({{automation_id}}) not found. Please use the tool `get_automations` to get the correct scene ID before continuing"

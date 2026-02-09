@@ -1,0 +1,165 @@
+miot_manual_scenes:
+  name: "米家手動控制場景MCP服務"
+  instructions: "可以獲取米家的手動控制場景列表，執行米家手動控制場景，向米家APP發送一條通知。"
+  tools:
+    get_manual_scenes:
+      description: 獲取米家手動控制場景（自動化）列表。
+    trigger_manual_scene:
+      description: "執行米家手動控制場景（自動化）：\n
+        1. 需要使用正確的場景ID；\n
+        2. 如果尚未獲取過手動控制場景列表，需要先獲取場景列表。"
+      params:
+        scene_id: "手動控制場景（自動化）ID"
+    send_app_notify:
+      description: "發送一條通知訊息到米家APP。"
+      params:
+        content: "通知內容"
+  prompts:
+  errors:
+    invalid_scene_id: "場景ID（{{scene_id}}）不存在，請使用工具`get_manual_scenes`獲取正確的場景ID後繼續"
+miot_devices:
+  name: "米家設備控制MCP服務"
+  instructions: "提供米家設備資訊查詢和控制能力。"
+  tools:
+    get_area_info:
+      description: "獲取米家區域（家庭或房間）列表。"
+      other:
+        home_name_default: "我的家"
+    get_device_classes:
+      description: "獲取米家設備類型列表。"
+    get_devices:
+      description: "
+        獲取米家設備列表。\n
+        {{extra_device_params}}\n
+        {{extra_device_infos}}\n
+        "
+      params:
+        area_id: "區域ID，米家家庭或者房間ID，可選"
+        device_class: "米家設備類型，可選"
+    get_device_spec:
+      description: "獲取米家設備SPEC定義。"
+      params:
+        did: "米家設備DID"
+    send_ctrl_rpc:
+      description: "你是一個用於米家設備控制的工具，請按照下述步驟操作。\n
+        ### 控制步驟：\n
+        1. 調用 `{{tool_name_get_devices}}`\n
+        - 獲取可控設備列表\n
+        - 如果控制設備存在多個，需要使用者明確需要操作的目標設備\n
+        \n
+        2. 調用 `{{tool_name_get_device_spec}}`\n
+        - 使用目標設備的 `did`\n
+        - 查詢該設備的 SPEC 實例定義\n
+        - 確定需要控制的 SPEC 實例\n
+        \n
+        3. 根據 SPEC 定義生成控制 `value`\n
+        - 當 SPEC 為 **action 類**時，`value` 是一個陣列\n
+        - 陣列元素為需要設定的每一項屬性值，格式需符合 SPEC 定義的 `format`\n
+        \n
+        4. 調用 `{{tool_name_send_ctrl_rpc}}`\n
+        - 傳入的參數為`did`, `iid`和`value`\n
+        - 發送控制命令以控制設備"
+      params:
+        did: "米家設備DID"
+        iid: "SPEC實例ID"
+        value: "控制值，格式需符合SPEC定義"
+    send_get_rpc:
+      description: "你是一個用於米家設備屬性查詢的工具，請按照下述步驟操作。\n
+        ### 查詢步驟：\n
+        1. 調用 `{{tool_name_get_devices}}`\n
+        - 獲取可控設備列表\n
+        - 如果控制設備存在多個，需要使用者明確需要操作的目標設備\n
+        \n
+        2. 調用 `{{tool_name_get_device_spec}}`\n
+        - 使用目標設備的 `did`\n
+        - 查詢該設備的 SPEC 實例定義\n
+        - 確定需要查詢的 SPEC 實例\n
+        \n
+        3. 調用 `{{tool_name_send_get_rpc}}`\n
+        - 傳入的參數為`did`, `iid`\n
+        - 發送命令獲取設備狀態"
+      params:
+        did: "米家設備DID"
+        iid: "SPEC實例ID"
+  prompts:
+    prompt_send_ctrl_rpc:
+      description: "控制米家設備模板。"
+      content: "你是一個用於米家設備控制的工具，請按照下述步驟操作。\n
+        ### 控制步驟：\n
+        1. 調用 `{{tool_name_get_devices}}`\n
+        - 獲取可控設備列表\n
+        - 如果控制設備存在多個，需要使用者明確需要操作的目標設備\n
+        \n
+        2. 調用 `{{tool_name_get_device_spec}}`\n
+        - 使用目標設備的 `did`\n
+        - 查詢該設備的 SPEC 實例定義\n
+        - 確定需要控制的 SPEC 實例\n
+        \n
+        3. 根據 SPEC 定義生成控制 `value`\n
+        - 當 SPEC 為 **action 類**時，`value` 是一個陣列\n
+        - 陣列元素為需要設定的每一項屬性值，格式需符合 SPEC 定義的 `format`\n
+        \n
+        4. 調用 `{{tool_name_send_ctrl_rpc}}`\n
+        - 傳入的參數為`did`, `iid`和`value`\n
+        - 發送控制命令以控制設備\n
+        \n
+        ### 輸出要求：\n
+        - 直接調用工具執行上述步驟\n
+        - 除執行結果外，不輸出任何其他文字"
+    prompt_send_get_rpc:
+      description: "獲取米家設備狀態模板。"
+      content: "你是一個用於米家設備屬性查詢的工具，請按照下述步驟操作。\n
+        ### 查詢步驟：\n
+        1. 調用 `{{tool_name_get_devices}}`\n
+        - 獲取可控設備列表\n
+        - 如果控制設備存在多個，需要使用者明確需要操作的目標設備\n
+        \n
+        2. 調用 `{{tool_name_get_device_spec}}`\n
+        - 使用目標設備的 `did`\n
+        - 查詢該設備的 SPEC 實例定義\n
+        - 確定需要查詢的 SPEC 實例\n
+        \n
+        3. 調用 `{{tool_name_send_get_rpc}}`\n
+        - 傳入的參數為`did`, `iid`\n
+        - 發送命令獲取設備狀態\n
+        \n
+        ### 輸出要求：\n
+        - 直接調用工具執行上述步驟\n
+        - 除執行結果外，不輸出任何其他文字"
+  errors:
+    empty_devices: "沒有找到可控設備，請導入設備後再繼續"
+    invalid_area_id: "沒有找到可控設備，請確認區域（{{area_id}}）是否存在設備"
+    invalid_device_class: "沒有找到可控設備，請確認是否存在類型為（{{device_class}}）的設備"
+    invalid_area_id_and_device_class: "沒有找到可控設備，請確認區域{{area_id}}是否存在類型為{{device_class}}的設備"
+    spec_invalid_devices: "設備（{{did}}）不存在，請使用工具`get_devices`獲取正確的設備ID後再繼續"
+    spec_get_failed: "獲取設備（{{did}}）SPEC功能定義失敗，請重試"
+    invalid_spec_iid: "無效的SPEC實例ID（{{iid}}），請使用工具`get_device_spec`獲取正確的SPEC實例ID後再繼續"
+    spec_only_allow_prop: "查詢屬性僅支援prop類的SPEC實例"
+    ctrl_without_response: "設備（{{did}}）控制失敗，無回應，請重試"
+    ctrl_failed: "設備（{{did}}）控制失敗，{{err_msg}}"
+  extra:
+    device_infos: "\n
+      ### 設備區域及類型資訊\n
+      獲取設備列表時，根據使用者描述從下述區域資訊中選擇正確的區域ID（area_id）作為參數傳入，格式為`區域ID: 區域名稱`：\n
+      \n
+      {{extra_area_infos}}\n
+      \n
+      獲取設備列表時，根據使用者描述從下述設備類型資訊中選擇正確的類型ID（device_class）作為參數傳入，格式為`類型ID: 類型名稱`\n
+      \n
+      {{extra_device_classes}}\n
+      使用者如果沒有選擇設備區域和類型可以不傳。"
+    device_params: "- 傳入參數為區域ID和設備類型ID\n"
+ha_automations:
+  name: "Home Assistant自動化MCP服務"
+  instructions: "提供Home Assistant自動化查詢和執行能力。"
+  tools:
+    get_automations:
+      description: "獲取Home Assistant自動化（場景）列表。"
+    trigger_automation:
+      description: "執行Home Assistant自動化（場景）：\n
+        1. 需要使用正確的場景ID；\n
+        2. 如果尚未獲取過場景列表，需要先獲取場景列表。"
+      params:
+        automation_id: "Home Assistant自動化（場景）ID"
+  errors:
+    invalid_automation_id: "沒有找到場景（{{automation_id}}），請使用工具`get_automations`獲取正確的場景ID後再繼續"

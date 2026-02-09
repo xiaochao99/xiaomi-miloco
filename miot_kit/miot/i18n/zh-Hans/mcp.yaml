@@ -1,0 +1,167 @@
+miot_manual_scenes:
+  name: "米家手动控制场景MCP服务"
+  instructions: "可以获取米家的手动控制场景列表，执行米家手动控制场景，给米家APP发送一条通知。"
+  tools:
+    get_manual_scenes:
+      description: 获取米家手动控制场景（自动化）列表。
+    trigger_manual_scene:
+      description: "执行米家手动控制场景（自动化）：\n
+        1. 需要使用正确的场景ID；\n
+        2. 如果没有获取过手动控制场景列表，需要先获取场景列表。"
+      params:
+        scene_id: "手动控制场景（自动化）ID"
+    send_app_notify:
+      description: "发送一条通知消息到米家APP。"
+      params:
+        content: "通知内容"
+  prompts:
+  errors:
+    invalid_scene_id: "场景ID（{{scene_id}}）不存在，请使用工具`get_manual_scenes`获取正确的场景ID后继续"
+
+miot_devices:
+  name: "米家设备控制MCP服务"
+  instructions: "提供米家设备信息查询和控制能力。"
+  tools:
+    get_area_info:
+      description: "获取米家区域（家庭或房间）列表。"
+      other:
+        home_name_default: "我的家"
+    get_device_classes:
+      description: "获取米家设备类型列表。"
+    get_devices:
+      description: "
+        获取米家设备列表。\n
+        {{extra_device_params}}\n
+        {{extra_device_infos}}\n
+        "
+      params:
+        area_id: "区域ID，米家家庭或者房间ID，可选"
+        device_class: "米家设备类型，可选"
+    get_device_spec:
+      description: "获取米家设备SPEC定义。"
+      params:
+        did: "米家设备DID"
+    send_ctrl_rpc:
+      description: "你是一个用于米家设备控制的工具，请按照下述步骤操作。\n
+        ### 控制步骤：\n
+        1. 调用 `{{tool_name_get_devices}}`\n
+        - 获取可控设备列表\n
+        - 如果控制设备存在多个，需要用户明确需要操作的目标设备\n
+        \n
+        2. 调用 `{{tool_name_get_device_spec}}`\n
+        - 使用目标设备的 `did`\n
+        - 查询该设备的 SPEC 实例定义\n
+        - 确定需要控制的 SPEC 实例\n
+        \n
+        3. 根据 SPEC 定义生成控制 `value`\n
+        - 当 SPEC 为 **action 类**时，`value` 是一个数组\n
+        - 数组元素为需要设置的每一项属性值，格式需符合 SPEC 定义的 `format`\n
+        \n
+        4. 调用 `{{tool_name_send_ctrl_rpc}}`\n
+        - 传入的参数为`did`, `iid`和`value`\n
+        - 发送控制命令以控制设备"
+      params:
+        did: "米家设备DID"
+        iid: "SPEC实例ID"
+        value: "控制值，格式需符合SPEC定义"
+    send_get_rpc:
+      description: "你是一个用于米家设备属性查询的工具，请按照下述步骤操作。\n
+        ### 查询步骤：\n
+        1. 调用 `{{tool_name_get_devices}}`\n
+        - 获取可控设备列表\n
+        - 如果控制设备存在多个，需要用户明确需要操作的目标设备\n
+        \n
+        2. 调用 `{{tool_name_get_device_spec}}`\n
+        - 使用目标设备的 `did`\n
+        - 查询该设备的 SPEC 实例定义\n
+        - 确定需要查询的 SPEC 实例\n
+        \n
+        3. 调用 `{{tool_name_send_get_rpc}}`\n
+        - 传入的参数为`did`, `iid`\n
+        - 发送命令获取设备状态"
+      params:
+        did: "米家设备DID"
+        iid: "SPEC实例ID"
+  prompts:
+    prompt_send_ctrl_rpc:
+      description: "控制米家设备模板。"
+      content: "你是一个用于米家设备控制的工具，请按照下述步骤操作。\n
+        ### 控制步骤：\n
+        1. 调用 `{{tool_name_get_devices}}`\n
+        - 获取可控设备列表\n
+        - 如果控制设备存在多个，需要用户明确需要操作的目标设备\n
+        \n
+        2. 调用 `{{tool_name_get_device_spec}}`\n
+        - 使用目标设备的 `did`\n
+        - 查询该设备的 SPEC 实例定义\n
+        - 确定需要控制的 SPEC 实例\n
+        \n
+        3. 根据 SPEC 定义生成控制 `value`\n
+        - 当 SPEC 为 **action 类**时，`value` 是一个数组\n
+        - 数组元素为需要设置的每一项属性值，格式需符合 SPEC 定义的 `format`\n
+        \n
+        4. 调用 `{{tool_name_send_ctrl_rpc}}`\n
+        - 传入的参数为`did`, `iid`和`value`\n
+        - 发送控制命令以控制设备\n
+        \n
+        ### 输出要求：\n
+        - 直接调用工具执行上述步骤\n
+        - 除执行结果外，不输出任何其他文字"
+    prompt_send_get_rpc:
+      description: "获取米家设备状态模板。"
+      content: "你是一个用于米家设备属性查询的工具，请按照下述步骤操作。\n
+        ### 查询步骤：\n
+        1. 调用 `{{tool_name_get_devices}}`\n
+        - 获取可控设备列表\n
+        - 如果控制设备存在多个，需要用户明确需要操作的目标设备\n
+        \n
+        2. 调用 `{{tool_name_get_device_spec}}`\n
+        - 使用目标设备的 `did`\n
+        - 查询该设备的 SPEC 实例定义\n
+        - 确定需要查询的 SPEC 实例\n
+        \n
+        3. 调用 `{{tool_name_send_get_rpc}}`\n
+        - 传入的参数为`did`, `iid`\n
+        - 发送命令获取设备状态\n
+        \n
+        ### 输出要求：\n
+        - 直接调用工具执行上述步骤\n
+        - 除执行结果外，不输出任何其他文字"
+  errors:
+    empty_devices: "没有找到可控设备，请导入设备后继续"
+    invalid_area_id: "没有找到可控设备，请确认区域（{{area_id}}）是否存在设备"
+    invalid_device_class: "没有找到可控设备，请确认是否存在类型为（{{device_class}}）的设备"
+    invalid_area_id_and_device_class: "没有找到可控设备，请确认区域{{area_id}}是否存在类型为{{device_class}}的设备"
+    spec_invalid_devices: "设备（{{did}}）不存在，请使用工具`get_devices`获取正确的设备ID后继续"
+    spec_get_failed: "获取设备（{{did}}）SPEC功能定义失败，请重试"
+    invalid_spec_iid: "无效的SPEC实例ID（{{iid}}），请使用工具`get_device_spec`获取正确的SPEC实例ID后继续"
+    spec_only_allow_prop: "获取属性仅支持prop类的SPEC实例"
+    ctrl_without_response: "设备（{{did}}）控制失败，无响应，请重试"
+    ctrl_failed: "设备（{{did}}）控制失败，{{err_msg}}"
+  extra:
+    device_infos: "\n
+      ### 设备区域及类型信息\n
+      获取设备列表时，根据用户描述从下述区域信息中选择正确的区域ID（area_id）作为参数传入，格式为`区域ID: 区域名称`：\n
+      \n
+      {{extra_area_infos}}\n
+      \n
+      获取设备列表时，根据用户描述从下述设备类型信息中选择正确的类型ID（device_class）作为参数传入，格式为`类型ID: 类型名称`\n
+      \n
+      {{extra_device_classes}}\n
+      用户如果没有选择设备区域和类型可以不传。"
+    device_params: "- 传入参数为区域ID和设备类型ID\n"
+
+ha_automations:
+  name: "Home Assistant自动化MCP服务"
+  instructions: "提供Home Assistant自动化查询和执行能力。"
+  tools:
+    get_automations:
+      description: "获取Home Assistant自动化（场景）列表。"
+    trigger_automation:
+      description: "执行Home Assistant自动化（场景）：\n
+        1. 需要使用正确的场景ID；\n
+        2. 如果没有获取过场景列表，需要先获取场景列表。"
+      params:
+        automation_id: "Home Assistant自动化（场景）ID"
+  errors:
+    invalid_automation_id: "没有找到场景（{{automation_id}}），请使用工具`get_automations`获取正确的场景ID后继续"

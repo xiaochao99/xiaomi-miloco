@@ -1,0 +1,76 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.sidebarHeader {
+  position: relative;
+
+  &.dragging {
+    .expandedHeader,
+    .collapsedHeader {
+      transition: none !important;
+    }
+    
+    .newChatButton,
+    .toggleIcon,
+    .hamburgerIcon {
+      transition: none !important;
+    }
+  }
+  
+  .expandedHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 20px 20px 0px 20px;
+  }
+  
+  .collapsedHeader {
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    margin: 25px 8px 0px 8px;
+  }
+  
+  .newChatButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 5px 10px;
+    background: var(--bg-color-reverse);
+    border: none;
+    border-radius: 40px;
+    cursor: pointer;
+  }
+  .collapsedNewChatButton{
+    border-radius: 100%;
+    padding: 0;
+    width: 34px;
+    height: 34px;
+  }
+  
+  .newChatIcon {
+    flex: 1;
+    color: var(--text-color-inverse) !important;
+
+  }
+  .newChatText {
+    color: var(--text-color-inverse);
+    font-size: 14px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .toggleIcon {
+    cursor: pointer;
+    color: var(--text-color-secondary);
+  }
+
+}

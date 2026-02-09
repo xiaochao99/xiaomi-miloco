@@ -1,0 +1,43 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.gridContainer {
+  display: grid;
+  gap: 18px;
+  padding: 0;
+  padding-bottom: 50px;
+  height: 100%;
+  overflow-y: auto;
+  grid-auto-rows: min-content;
+  grid-template-columns: repeat(3, 1fr);
+}
+.gridContainer.columns1 {
+  grid-template-columns: repeat(1, 1fr);
+}
+
+.gridContainer.columns2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.gridContainer.columns3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.gridContainer.columns4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.gridContainer.columns5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.emptyWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}

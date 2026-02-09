@@ -1,0 +1,417 @@
+---
+# clang-format configuration file based on Google C++ Style Guide
+
+# Language: C++
+Language: Cpp
+
+# Base style: Google
+BasedOnStyle: Google
+
+# Offset for access modifiers (public, private, protected)
+AccessModifierOffset: -2
+
+# Alignment style after opening bracket
+AlignAfterOpenBracket: Align
+
+# Alignment of arrays of structures
+AlignArrayOfStructures: None
+
+# Alignment of consecutive assignments
+AlignConsecutiveAssignments: None
+
+# Alignment of consecutive bit field declarations
+AlignConsecutiveBitFields: None
+
+# Alignment of consecutive declarations
+AlignConsecutiveDeclarations: None
+
+# Alignment of consecutive macro definitions
+AlignConsecutiveMacros: None
+
+# Alignment of escaped newlines
+AlignEscapedNewlines: Left
+
+# Alignment of operands
+AlignOperands: Align
+
+# Alignment of trailing comments
+AlignTrailingComments: true
+
+# Allow all arguments on next line
+AllowAllArgumentsOnNextLine: true
+
+# Allow all constructor initializers on next line
+AllowAllConstructorInitializersOnNextLine: true
+
+# Allow all parameters of declaration on next line
+AllowAllParametersOfDeclarationOnNextLine: true
+
+# Allow short blocks on a single line
+AllowShortBlocksOnASingleLine: Never
+
+# Allow short case labels on a single line
+AllowShortCaseLabelsOnASingleLine: false
+
+# Allow short enums on a single line
+AllowShortEnumsOnASingleLine: true
+
+# Allow short functions on a single line
+AllowShortFunctionsOnASingleLine: All
+
+# Allow short if statements on a single line
+AllowShortIfStatementsOnASingleLine: WithoutElse
+
+# Allow short lambda expressions on a single line
+AllowShortLambdasOnASingleLine: All
+
+# Allow short loops on a single line
+AllowShortLoopsOnASingleLine: true
+
+# Always break after definition return type
+AlwaysBreakAfterDefinitionReturnType: None
+
+# Always break after return type
+AlwaysBreakAfterReturnType: None
+
+# Always break before multiline strings
+AlwaysBreakBeforeMultilineStrings: true
+
+# Always break template declarations
+AlwaysBreakTemplateDeclarations: Yes
+
+# Bin pack function call arguments
+BinPackArguments: true
+
+# Bin pack function declaration parameters
+BinPackParameters: true
+
+# Brace wrapping style
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterObjCDeclaration: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false
+  BeforeCatch: false
+  BeforeElse: false
+  BeforeLambdaBody: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+# Break before binary operators
+BreakBeforeBinaryOperators: None
+
+# Brace breaking style
+BreakBeforeBraces: Attach
+
+# Break before concept declarations
+BreakBeforeConceptDeclarations: true
+
+# Break before inheritance comma (deprecated)
+BreakBeforeInheritanceComma: false
+
+# Break before ternary operators
+BreakBeforeTernaryOperators: true
+
+# Constructor initializer breaking style
+BreakConstructorInitializers: BeforeColon
+
+# Break before constructor initializer comma (deprecated)
+BreakConstructorInitializersBeforeComma: false
+
+# Inheritance list breaking style
+BreakInheritanceList: BeforeColon
+
+# Break string literals
+BreakStringLiterals: true
+
+# Column limit: 120 characters per line
+ColumnLimit: 120
+
+# Comment pragma regular expression
+CommentPragmas: '^ IWYU pragma:'
+
+# Compact namespaces
+CompactNamespaces: false
+
+# Constructor initializer all on one line or one per line
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+
+# Constructor initializer indent width
+ConstructorInitializerIndentWidth: 4
+
+# Continuation indent width
+ContinuationIndentWidth: 4
+
+# C++11 braced list style
+Cpp11BracedListStyle: true
+
+# Derive line ending
+DeriveLineEnding: true
+
+# Derive pointer alignment
+DerivePointerAlignment: true
+
+# Disable formatting
+DisableFormat: false
+
+# Empty line after access modifier
+EmptyLineAfterAccessModifier: Never
+
+# Empty line before access modifier
+EmptyLineBeforeAccessModifier: LogicalBlock
+
+# Experimental auto detect bin packing
+ExperimentalAutoDetectBinPacking: false
+
+# Fix namespace comments
+FixNamespaceComments: true
+
+# ForEach macros
+ForEachMacros:
+  - foreach
+  - Q_FOREACH
+  - BOOST_FOREACH
+
+# Include blocks grouping
+IncludeBlocks: Regroup
+
+# Include file categories
+IncludeCategories:
+  - Regex: '^<ext/.*\.h>'
+    Priority: 2
+    SortPriority: 0
+  - Regex: '^<.*\.h>'
+    Priority: 1
+    SortPriority: 0
+  - Regex: '^<.*'
+    Priority: 2
+    SortPriority: 0
+  - Regex: '.*'
+    Priority: 3
+    SortPriority: 0
+
+# Main header file regular expression
+IncludeIsMainRegex: '([-_](test|unittest))?$'
+
+# Main source file regular expression
+IncludeIsMainSourceRegex: ''
+
+# Indent access modifiers
+IndentAccessModifiers: false
+
+# Indent case blocks
+IndentCaseBlocks: false
+
+# Indent case labels
+IndentCaseLabels: true
+
+# Indent extern block
+IndentExternBlock: AfterExternBlock
+
+# Indent goto labels
+IndentGotoLabels: true
+
+# Indent preprocessor directives
+IndentPPDirectives: None
+
+# Indent requires clause
+IndentRequires: false
+
+# Indent width: 4 spaces
+IndentWidth: 4
+
+# Indent wrapped function names
+IndentWrappedFunctionNames: false
+
+# Insert trailing commas
+InsertTrailingCommas: None
+
+# Keep empty lines at the start of blocks
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# Lambda body indentation
+LambdaBodyIndentation: Signature
+
+# Macro block begin
+MacroBlockBegin: ''
+
+# Macro block end
+MacroBlockEnd: ''
+
+# Maximum number of consecutive empty lines to keep
+MaxEmptyLinesToKeep: 1
+
+# Namespace indentation
+NamespaceIndentation: None
+
+# Objective-C protocol list bin packing
+ObjCBinPackProtocolList: Never
+
+# Objective-C block indent width
+ObjCBlockIndentWidth: 2
+
+# Objective-C break before nested block parameter
+ObjCBreakBeforeNestedBlockParam: true
+
+# Objective-C space after property
+ObjCSpaceAfterProperty: false
+
+# Objective-C space before protocol list
+ObjCSpaceBeforeProtocolList: true
+
+# Pack constructor initializers
+PackConstructorInitializers: NextLine
+
+# Penalty for breaking assignment
+PenaltyBreakAssignment: 2
+
+# Penalty for breaking before first call parameter
+PenaltyBreakBeforeFirstCallParameter: 1
+
+# Penalty for breaking comment
+PenaltyBreakComment: 300
+
+# Penalty for breaking before first <<
+PenaltyBreakFirstLessLess: 120
+
+# Penalty for breaking open parenthesis
+PenaltyBreakOpenParenthesis: 0
+
+# Penalty for breaking string
+PenaltyBreakString: 1000
+
+# Penalty for breaking template declaration
+PenaltyBreakTemplateDeclaration: 10
+
+# Penalty for excess character
+PenaltyExcessCharacter: 1000000
+
+# Penalty for indented whitespace
+PenaltyIndentedWhitespace: 0
+
+# Penalty for return type on its own line
+PenaltyReturnTypeOnItsOwnLine: 200
+
+# Pointer alignment: left (int* ptr)
+PointerAlignment: Left
+
+# Preprocessor indent width
+PPIndentWidth: -1
+
+# Reference alignment
+ReferenceAlignment: Pointer
+
+# Reflow comments
+ReflowComments: true
+
+# Separate definition blocks
+SeparateDefinitionBlocks: Leave
+
+# Short namespace lines
+ShortNamespaceLines: 1
+
+# Sort includes
+SortIncludes: CaseSensitive
+
+# Sort using declarations
+SortUsingDeclarations: true
+
+# Space after C-style cast
+SpaceAfterCStyleCast: false
+
+# Space after logical not
+SpaceAfterLogicalNot: false
+
+# Space after template keyword
+SpaceAfterTemplateKeyword: true
+
+# Space before assignment operators
+SpaceBeforeAssignmentOperators: true
+
+# Space before case colon
+SpaceBeforeCaseColon: false
+
+# Space before C++11 braced list
+SpaceBeforeCpp11BracedList: false
+
+# Space before constructor initializer colon
+SpaceBeforeCtorInitializerColon: true
+
+# Space before inheritance colon
+SpaceBeforeInheritanceColon: true
+
+# Space before parentheses
+SpaceBeforeParens: ControlStatements
+
+# Space before parentheses options
+SpaceBeforeParensOptions:
+  AfterControlStatements: true
+  AfterForeachMacros: true
+  AfterFunctionDefinitionName: false
+  AfterFunctionDeclarationName: false
+  AfterIfMacros: true
+  AfterOverloadedOperator: false
+  BeforeNonEmptyParentheses: false
+
+# Space around pointer qualifiers
+SpaceAroundPointerQualifiers: Default
+
+# Space before range-based for loop colon
+SpaceBeforeRangeBasedForLoopColon: true
+
+# Space before square brackets
+SpaceBeforeSquareBrackets: false
+
+# Space in empty block
+SpaceInEmptyBlock: false
+
+# Space in empty parentheses
+SpaceInEmptyParentheses: false
+
+# Number of spaces before trailing comments
+SpacesBeforeTrailingComments: 2
+
+# Spaces in angle brackets
+SpacesInAngles: Never
+
+# Spaces in conditional statement
+SpacesInConditionalStatement: false
+
+# Spaces in container literals
+SpacesInContainerLiterals: true
+
+# Spaces in C-style cast parentheses
+SpacesInCStyleCastParentheses: false
+
+# Spaces in line comment prefix
+SpacesInLineCommentPrefix:
+  Minimum: 1
+  Maximum: -1
+
+# Spaces in parentheses
+SpacesInParentheses: false
+
+# Spaces in square brackets
+SpacesInSquareBrackets: false
+
+# C++ standard
+Standard: Auto
+
+# Tab width
+TabWidth: 8
+
+# Use CRLF line endings
+UseCRLF: false
+
+# Use tab character
+UseTab: Never
+---

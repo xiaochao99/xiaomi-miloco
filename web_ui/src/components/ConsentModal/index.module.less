@@ -1,0 +1,67 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.consentModal {
+  .content {
+    padding: 20px 0;
+  }
+
+  .title {
+    font-size: 22px;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .welcomeText {
+    font-size: 16px;
+    line-height: 1.6;
+    color: #333;
+    margin-bottom: 24px;
+    text-align: left;
+  }
+
+  .consentSection {
+    margin-bottom: 32px;
+  }
+
+  .consentCheckbox {
+    display: flex;
+    align-items: flex-start;
+    
+    :global(.ant-checkbox) {
+      margin-top: 2px;
+    }
+  }
+
+  .consentText {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #666;
+    margin-left: 8px;
+  }
+
+  .link {
+    color: #1890ff;
+    text-decoration: none;
+    
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .buttonGroup {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+
+  .exitButton {
+    min-width: 80px;
+  }
+
+  .agreeButton {
+    min-width: 80px;
+  }
+}

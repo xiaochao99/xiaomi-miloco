@@ -1,0 +1,99 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.imageRecordModal {
+  :global(.ant-modal-content) {
+    border-radius: 8px;
+  }
+  
+  :global(.ant-modal-header) {
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 16px;
+  }
+  
+  :global(.ant-modal-title) {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+  
+  :global(.ant-modal-body) {
+  }
+}
+
+.modalTitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  
+  span {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+}
+
+.modalContent {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.cameraSection {
+  margin-bottom: 32px;
+  
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.cameraTitleWrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 10px 0 0px 0;
+  padding-bottom: 8px;
+}
+
+.cameraTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-color);
+  margin: 0;
+}
+
+.imageGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.imagePlaceholder {
+  aspect-ratio: 16/9;
+  background: #f5f5f5;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    border-color: #1890ff;
+    box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+  }
+  img {
+    width: 100%;
+    height: 100%;
+  }
+}
+.emptyWrap{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}

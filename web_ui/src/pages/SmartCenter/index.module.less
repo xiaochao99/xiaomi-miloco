@@ -1,0 +1,135 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+@import '../../theme/global.module.less';
+
+
+.customInfo{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  .customInfoItem{
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--text-color-7);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+}
+
+.cardLeft {
+  width: 440px;
+  height: auto;
+}
+
+.rightPanel {
+  width: 440px;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  transition: min-height 0.3s ease;
+
+
+}
+
+
+.manageCard {
+  width: 100%;
+  height: auto;
+  flex: 1;
+
+  .contentStyle{
+    padding: 0px 24px;
+    display: flex;
+    justify-content: flex-start;
+  }
+  .ruleListWrap{
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .pagination{
+    display: flex;
+    justify-content: flex-end;
+    margin: 16px 0px;
+    flex: 1;
+  }
+  .ruleList {
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .ruleItem {
+    padding: 20px 0px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    .ruleItemContent {
+      .ruleName {
+        font-weight: 450;
+        font-size: 16px;
+        line-height: 24px;
+        color: rgba(0, 0, 0, 1);
+        margin-bottom: 8px;
+      }
+      .ruleActions {
+        font-weight: 400;
+        font-size: 12px;
+        line-height: 18px;
+        color: rgba(0, 0, 0, 1);
+      }
+      .ruleActionsValue {
+        font-weight: 330;
+        font-size: 12px;
+        line-height: 18px;
+        color: rgba(0, 0, 0, 1);
+      }
+    }
+  }
+
+
+  .ruleOptions{
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-end;
+    .ruleSwitch {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      margin-bottom: 8px;
+    }
+    .ruleOptionEdit{
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
+}
+.empty{
+  margin: 20px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+
+.select {
+  width: 100%;
+}
+
+
+
+
+

@@ -1,0 +1,112 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.customMenu {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0px 4px;
+  width: 100%;
+
+  .menuItem {
+    display: flex;
+    align-items: center;
+    padding: 8px 0px;
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+    
+    &:hover {
+      background-color: var(--bg-color-menu-hover);
+    }
+
+    &.selected {
+      background-color: var(--bg-color-menu-hover);
+      color: #fff;
+
+      .menuIcon {
+        color: var(--text-color);
+      }
+
+      .menuLabel {
+        color: var(--text-color);
+      }
+    }
+
+    .menuIcon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      padding: 5px;
+      margin-left: 10px;
+    }
+
+    .menuLabel {
+      margin-left: 8px;
+      font-size: 16px;
+      font-weight: 400;
+      color: var(--text-color, #000);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+  }
+
+  &.collapsed {
+    padding: 0px 8px;
+    align-items: center;
+
+    .menuItem {
+      padding: 13px;
+      justify-content: center;
+      margin: 0 auto;
+      
+      .menuIcon {
+        margin: 0;
+        padding: 0px;
+        margin-left: 0px;
+      }
+
+      .menuLabel {
+        display: none;
+      }
+    }
+  }
+
+}
+
+.customMenu * {
+  box-sizing: border-box;
+}
+
+.menuTooltip {
+  :global(.ant-tooltip-inner) {
+    background-color: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  }
+
+  :global(.ant-tooltip-arrow) {
+    .ant-tooltip-arrow-content {
+      background-color: rgba(0, 0, 0, 0.85);
+    }
+  }
+}
+
+:global(.ant-tooltip.menuTooltip) {
+  .ant-tooltip-inner {
+    background-color: rgba(0, 0, 0, 0.85) !important;
+    color: #fff !important;
+    font-size: 12px !important;
+    padding: 6px 8px !important;
+    border-radius: 4px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  }
+}

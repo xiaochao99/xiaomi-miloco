@@ -1,0 +1,88 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+ 
+.deviceCard {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  &.offline {
+    opacity: 0.5;
+  }
+}
+.deviceCardContent {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.deviceIcon {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin-right: 13px;
+}
+
+.deviceImage {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.defaultIcon {
+  width: 48px;
+  height: 48px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.statusDot {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+
+  &.online {
+    background: #52c41a;
+  }
+
+  &.offline {
+    background: #ff4d4f;
+  }
+}
+
+.deviceInfo {
+  text-align: left;
+  flex: 1,
+}
+
+.deviceName {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color);
+  margin-bottom: 8px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.deviceDetails {
+  font-size: 12px;
+  color: #8c8c8c;
+  line-height: 1.4;
+}

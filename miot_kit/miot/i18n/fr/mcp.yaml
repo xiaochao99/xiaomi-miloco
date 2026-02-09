@@ -1,0 +1,170 @@
+miot_manual_scenes:
+  name: "Service MCP de contrôle manuel des scènes Xiaomi Home"
+  instructions: "Permet d'obtenir la liste des scènes de contrôle manuel de Xiaomi Home, d'exécuter une scène de contrôle manuel Xiaomi Home et d'envoyer une notification à l'application Xiaomi Home."
+  tools:
+    get_manual_scenes:
+      description: "Obtenir la liste des scènes (automatisation) de contrôle manuel Xiaomi Home."
+    trigger_manual_scene:
+      description:
+        "Exécuter une scène (automatisation) de contrôle manuel Xiaomi Home :\n
+        1. Utiliser l'identifiant correct de la scène ;\n
+        2. Si la liste des scènes de contrôle manuel n'a pas encore été récupérée, il faut d'abord obtenir la liste des scènes."
+      params:
+        scene_id: "ID de la scène (automatisation) de contrôle manuel"
+    send_app_notify:
+      description: "Envoyer une notification à l'application Xiaomi Home."
+      params:
+        content: "Contenu de la notification"
+  prompts:
+  errors:
+    invalid_scene_id: "L'ID de la scène ({{scene_id}}) n'existe pas, veuillez utiliser l'outil `get_manual_scenes` pour obtenir un ID de scène correct avant de continuer"
+miot_devices:
+  name: "Service MCP de contrôle des appareils Xiaomi Home"
+  instructions: "Fournit la capacité de consulter et de contrôler les appareils Xiaomi Home."
+  tools:
+    get_area_info:
+      description: "Obtenir la liste des zones Xiaomi Home (maison ou pièce)."
+      other:
+        home_name_default: "Ma maison"
+    get_device_classes:
+      description: "Obtenir la liste des types d'appareils Xiaomi Home."
+    get_devices:
+      description: "
+        Obtenir la liste des appareils Xiaomi Home.\n
+        {{extra_device_params}}\n
+        {{extra_device_infos}}\n
+        "
+      params:
+        area_id: "ID de la zone, Maison ou pièce Xiaomi Home, optionnel"
+        device_class: "Type d'appareil Xiaomi Home, optionnel"
+    get_device_spec:
+      description: "Obtenir la définition SPEC d'un appareil Xiaomi Home."
+      params:
+        did: "DID de l'appareil Xiaomi Home"
+    send_ctrl_rpc:
+      description:
+        "Vous êtes un outil pour contrôler des appareils Xiaomi Home, suivez les étapes ci-dessous :\n
+        ### Étapes de contrôle :\n
+        1. Appeler `{{tool_name_get_devices}}`\n
+        - Récupérer la liste des appareils contrôlables\n
+        - Si plusieurs appareils sont disponibles, demander à l'utilisateur de préciser l'appareil cible\n
+        \n
+        2. Appeler `{{tool_name_get_device_spec}}`\n
+        - Utiliser le `did` de l'appareil cible\n
+        - Consulter la définition SPEC de l'appareil\n
+        - Identifier l'instance SPEC à contrôler\n
+        \n
+        3. Générer la valeur de contrôle `value` en fonction de la définition SPEC\n
+        - Si SPEC est de type **action**, `value` est un tableau\n
+        - Chaque élément du tableau correspond à une valeur de propriété à définir, respectant le format défini dans SPEC\n
+        \n
+        4. Appeler `{{tool_name_send_ctrl_rpc}}`\n
+        - Paramètres d'entrée : `did`, `iid` et `value`\n
+        - Envoyer la commande pour contrôler l'appareil"
+      params:
+        did: "DID de l'appareil Xiaomi Home"
+        iid: "ID de l'instance SPEC"
+        value: "Valeur de contrôle, format conforme à la définition SPEC"
+    send_get_rpc:
+      description:
+        "Vous êtes un outil pour interroger les propriétés d'appareils Xiaomi Home, suivez les étapes ci-dessous :\n
+        ### Étapes de consultation :\n
+        1. Appeler `{{tool_name_get_devices}}`\n
+        - Récupérer la liste des appareils contrôlables\n
+        - Si plusieurs appareils sont disponibles, demander à l'utilisateur de préciser l'appareil cible\n
+        \n
+        2. Appeler `{{tool_name_get_device_spec}}`\n
+        - Utiliser le `did` de l'appareil cible\n
+        - Consulter la définition SPEC de l'appareil\n
+        - Identifier l'instance SPEC à interroger\n
+        \n
+        3. Appeler `{{tool_name_send_get_rpc}}`\n
+        - Paramètres d'entrée : `did`, `iid`\n
+        - Envoyer la commande pour obtenir l'état de l'appareil"
+      params:
+        did: "DID de l'appareil Xiaomi Home"
+        iid: "ID de l'instance SPEC"
+  prompts:
+    prompt_send_ctrl_rpc:
+      description: "Modèle de contrôle d'un appareil Xiaomi Home."
+      content:
+        "Vous êtes un outil pour contrôler des appareils Xiaomi Home, suivez les étapes ci-dessous :\n
+        ### Étapes de contrôle :\n
+        1. Appeler `{{tool_name_get_devices}}`\n
+        - Récupérer la liste des appareils contrôlables\n
+        - Si plusieurs appareils sont disponibles, demander à l'utilisateur de préciser l'appareil cible\n
+        \n
+        2. Appeler `{{tool_name_get_device_spec}}`\n
+        - Utiliser le did de l'appareil cible\n
+        - Consulter la définition SPEC de l'appareil\n
+        - Identifier l'instance SPEC à contrôler\n
+        \n
+        3. Générer la valeur de contrôle `value` selon la définition SPEC\n
+        - Si SPEC est de type **action**, `value` est un tableau\n
+        - Chaque élément du tableau correspond à une valeur de propriété à définir, respectant le format de SPEC\n
+        \n
+        4. Appeler `{{tool_name_send_ctrl_rpc}}`\n
+        - Paramètres d'entrée : `did`, `iid` et `value`\n
+        - Envoyer la commande pour contrôler l'appareil\n
+        \n
+        ### Exigences de sortie :\n
+        - Appeler directement l'outil pour exécuter les étapes ci-dessus\n
+        - Ne pas produire d'autre texte que le résultat de l'exécution"
+    prompt_send_get_rpc:
+      description: "Modèle pour obtenir l'état d'un appareil Xiaomi Home."
+      content:
+        "Vous êtes un outil pour interroger les propriétés d'appareils Xiaomi Home, suivez les étapes ci-dessous :\n
+        ### Étapes de consultation :\n
+        1. Appeler `{{tool_name_get_devices}}`\n
+        - Récupérer la liste des appareils contrôlables\n
+        - Si plusieurs appareils sont disponibles, demander à l'utilisateur de préciser l'appareil cible\n
+        \n
+        2. Appeler `{{tool_name_get_device_spec}}`\n
+        - Utiliser le `did` de l'appareil cible\n
+        - Consulter la définition SPEC de l'appareil\n
+        - Identifier l'instance SPEC à interroger\n
+        \n
+        3. Appeler `{{tool_name_send_get_rpc}}`\n
+        - Paramètres d'entrée : `did`, `iid`\n
+        - Envoyer la commande pour obtenir l'état de l'appareil\n
+        \n
+        ### Exigences de sortie :\n
+        - Appeler directement l'outil pour exécuter les étapes ci-dessus\n
+        - Ne pas produire d'autre texte que le résultat de l'exécution"
+  errors:
+    empty_devices: "Aucun appareil contrôlable trouvé, veuillez importer des appareils avant de continuer"
+    invalid_area_id: "Aucun appareil trouvé, vérifiez si la zone ({{area_id}}) contient des appareils"
+    invalid_device_class: "Aucun appareil trouvé, vérifiez si des appareils de type ({{device_class}}) existent"
+    invalid_area_id_and_device_class: "Aucun appareil trouvé, vérifiez si la zone {{area_id}} contient des appareils du type {{device_class}}"
+    spec_invalid_devices: "L'appareil ({{did}}) n'existe pas, veuillez utiliser l'outil `get_devices` pour obtenir un ID d'appareil correct avant de continuer"
+    spec_get_failed: "Échec de la récupération de la définition SPEC pour l'appareil ({{did}}), veuillez réessayer"
+    invalid_spec_iid: "ID d'instance SPEC ({{iid}}) invalide, veuillez utiliser l'outil `get_device_spec` pour obtenir un ID correct"
+    spec_only_allow_prop: "Seules les instances SPEC de type 'prop' sont prises en charge pour l'interrogation"
+    ctrl_without_response: "Échec du contrôle de l'appareil ({{did}}), aucune réponse, veuillez réessayer"
+    ctrl_failed: "Échec du contrôle de l'appareil ({{did}}), {{err_msg}}"
+  extra:
+    device_infos: "\n
+      ### Informations sur la zone et le type d'appareil\n
+      Lors de l'obtention de la liste des appareils, sélectionnez l'ID de la zone approprié (area_id) dans les informations ci-dessous en fonction de la description de l'utilisateur :\n
+      \n
+      {{extra_area_infos}}\n
+      \n
+      Lors de l'obtention de la liste des appareils, sélectionnez l'ID de type approprié (device_class) dans les informations ci-dessous :\n
+      \n
+      {{extra_device_classes}}\n
+      L'utilisateur peut ne pas fournir la zone ou le type s'il ne le souhaite pas."
+    device_params: "- Les paramètres sont : ID de zone et ID de type d'appareil\n"
+ha_automations:
+  name: "Service MCP d'automatisation Home Assistant"
+  instructions: "Fournit la capacité de consulter et d'exécuter des automatisations Home Assistant."
+  tools:
+    get_automations:
+      description: "Obtenir la liste des automatisations (scènes) Home Assistant."
+    trigger_automation:
+      description: "Exécuter une automatisation (scène) Home Assistant :\n
+        1. Utiliser l'ID correct de la scène ;\n
+        2. Si la liste des scènes n'a pas encore été récupérée, il faut d'abord l'obtenir."
+      params:
+        automation_id: "ID de l'automatisation (scène) Home Assistant"
+  errors:
+    invalid_automation_id: "Scène ({{automation_id}}) introuvable, veuillez utiliser l'outil `get_automations` pour obtenir un ID de scène correct avant de continuer"
