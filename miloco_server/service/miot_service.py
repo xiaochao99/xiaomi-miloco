@@ -356,3 +356,254 @@ class MiotService:
         except Exception as e:
             logger.error("Failed to get MiOT scene action list: %s", e)
             raise MiotServiceException(f"Failed to get MiOT scene action list: {str(e)}") from e
+
+    def get_camera_config(self) -> dict:
+        """
+        Get camera configuration
+
+        Returns:
+            dict: Camera configuration including video_quality, vision_img_resolution, frame_interval
+        """
+        from miloco_server.config.normal_config import CAMERA_CONFIG
+        return {
+            "video_quality": CAMERA_CONFIG.get("video_quality", "HIGH"),
+            "vision_img_resolution": CAMERA_CONFIG.get("vision_img_resolution", 640),
+            "frame_interval": CAMERA_CONFIG.get("frame_interval", 500)
+        }
+
+    def set_camera_config(self, video_quality: str, vision_img_resolution) -> dict:
+        """
+        Set camera configuration
+
+        Args:
+            video_quality: Video quality (LOW or HIGH)
+            vision_img_resolution: Vision image resolution width
+
+        Returns:
+            dict: Updated camera configuration
+        """
+        logger.info("Setting camera config: video_quality=%s, vision_img_resolution=%s", 
+                   video_quality, vision_img_resolution)
+        
+        # Validate video_quality
+        if video_quality not in ["LOW", "HIGH"]:
+            raise ValueError(f"video_quality must be 'LOW' or 'HIGH', got: {video_quality}")
+
+        # Convert vision_img_resolution to int and validate
+        try:
+            vision_img_resolution = int(vision_img_resolution)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"vision_img_resolution must be a valid integer, got: {vision_img_resolution}") from e
+        
+        if vision_img_resolution < 0:
+            raise ValueError(f"vision_img_resolution must be a non-negative integer, got: {vision_img_resolution}")
+
+        # Update configuration in memory and save to file
+        from miloco_server.config.normal_config import CAMERA_CONFIG, save_camera_config
+        CAMERA_CONFIG["video_quality"] = video_quality
+        CAMERA_CONFIG["vision_img_resolution"] = vision_img_resolution
+        
+        # Persist to YAML file
+        save_camera_config(video_quality, vision_img_resolution)
+
+        # Update miot_proxy dynamically without restart
+        self._miot_proxy.update_camera_config(video_quality, vision_img_resolution)
+
+        logger.info("Camera configuration updated and saved successfully")
+        return self.get_camera_config()
+    
+    # ==================== RTSP Camera Management ====================
+
+    def get_rtsp_cameras(self) -> List[dict]:
+        """
+        Get all RTSP camera configurations
+
+        Returns:
+            List[dict]: List of RTSP camera configurations
+        """
+        from miloco_server.config.normal_config import RTSP_CAMERA_CONFIG
+        cameras = []
+        for camera in RTSP_CAMERA_CONFIG:
+            cameras.append({
+                "did": camera.get("did", ""),
+                "name": camera.get("name", ""),
+                "rtsp_url": camera.get("rtsp_url", ""),
+                "enable_audio": camera.get("enable_audio", False),
+                "transport": camera.get("transport", "udp"),
+                "home_name": camera.get("home_name", "家"),
+                "room_name": camera.get("room_name", "客厅"),
+                "codec": camera.get("codec", None),
+                "vendor": camera.get("vendor", None),
+                "model": camera.get("model", "rtsp_camera"),
+                "icon": camera.get("icon", None)
+            })
+        return cameras
+
+    def create_rtsp_camera(self, camera_data: dict) -> dict:
+        """
+        Create a new RTSP camera
+
+        Args:
+            camera_data: Camera configuration data
+
+        Returns:
+            dict: Created camera configuration
+
+        Raises:
+            ValueError: If camera with same did already exists
+        """
+        from miloco_server.config.normal_config import RTSP_CAMERA_CONFIG
+
+        did = camera_data.get("did")
+
+        # Check if camera with same did exists
+        for camera in RTSP_CAMERA_CONFIG:
+            if camera.get("did") == did:
+                raise ValueError(f"Camera with did '{did}' already exists")
+
+        # Validate transport
+        transport = camera_data.get("transport", "udp")
+        if transport not in ["tcp", "udp"]:
+            raise ValueError("transport must be 'tcp' or 'udp'")
+
+        # Create new camera config with all required fields for RtspCameraConfig
+        new_camera = {
+            "did": did,
+            "name": camera_data.get("name", ""),
+            "rtsp_url": camera_data.get("rtsp_url", ""),
+            "enable_audio": camera_data.get("enable_audio", False),
+            "transport": transport,
+            "home_name": camera_data.get("home_name", "家"),
+            "room_name": camera_data.get("room_name", "客厅"),
+            "codec": camera_data.get("codec", None),
+            "vendor": camera_data.get("vendor", None),
+            "model": camera_data.get("model", "rtsp_camera"),
+            "icon": camera_data.get("icon", None)
+        }
+
+        RTSP_CAMERA_CONFIG.append(new_camera)
+        
+        # Persist to YAML file
+        from miloco_server.config.normal_config import save_rtsp_cameras
+        save_rtsp_cameras(RTSP_CAMERA_CONFIG.copy())
+        
+        # Update miot_proxy dynamically without restart
+        import asyncio
+        try:
+            asyncio.create_task(self._miot_proxy.update_rtsp_camera_configs(RTSP_CAMERA_CONFIG.copy()))
+            logger.info("RTSP camera configs update scheduled: %s", did)
+        except Exception as e:
+            logger.warning("Failed to schedule RTSP camera config update: %s", e)
+        
+        logger.info("RTSP camera created and saved: %s", did)
+
+        return new_camera
+
+    def update_rtsp_camera(self, did: str, camera_data: dict) -> dict:
+        """
+        Update an existing RTSP camera
+
+        Args:
+            did: Camera unique id
+            camera_data: Camera configuration data to update
+
+        Returns:
+            dict: Updated camera configuration
+
+        Raises:
+            ValueError: If camera not found
+        """
+        from miloco_server.config.normal_config import RTSP_CAMERA_CONFIG
+
+        # Find camera by did
+        for camera in RTSP_CAMERA_CONFIG:
+            if camera.get("did") == did:
+                # Update fields
+                if "name" in camera_data:
+                    camera["name"] = camera_data["name"]
+                if "rtsp_url" in camera_data:
+                    camera["rtsp_url"] = camera_data["rtsp_url"]
+                if "enable_audio" in camera_data:
+                    camera["enable_audio"] = camera_data["enable_audio"]
+                if "transport" in camera_data:
+                    transport = camera_data["transport"]
+                    if transport not in ["tcp", "udp"]:
+                        raise ValueError("transport must be 'tcp' or 'udp'")
+                    camera["transport"] = transport
+                if "home_name" in camera_data:
+                    camera["home_name"] = camera_data["home_name"]
+                if "room_name" in camera_data:
+                    camera["room_name"] = camera_data["room_name"]
+                if "codec" in camera_data:
+                    camera["codec"] = camera_data["codec"]
+                if "vendor" in camera_data:
+                    camera["vendor"] = camera_data["vendor"]
+                if "model" in camera_data:
+                    camera["model"] = camera_data["model"]
+                if "icon" in camera_data:
+                    camera["icon"] = camera_data["icon"]
+
+                # Persist to YAML file
+                from miloco_server.config.normal_config import save_rtsp_cameras
+                save_rtsp_cameras(RTSP_CAMERA_CONFIG.copy())
+                
+                # Update miot_proxy dynamically without restart
+                import asyncio
+                try:
+                    asyncio.create_task(self._miot_proxy.update_rtsp_camera_configs(RTSP_CAMERA_CONFIG.copy()))
+                    logger.info("RTSP camera configs update scheduled after update: %s", did)
+                except Exception as e:
+                    logger.warning("Failed to schedule RTSP camera config update: %s", e)
+                
+                logger.info("RTSP camera updated and saved: %s", did)
+                return {
+                    "did": camera["did"],
+                    "name": camera["name"],
+                    "rtsp_url": camera["rtsp_url"],
+                    "enable_audio": camera["enable_audio"],
+                    "transport": camera.get("transport", "udp"),
+                    "home_name": camera.get("home_name", "家"),
+                    "room_name": camera.get("room_name", "客厅"),
+                    "codec": camera.get("codec", None),
+                    "vendor": camera.get("vendor", None),
+                    "model": camera.get("model", "rtsp_camera"),
+                    "icon": camera.get("icon", None)
+                }
+
+        raise ValueError(f"Camera with did '{did}' not found")
+
+    def delete_rtsp_camera(self, did: str) -> bool:
+        """
+        Delete an RTSP camera
+
+        Args:
+            did: Camera unique id
+
+        Returns:
+            bool: True if deleted successfully
+
+        Raises:
+            ValueError: If camera not found
+        """
+        from miloco_server.config.normal_config import RTSP_CAMERA_CONFIG
+
+        for i, camera in enumerate(RTSP_CAMERA_CONFIG):
+            if camera.get("did") == did:
+                RTSP_CAMERA_CONFIG.pop(i)
+                
+                # Persist to YAML file
+                from miloco_server.config.normal_config import save_rtsp_cameras
+                save_rtsp_cameras(RTSP_CAMERA_CONFIG.copy())
+                
+                # Update miot_proxy dynamically without restart
+                import asyncio
+                try:
+                    asyncio.create_task(self._miot_proxy.update_rtsp_camera_configs(RTSP_CAMERA_CONFIG.copy()))
+                    logger.info("RTSP camera configs update scheduled after delete: %s", did)
+                except Exception as e:
+                    logger.warning("Failed to schedule RTSP camera config update: %s", e)
+                
+                logger.info("RTSP camera deleted and saved: %s", did)
+                return True
+
+        raise ValueError(f"Camera with did '{did}' not found")

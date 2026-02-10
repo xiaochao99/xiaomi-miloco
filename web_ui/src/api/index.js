@@ -74,3 +74,13 @@ export const deleteChatHistory = (id) => deleteApi(`/api/chat/history/${id}`);
 export const getAPITokenList = () => getApi('/api/tokens/list');
 export const createAPIToken = (data) => postApi('/api/tokens/create', data);
 export const deleteAPIToken = (data) => postApi('/api/tokens/delete', data);
+
+// Camera configuration
+export const getCameraConfig = () => getApi('/api/miot/camera_config');
+export const setCameraConfig = (data) => postApi('/api/miot/camera_config', data);
+
+// RTSP Camera management
+export const getRTSPCameras = () => getApi('/api/miot/rtsp_cameras');
+export const createRTSPCamera = (data) => postApi('/api/miot/rtsp_cameras', data);
+export const updateRTSPCamera = (did, data) => putApi(`/api/miot/rtsp_cameras/${did}`, data);
+export const deleteRTSPCamera = (did) => deleteApi(`/api/miot/rtsp_cameras/${did}`);
