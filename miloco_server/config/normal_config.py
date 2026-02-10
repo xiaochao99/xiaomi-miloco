@@ -9,7 +9,8 @@ Load configuration from server_config.yaml
 
 import os
 from pathlib import Path
-from .config_loader import load_yaml_config, get_project_root
+from typing import Dict, Any, List
+from .config_loader import load_yaml_config, save_yaml_config, get_project_root
 
 # Get project root directory
 PROJECT_ROOT = get_project_root()
@@ -118,3 +119,30 @@ RTSP_CAMERA_CONFIG = _config.get("rtsp_cameras", [])
 MIOT_CONFIG = {
     "cloud_server": _config["miot"]["cloud_server"],
 }
+
+
+def save_camera_config(video_quality: str, vision_img_resolution: int) -> None:
+    """
+    Save camera configuration to YAML file
+    
+    Args:
+        video_quality: Video quality setting (LOW or HIGH)
+        vision_img_resolution: Vision image resolution width
+    """
+    global _config
+    _config["camera"]["video_quality"] = video_quality
+    _config["camera"]["vision_img_resolution"] = vision_img_resolution
+    save_yaml_config(CONFIG_FILE, _config)
+
+
+def save_rtsp_cameras(cameras: List[Dict[str, Any]]) -> None:
+    """
+    Save RTSP camera configuration to YAML file
+    
+    Args:
+        cameras: List of RTSP camera configurations
+    """
+    global _config, RTSP_CAMERA_CONFIG
+    _config["rtsp_cameras"] = cameras
+    RTSP_CAMERA_CONFIG = cameras
+    save_yaml_config(CONFIG_FILE, _config)

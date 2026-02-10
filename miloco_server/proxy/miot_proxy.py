@@ -17,7 +17,7 @@ from miot.camera import MIoTCameraInstance
 from miot.rtsp_camera import RtspCameraInfo, RTSPCamera
 from miot.rtsp_server import RtspServer
 
-from miloco_server.config import MIOT_CACHE_DIR, CAMERA_CONFIG, RTSP_CAMERA_CONFIG, RTSP_SERVER_CONFIG
+from miloco_server.config import MIOT_CACHE_DIR, CAMERA_CONFIG, RTSP_CAMERA_CONFIG, RTSP_SERVER_CONFIG, load_yaml_config, CONFIG_FILE
 from miloco_server.dao.kv_dao import AuthConfigKeys, KVDao, DeviceInfoKeys
 from miloco_server.schema.miot_schema import CameraImgSeq
 from miloco_server.schema.rtsp_camera_schema import RtspCameraConfig
@@ -576,3 +576,67 @@ class MiotProxy:
             )
             await self.refresh_xiaomi_home_token_info()
             logger.info("Token refresh completed successfully")
+
+    def update_camera_config(self, video_quality: str, vision_img_resolution: int) -> None:
+        """
+        Update camera configuration dynamically without restart
+        
+        Args:
+            video_quality: Video quality setting (LOW or HIGH)
+            vision_img_resolution: Vision image resolution width
+        """
+        from miot.types import MIoTCameraVideoQuality
+        
+        logger.info("Updating camera config dynamically: video_quality=%s, vision_img_resolution=%s",
+                   video_quality, vision_img_resolution)
+        
+        # Update instance variables
+        self._camera_video_quality = MIoTCameraVideoQuality[video_quality]
+        self._vision_img_resolution = vision_img_resolution
+        
+        # Update miot client
+        self._miot_client.vision_img_resolution = vision_img_resolution
+        
+        # Update existing camera managers with new vision_img_resolution
+        for did, manager in self._camera_img_managers.items():
+            try:
+                if hasattr(manager, '_vision_img_resolution'):
+                    manager._vision_img_resolution = vision_img_resolution
+                    logger.debug("Updated manager %s vision_img_resolution to %s", did, vision_img_resolution)
+            except Exception as e:
+                logger.warning("Failed to update manager %s: %s", did, e)
+        
+        logger.info("Camera config updated successfully. Note: Video quality will take effect on next stream reconnect.")
+
+    async def update_rtsp_camera_configs(self, rtsp_cameras: list[dict]) -> None:
+        """
+        Update RTSP camera configurations dynamically without restart
+        
+        Args:
+            rtsp_cameras: List of RTSP camera configuration dictionaries
+        """
+        logger.info("Updating RTSP camera configs dynamically, count=%s", len(rtsp_cameras))
+        
+        # Initialize RTSP camera client if not exists and there are cameras
+        if rtsp_cameras and not self._rtsp_camera_client:
+            try:
+                self._rtsp_camera_client = RTSPCamera(
+                    frame_interval=self._frame_interval,
+                    vision_img_resolution=self._vision_img_resolution
+                )
+                logger.info("RTSP camera client initialized dynamically")
+            except FileNotFoundError as exc:
+                logger.warning("RTSP library not found, will mark RTSP cameras offline: %s", exc)
+            except Exception as exc:
+                logger.error("Failed to initialize RTSP camera client: %s", exc)
+        
+        # Convert configs to RtspCameraConfig objects
+        self._rtsp_camera_configs = [
+            RtspCameraConfig.model_validate(cfg) if not isinstance(cfg, RtspCameraConfig) else cfg
+            for cfg in rtsp_cameras
+        ]
+        
+        # Refresh RTSP cameras to apply new configs
+        await self._refresh_rtsp_cameras()
+        
+        logger.info("RTSP camera configs updated and refreshed successfully")
