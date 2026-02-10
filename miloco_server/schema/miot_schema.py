@@ -129,3 +129,48 @@ class HAConfig(BaseModel):
     """Home Assistant configuration request"""
     base_url: str = Field(..., description="Home Assistant base URL", min_length=1)
     token: str = Field(..., description="Home Assistant access token", min_length=1)
+
+
+class CameraConfig(BaseModel):
+    """Camera configuration"""
+    video_quality: str = Field(..., description="Video quality: LOW or HIGH")
+    vision_img_resolution: int = Field(..., description="Vision image resolution width", ge=0)
+
+
+class CameraConfigResponse(BaseModel):
+    """Camera configuration response"""
+    video_quality: str = Field(..., description="Video quality: LOW or HIGH")
+    vision_img_resolution: int = Field(..., description="Vision image resolution width", ge=0)
+    frame_interval: int = Field(..., description="Frame capture interval in milliseconds")
+
+
+class RTSPCameraItem(BaseModel):
+    """RTSP camera item for API"""
+    did: str = Field(..., description="Camera unique id")
+    name: str = Field(..., description="Camera display name")
+    rtsp_url: str = Field(..., description="RTSP url")
+    enable_audio: bool = Field(default=False, description="Enable audio")
+    transport: str = Field(default="udp", description="Transport protocol: tcp or udp")
+    home_name: Optional[str] = Field(default=None, description="Home name")
+    room_name: Optional[str] = Field(default=None, description="Room name")
+
+
+class RTSPCameraCreateRequest(BaseModel):
+    """Create RTSP camera request"""
+    did: str = Field(..., description="Camera unique id", min_length=1)
+    name: str = Field(..., description="Camera display name", min_length=1)
+    rtsp_url: str = Field(..., description="RTSP url", min_length=1)
+    enable_audio: bool = Field(default=False, description="Enable audio")
+    transport: str = Field(default="udp", description="Transport protocol: tcp or udp")
+    home_name: Optional[str] = Field(default="家", description="Home name")
+    room_name: Optional[str] = Field(default="客厅", description="Room name")
+
+
+class RTSPCameraUpdateRequest(BaseModel):
+    """Update RTSP camera request"""
+    name: Optional[str] = Field(default=None, description="Camera display name")
+    rtsp_url: Optional[str] = Field(default=None, description="RTSP url")
+    enable_audio: Optional[bool] = Field(default=None, description="Enable audio")
+    transport: Optional[str] = Field(default=None, description="Transport protocol: tcp or udp")
+    home_name: Optional[str] = Field(default=None, description="Home name")
+    room_name: Optional[str] = Field(default=None, description="Room name")

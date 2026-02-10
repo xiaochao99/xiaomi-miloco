@@ -10,7 +10,7 @@ import os
 from collections import OrderedDict
 from datetime import datetime
 from typing import Dict, Optional
-from fastapi import APIRouter, Depends, WebSocket
+from fastapi import APIRouter, Depends, WebSocket, Request
 from fastapi.responses import HTMLResponse
 from fastapi.websockets import WebSocketDisconnect, WebSocketState
 
@@ -367,3 +367,143 @@ async def video_stream_websocket(
         if cid:
             await miot_video_stream_manager.close_connection(
                 user_name=current_user, token_hash=token_hash,camera_id=camera_id, channel=channel, cid=cid)
+
+
+# Camera configuration endpoints
+@router.get("/camera_config", summary="Get camera configuration", response_model=NormalResponse)
+async def get_camera_config(current_user: str = Depends(verify_token)):
+    """Get camera configuration including video quality and vision image resolution"""
+    logger.info("Get camera config API called, user: %s", current_user)
+    config = manager.miot_service.get_camera_config()
+    return NormalResponse(
+        code=0,
+        message="Camera configuration retrieved successfully",
+        data=config
+    )
+
+
+@router.post("/camera_config", summary="Set camera configuration", response_model=NormalResponse)
+async def set_camera_config(request: Request, current_user: str = Depends(verify_token)):
+    """Set camera configuration including video quality and vision image resolution"""
+    logger.info("Set camera config API called, user: %s", current_user)
+    try:
+        body = await request.json()
+        logger.info("Request body: %s", body)
+        video_quality = body.get("video_quality")
+        vision_img_resolution = body.get("vision_img_resolution")
+        logger.info("Parsed params: video_quality=%s (type=%s), vision_img_resolution=%s (type=%s)", 
+                   video_quality, type(video_quality).__name__, 
+                   vision_img_resolution, type(vision_img_resolution).__name__)
+        
+        if video_quality is None:
+            raise ValueError("video_quality is required")
+        if vision_img_resolution is None:
+            raise ValueError("vision_img_resolution is required")
+            
+        result = manager.miot_service.set_camera_config(video_quality, vision_img_resolution)
+        logger.info("Camera config saved successfully: %s", result)
+        return NormalResponse(
+            code=0,
+            message="Camera configuration updated successfully",
+            data=result
+        )
+    except ValueError as e:
+        logger.error("Validation error: %s", e)
+        return NormalResponse(
+            code=1,
+            message=str(e),
+            data=None
+        )
+    except Exception as e:
+        logger.error("Failed to set camera config: %s", e, exc_info=True)
+        return NormalResponse(
+            code=1,
+            message=f"Internal error: {str(e)}",
+            data=None
+        )
+
+
+# ==================== RTSP Camera Management APIs ====================
+
+@router.get("/rtsp_cameras", summary="Get all RTSP cameras", response_model=NormalResponse)
+async def get_rtsp_cameras(current_user: str = Depends(verify_token)):
+    """Get all RTSP camera configurations"""
+    logger.info("Get RTSP cameras API called, user: %s", current_user)
+    try:
+        cameras = manager.miot_service.get_rtsp_cameras()
+        return NormalResponse(
+            code=0,
+            message="RTSP cameras retrieved successfully",
+            data=cameras
+        )
+    except Exception as e:
+        logger.error("Failed to get RTSP cameras: %s", e, exc_info=True)
+        return NormalResponse(
+            code=1,
+            message=str(e),
+            data=None
+        )
+
+
+@router.post("/rtsp_cameras", summary="Create RTSP camera", response_model=NormalResponse)
+async def create_rtsp_camera(request: Request, current_user: str = Depends(verify_token)):
+    """Create a new RTSP camera"""
+    logger.info("Create RTSP camera API called, user: %s", current_user)
+    try:
+        body = await request.json()
+        logger.info("Request body: %s", body)
+        camera = manager.miot_service.create_rtsp_camera(body)
+        return NormalResponse(
+            code=0,
+            message="RTSP camera created successfully",
+            data=camera
+        )
+    except Exception as e:
+        logger.error("Failed to create RTSP camera: %s", e, exc_info=True)
+        return NormalResponse(
+            code=1,
+            message=str(e),
+            data=None
+        )
+
+
+@router.put("/rtsp_cameras/{did}", summary="Update RTSP camera", response_model=NormalResponse)
+async def update_rtsp_camera(did: str, request: Request, current_user: str = Depends(verify_token)):
+    """Update an existing RTSP camera"""
+    logger.info("Update RTSP camera API called, user: %s, did: %s", current_user, did)
+    try:
+        body = await request.json()
+        logger.info("Request body: %s", body)
+        camera = manager.miot_service.update_rtsp_camera(did, body)
+        return NormalResponse(
+            code=0,
+            message="RTSP camera updated successfully",
+            data=camera
+        )
+    except Exception as e:
+        logger.error("Failed to update RTSP camera: %s", e, exc_info=True)
+        return NormalResponse(
+            code=1,
+            message=str(e),
+            data=None
+        )
+
+
+@router.delete("/rtsp_cameras/{did}", summary="Delete RTSP camera", response_model=NormalResponse)
+async def delete_rtsp_camera(did: str, current_user: str = Depends(verify_token)):
+    """Delete an RTSP camera"""
+    logger.info("Delete RTSP camera API called, user: %s, did: %s", current_user, did)
+    try:
+        manager.miot_service.delete_rtsp_camera(did)
+        return NormalResponse(
+            code=0,
+            message="RTSP camera deleted successfully",
+            data=None
+        )
+    except Exception as e:
+        logger.error("Failed to delete RTSP camera: %s", e, exc_info=True)
+        return NormalResponse(
+            code=1,
+            message=str(e),
+            data=None
+        )
