@@ -44,6 +44,10 @@ dev = [
     "black>=23.0.0",
     "flake8>=6.0.0",
 ]
+detection = [
+    "onnxruntime>=1.16.0; platform_machine!='aarch64'",
+    "onnxruntime-gpu>=1.16.0; platform_machine!='aarch64'",
+]
 
 [project.scripts]
 miloco-server = "miloco_server.main:start_server"
@@ -54,6 +58,9 @@ include = ["miloco_server*"]
 
 [tool.setuptools]
 package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+"miloco_server.detection.models" = ["*.onnx", "README.md"]
 
 [tool.black]
 line-length = 88

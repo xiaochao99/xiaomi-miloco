@@ -22,6 +22,7 @@ from miloco_server.controller import (
     api_token_router,
     auth_router,
     chat_router,
+    detection_router,
     ha_router,
     mcp_router,
     miot_router,
@@ -65,6 +66,7 @@ app.include_router(model_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api")
 app.include_router(api_token_router, prefix="/api")
 app.include_router(ai_chat_router, prefix="/api")
+app.include_router(detection_router, prefix="/api")
 
 
 @app.get("/{full_path:path}")
@@ -101,8 +103,30 @@ async def startup_event():
         logger.error("Manager initialization failed: %s", e)
         raise
 
+    # Initialize detection service
+    await _init_detection_service()
+
     # 启动后自动初始化 MIoT（如果已登录）
     await _init_miot_after_startup()
+
+
+async def _init_detection_service():
+    """Initialize the real-time detection service."""
+    try:
+        from miloco_server.detection.detection_service import get_detection_service
+        from miloco_server.detection.websocket_handler import ws_manager
+
+        service = await get_detection_service()
+        success = await service.initialize()
+
+        if success:
+            await ws_manager.start()
+            logger.info("Detection service initialized successfully")
+        else:
+            logger.warning("Detection service initialization failed - detection features will be unavailable")
+
+    except Exception as e:
+        logger.error(f"Detection service initialization error: {e}")
 
 
 async def _init_miot_after_startup():
@@ -141,6 +165,13 @@ async def _init_miot_after_startup():
         except Exception as e:
             logger.warning("MCP MIoT clients initialization failed: %s", e)
 
+        # 4. 初始化已启用的目标检测规则（必须在 MIoT 设备刷新后）
+        try:
+            logger.info("Initializing detection rules after MIoT startup...")
+            await manager.trigger_rule_service.initialize_detection_on_startup()
+        except Exception as e:
+            logger.error(f"Failed to initialize detection on startup: {e}")
+
         logger.info("Auto-initialization completed")
 
     except Exception as e:
@@ -151,6 +182,20 @@ async def _init_miot_after_startup():
 async def shutdown_event():
     """Cleanup operations when application shuts down"""
     logger.info("Application is shutting down...")
+
+    # Shutdown detection service
+    try:
+        from miloco_server.detection.detection_service import get_detection_service
+        from miloco_server.detection.websocket_handler import ws_manager
+
+        await ws_manager.stop()
+
+        service = await get_detection_service()
+        await service.destroy()
+        logger.info("Detection service shutdown completed")
+    except Exception as e:
+        logger.error(f"Detection service shutdown error: {e}")
+
     logger.info("Application has been shut down")
 
 
