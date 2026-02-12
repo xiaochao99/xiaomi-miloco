@@ -155,7 +155,7 @@ class SQLiteConnector:
                 enabled BOOLEAN DEFAULT 1,
                 camera_dids TEXT NOT NULL,  -- JSON format storage for camera device ID list
                 ha_devices TEXT,            -- JSON format storage for Home Assistant device ID list
-                condition TEXT NOT NULL,    -- Trigger condition
+                condition TEXT,             -- Trigger condition (nullable for detection mode)
                 execute_info TEXT,          -- JSON format storage for ExecuteInfo object
                 filter TEXT,                 -- JSON format storage for TriggerFilter object
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -177,7 +177,23 @@ class SQLiteConnector:
         """Ensure trigger rule table has all required columns"""
         cursor = conn.cursor()
         cursor.execute("PRAGMA table_info(trigger_rule)")
-        columns = {row[1] for row in cursor.fetchall()}
+        columns_info = cursor.fetchall()
+        columns = {row[1] for row in columns_info}
+
+        # Check if condition column has NOT NULL constraint (3rd column is notnull)
+        condition_not_null = False
+        for col in columns_info:
+            if col[1] == "condition" and col[3] == 1:  # col[3] is notnull flag
+                condition_not_null = True
+                break
+
+        if condition_not_null:
+            logger.info("Migrating condition column to allow NULL values")
+            self._migrate_condition_to_nullable(conn)
+            # Re-fetch columns after migration
+            cursor.execute("PRAGMA table_info(trigger_rule)")
+            columns_info = cursor.fetchall()
+            columns = {row[1] for row in columns_info}
 
         if "ha_devices" not in columns:
             logger.info("Adding ha_devices column to trigger_rule table")
@@ -191,12 +207,105 @@ class SQLiteConnector:
             logger.info("Adding ha_condition column to trigger_rule table")
             cursor.execute("ALTER TABLE trigger_rule ADD COLUMN ha_condition TEXT")
 
+        if "detection_condition" not in columns:
+            logger.info("Adding detection_condition column to trigger_rule table")
+            cursor.execute("ALTER TABLE trigger_rule ADD COLUMN detection_condition TEXT")
+
         # Migrate old camera_condition to ha_condition if exists
         if "camera_condition" in columns and "ha_condition" not in columns:
             logger.info("Migrating camera_condition to ha_condition")
             cursor.execute("ALTER TABLE trigger_rule RENAME COLUMN camera_condition TO ha_condition")
 
         conn.commit()
+
+    def _migrate_condition_to_nullable(self, conn: sqlite3.Connection) -> None:
+        """
+        Migrate condition column from NOT NULL to nullable.
+        SQLite doesn't support ALTER TABLE to change column constraints,
+        so we need to recreate the table.
+        """
+        cursor = conn.cursor()
+
+        # Check if detection_condition column exists (for new schema)
+        cursor.execute("PRAGMA table_info(trigger_rule)")
+        columns_info = cursor.fetchall()
+        column_names = {row[1] for row in columns_info}
+        has_detection_condition = "detection_condition" in column_names
+
+        # Start transaction
+        cursor.execute("BEGIN TRANSACTION")
+
+        try:
+            # Rename old table
+            cursor.execute("ALTER TABLE trigger_rule RENAME TO trigger_rule_old")
+
+            # Create new table with nullable condition
+            if has_detection_condition:
+                cursor.execute("""
+                    CREATE TABLE trigger_rule (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        enabled BOOLEAN DEFAULT 1,
+                        camera_dids TEXT NOT NULL,
+                        ha_devices TEXT,
+                        condition TEXT,
+                        condition_type TEXT DEFAULT 'llm',
+                        ha_condition TEXT,
+                        detection_condition TEXT,
+                        execute_info TEXT,
+                        filter TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+            else:
+                cursor.execute("""
+                    CREATE TABLE trigger_rule (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        enabled BOOLEAN DEFAULT 1,
+                        camera_dids TEXT NOT NULL,
+                        ha_devices TEXT,
+                        condition TEXT,
+                        condition_type TEXT DEFAULT 'llm',
+                        ha_condition TEXT,
+                        execute_info TEXT,
+                        filter TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+            # Copy data from old table
+            if has_detection_condition:
+                cursor.execute("""
+                    INSERT INTO trigger_rule
+                    SELECT id, name, enabled, camera_dids, ha_devices, condition,
+                           condition_type, ha_condition, detection_condition, execute_info, filter, created_at, updated_at
+                    FROM trigger_rule_old
+                """)
+            else:
+                cursor.execute("""
+                    INSERT INTO trigger_rule
+                    SELECT id, name, enabled, camera_dids, ha_devices, condition,
+                           condition_type, ha_condition, execute_info, filter, created_at, updated_at
+                    FROM trigger_rule_old
+                """)
+
+            # Drop old table
+            cursor.execute("DROP TABLE trigger_rule_old")
+
+            # Recreate indexes
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_trigger_rule_name ON trigger_rule(name)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_trigger_rule_enabled ON trigger_rule(enabled)")
+
+            cursor.execute("COMMIT")
+            logger.info("Successfully migrated condition column to nullable")
+
+        except Exception as e:
+            cursor.execute("ROLLBACK")
+            logger.error("Failed to migrate condition column: %s", e)
+            raise
 
     def _create_model_vendor_table(self, conn: sqlite3.Connection) -> None:
         """Create model vendor table"""
