@@ -35,7 +35,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "httpx>=0.25.0",
     "websockets>=12.0",
-    "onnxruntime-gpu>=1.16.0",
+    "onnxruntime>=1.16.0",
 ]
 
 [project.optional-dependencies]
@@ -45,8 +45,7 @@ dev = [
     "black>=23.0.0",
     "flake8>=6.0.0",
 ]
-detection = [
-    "onnxruntime>=1.16.0; platform_machine!='aarch64'",
+detection-gpu = [
     "onnxruntime-gpu>=1.16.0; platform_machine!='aarch64'",
 ]
 
