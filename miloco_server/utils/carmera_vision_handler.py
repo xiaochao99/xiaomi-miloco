@@ -125,6 +125,19 @@ class BaseCameraVisionHandler:
     async def unregister_raw_stream(self, channel: int):
         raise NotImplementedError
 
+    async def register_jpeg_stream(self, callback: Callable[[str, bytes, int, int], Coroutine], channel: int):
+        """Register JPEG decoded stream callback for object detection.
+
+        Args:
+            callback: Function to call with (did, jpeg_data, ts, channel)
+            channel: Camera channel number
+        """
+        raise NotImplementedError
+
+    async def unregister_jpeg_stream(self, channel: int):
+        """Unregister JPEG stream callback."""
+        raise NotImplementedError
+
     async def update_camera_info(self, camera_info: Any) -> None:
         raise NotImplementedError
 
@@ -156,18 +169,36 @@ class CameraVisionHandler(BaseCameraVisionHandler):
     async def unregister_raw_stream(self, channel: int):
         await self.miot_camera_instance.unregister_raw_video_async(channel)
 
+    async def register_jpeg_stream(self, callback: Callable[[str, bytes, int, int], Coroutine], channel: int):
+        """Register JPEG decoded stream callback for object detection."""
+        await self.miot_camera_instance.register_decode_jpg_async(callback, channel)
+
+    async def unregister_jpeg_stream(self, channel: int):
+        """Unregister JPEG stream callback."""
+        await self.miot_camera_instance.unregister_decode_jpg_async(channel)
+
     async def add_camera_img(self, did: str, data: bytes, ts: int, channel: int):
         logger.debug("add_camera_img camera_id: %s, camera timestamp: %d, image_size: %d", did, ts, len(data))
+        # Log first few frames at INFO level
+        if not hasattr(self, '_frame_log_count'):
+            self._frame_log_count = 0
+        if self._frame_log_count < 5:
+            logger.info(f"[CameraVisionHandler] Camera {did} received frame {self._frame_log_count}, size={len(data)} bytes")
+            self._frame_log_count += 1
         self.camera_img_queues[channel].put(CameraImgInfo(data=data, timestamp=int(time.time())))
 
     async def update_camera_info(self, camera_info: MIoTCameraInfo) -> None:
+        """Update camera info. Only update internal state, don't re-register callbacks to avoid overwriting detection callbacks."""
+        was_online = self.camera_info.online if self.camera_info else False
         self.camera_info = camera_info
-        if self.camera_info.online:
+
+        # Note: We don't re-register add_camera_img here because:
+        # 1. It's already registered during initialization
+        # 2. Re-registering would overwrite detection service callbacks (register_decode_jpg_async with multi_reg=False)
+
+        if not self.camera_info.online and was_online:
+            # Camera went offline, clear queues but don't unregister (detection service manages its own callbacks)
             for channel in range(self.camera_info.channel_count or 1):
-                await self.miot_camera_instance.register_decode_jpg_async(self.add_camera_img, channel)
-        else:
-            for channel in range(self.camera_info.channel_count or 1):
-                await self.miot_camera_instance.unregister_decode_jpg_async(channel)
                 self.camera_img_queues[channel].clear()
 
     def get_recents_camera_img(self, channel: int, n: int) -> CameraImgSeq:
@@ -318,6 +349,14 @@ class RtspCameraVisionHandler(BaseCameraVisionHandler):
 
     async def unregister_raw_stream(self, channel: int):
         await self.rtsp_camera_instance.unregister_raw_video_async(channel)
+
+    async def register_jpeg_stream(self, callback: Callable[[str, bytes, int, int], Coroutine], channel: int):
+        """Register JPEG decoded stream callback for object detection."""
+        await self.rtsp_camera_instance.register_decode_jpg_async(callback, channel)
+
+    async def unregister_jpeg_stream(self, channel: int):
+        """Unregister JPEG stream callback."""
+        await self.rtsp_camera_instance.unregister_decode_jpg_async(channel)
 
     async def add_camera_img(self, did: str, data: bytes, ts: int, channel: int):
         logger.debug("rtsp add_camera_img camera_id: %s, camera timestamp: %d, image_size: %d", did, ts, len(data))

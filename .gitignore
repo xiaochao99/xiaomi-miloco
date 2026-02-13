@@ -179,8 +179,12 @@ Thumbs.db
 *.log
 logs/
 
-# Download Models
+# Download Models (legacy location)
 models/
+
+# Built-in detection model (include in git using git lfs or force add)
+# Uncomment the line below if you want to ignore the built-in model
+# miloco_server/detection/models/*.onnx
 
 # Database
 *.db

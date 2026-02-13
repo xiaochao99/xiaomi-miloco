@@ -135,7 +135,10 @@ class Manager:
             self._ha_service
         )
 
-        self._trigger_rule_runner.start_periodic_task()
+        await self._trigger_rule_runner.start_periodic_task()
+
+        # Note: Detection rules initialization is moved to _init_miot_after_startup
+        # in main.py to ensure MIoT devices are ready first
 
         if callback:
             callback()
