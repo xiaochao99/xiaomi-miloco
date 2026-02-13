@@ -44,6 +44,7 @@ services:
     volumes:
       - ./data:/app/miloco_server/.temp
       - ./log/backend:/app/miloco_server/.temp/log
+      - ./models:/models  # Shared with ai_engine for YOLO detection model
     # NOTICE: Mount configuration files, if you want to use your own configuration files, please mount them here.
     #  - ./config/server_config.yaml:/app/config/server_config.yaml
     #  - ./config/prompt_config.yaml:/app/config/prompt_config.yaml

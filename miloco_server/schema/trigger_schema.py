@@ -33,6 +33,7 @@ class ConditionType(Enum):
     LLM = "llm" # Use LLM to check condition (natural language)
     DIRECT = "direct" # Use direct state matching (no LLM, zero token cost)
     HYBRID = "hybrid" # Hybrid: First use direct mode for HA devices, if matched then use LLM to analyze camera
+    DETECTION = "detection" # Use object detection (YOLO) for trigger condition
 
 
 class Notify(BaseModel):
@@ -87,6 +88,58 @@ class TriggerFilter(BaseModel):
     frequency: Optional[TriggerFrequencyFilter] = Field(None, description="Trigger frequency filter")
 
 
+class DetectionTargetType(str, Enum):
+    """Detection target types"""
+    PERSON = "person"
+    CAT = "cat"
+    DOG = "dog"
+
+
+class DetectionLogicType(str, Enum):
+    """Detection logic types for multiple targets"""
+    ANY = "any"      # Any target detected triggers
+    ALL = "all"      # All specified targets must be detected
+    COUNT = "count"  # Minimum count of targets
+
+
+class DetectionCondition(BaseModel):
+    """Detection condition configuration"""
+    enabled: bool = Field(False, description="Enable detection-based trigger")
+    targets: List[DetectionTargetType] = Field(
+        default_factory=list,
+        description="Target types to detect: person, cat, dog"
+    )
+    logic: DetectionLogicType = Field(
+        DetectionLogicType.ANY,
+        description="Logic for multiple targets: any, all, count"
+    )
+    min_count: Optional[int] = Field(
+        None,
+        description="Minimum target count for COUNT logic",
+        ge=1, le=10
+    )
+    confidence_threshold: float = Field(
+        0.5,
+        description="Detection confidence threshold (0.0-1.0)",
+        ge=0.0, le=1.0
+    )
+    sensitivity: int = Field(
+        5,
+        description="Trigger sensitivity 1-10, higher = more sensitive",
+        ge=1, le=10
+    )
+    cooldown_seconds: int = Field(
+        30,
+        description="Cooldown period between triggers (seconds)",
+        ge=5, le=3600
+    )
+    min_duration_seconds: Optional[int] = Field(
+        None,
+        description="Minimum duration target must be present (seconds)",
+        ge=1, le=300
+    )
+
+
 class TriggerRule(BaseModel):
     """Trigger rule data model - supports create/update and query operations"""
     id: Optional[str] = Field(None, description="Rule ID (UUID format)")
@@ -94,11 +147,14 @@ class TriggerRule(BaseModel):
     name: str = Field(..., description="Rule name")
     cameras: List[str] = Field(..., description="Camera device ID list")
     ha_devices: Optional[List[str]] = Field(default_factory=list, description="Home Assistant device ID list")
-    condition: str = Field(..., description="Trigger condition (for LLM analysis in hybrid mode)")
+    condition: Optional[str] = Field(None, description="Trigger condition (for LLM analysis in hybrid/llm mode)")
     condition_type: ConditionType = Field(ConditionType.LLM, description="Condition check type: llm or direct")
     ha_condition: Optional[str] = Field(None, description="HA device state condition for hybrid mode (direct check)")
     execute_info: ExecuteInfo = Field(..., description="Trigger execute info")
     filter: Optional[TriggerFilter] = Field(None, description="Trigger filter")
+    detection_condition: Optional[DetectionCondition] = Field(
+        None, description="Object detection trigger condition"
+    )
 
 
 class TriggerRuleDetail(TriggerRule):
