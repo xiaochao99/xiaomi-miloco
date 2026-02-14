@@ -20,6 +20,7 @@ class TriggerConditionResult(BaseModel):
     channel: int = Field(..., description="Channel number")
     result: bool = Field(..., description="Result")
     images: Optional[list[CameraImgInfoPath]] = Field(None, description="Image sequence path")
+    detection_reason: Optional[str] = Field(None, description="Detection trigger reason (for detection-based triggers)")
 
 
 class ActionExecuteResult(BaseModel):

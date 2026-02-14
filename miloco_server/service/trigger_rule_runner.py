@@ -40,6 +40,7 @@ from miloco_server.utils.local_models import ModelPurpose
 from miloco_server.utils.normal_util import extract_json_from_content
 from miloco_server.utils.prompt_helper import TriggerRuleConditionPromptBuilder
 from miloco_server.utils.trigger_filter import trigger_filter
+from miloco_server.detection.trigger_integration import get_detection_trigger_integration
 from service import trigger_rule_dynamic_executor_cache
 from service.trigger_rule_dynamic_executor import START, TriggerRuleDynamicExecutor
 
@@ -81,6 +82,9 @@ class TriggerRuleRunner:
 
         # Initialize Trigger Buffer
         self._trigger_buffer = TriggerBuffer(self._execute_buffered_rules)
+
+        # Initialize Detection Trigger Integration
+        self._detection_trigger_integration = None
 
         # Cache for HA Device -> Entities mapping
         self._ha_device_map: Dict[str, List[str]] = {}
@@ -171,11 +175,20 @@ class TriggerRuleRunner:
         self.trigger_rules[trigger_rule.id] = trigger_rule
         self._update_listener_watched_entities()
 
+        # Add to detection trigger integration if applicable
+        if self._detection_trigger_integration:
+            if trigger_rule.detection_condition and trigger_rule.detection_condition.enabled:
+                self._detection_trigger_integration.add_rule(trigger_rule)
+
     def remove_trigger_rule(self, rule_id: str):
         """Remove trigger rule"""
         if rule_id in self.trigger_rules:
             del self.trigger_rules[rule_id]
             self._update_listener_watched_entities()
+
+        # Remove from detection trigger integration
+        if self._detection_trigger_integration:
+            self._detection_trigger_integration.remove_rule(rule_id)
 
     async def _periodic_task(self):
         """Scheduled task execution method, runs at configured interval"""
@@ -220,6 +233,14 @@ class TriggerRuleRunner:
 
         for rule_id, rule in self.trigger_rules.items():
             if rule.ha_devices:
+                # Skip detection mode rules - they are handled by detection trigger integration
+                is_detection_mode = (
+                    hasattr(rule, 'condition_type') and
+                    rule.condition_type == ConditionType.DETECTION
+                )
+                if is_detection_mode:
+                    continue
+
                 # If rule cares about any of the parent devices of this entity
                 if any(dev_id in rule.ha_devices for dev_id in parent_device_ids):
                     if trigger_filter.pre_filter(rule):
@@ -304,6 +325,17 @@ class TriggerRuleRunner:
         for rid, sources in target_rules_with_sources.items():
             rule = self.trigger_rules.get(rid)
             if rule and trigger_filter.pre_filter(rule):
+                # Check if this is a detection mode rule (handled by detection trigger integration)
+                is_detection_mode = (
+                    hasattr(rule, 'condition_type') and
+                    rule.condition_type == ConditionType.DETECTION
+                )
+
+                # Skip detection mode rules - they are handled by detection trigger integration
+                if is_detection_mode:
+                    logger.debug("Skipping detection mode rule %s in batch processing", rule.name)
+                    continue
+
                 # Check if this is a direct mode rule (no cameras, has HA devices, condition_type=DIRECT)
                 is_direct_mode = (
                     not rule.cameras and
@@ -564,6 +596,15 @@ class TriggerRuleRunner:
             if not rule.cameras or not trigger_filter.pre_filter(rule):
                 continue
 
+            # Skip detection mode rules - they are handled by detection trigger integration
+            is_detection_mode = (
+                hasattr(rule, 'condition_type') and
+                rule.condition_type == ConditionType.DETECTION
+            )
+            if is_detection_mode:
+                logger.debug("Skipping detection mode rule %s in scheduled task", rule.name)
+                continue
+
             # Check if this is a hybrid mode rule
             is_hybrid_mode = (
                 rule.ha_devices and
@@ -639,7 +680,7 @@ class TriggerRuleRunner:
                 "Failed to save trigger rule log to database: rule_id=%s", rule.id
             )
 
-    def start_periodic_task(self):
+    async def start_periodic_task(self):
         """Start async scheduled task"""
         if self._is_running:
             logger.warning("Scheduled task is already running")
@@ -653,6 +694,20 @@ class TriggerRuleRunner:
 
         # Refresh device map once on startup
         asyncio.create_task(self._refresh_ha_device_map())
+
+        # Initialize Detection Trigger Integration
+        try:
+            self._detection_trigger_integration = await get_detection_trigger_integration()
+            await self._detection_trigger_integration.initialize(self._on_detection_trigger)
+
+            # Register existing rules with detection conditions
+            for rule in self.trigger_rules.values():
+                if rule.detection_condition and rule.detection_condition.enabled:
+                    self._detection_trigger_integration.add_rule(rule)
+
+            logger.info("Detection trigger integration initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize detection trigger integration: {e}")
 
         self._task = asyncio.create_task(self._periodic_task())
         logger.info("Scheduled task started, executing every %d seconds", self._interval_seconds)
@@ -668,6 +723,11 @@ class TriggerRuleRunner:
         # Stop HA Listener
         if self._ha_listener:
             await self._ha_listener.stop()
+
+        # Stop Detection Trigger Integration
+        if self._detection_trigger_integration:
+            await self._detection_trigger_integration.destroy()
+            self._detection_trigger_integration = None
 
         if self._task and not self._task.done():
             self._task.cancel()
@@ -1187,3 +1247,62 @@ class TriggerRuleRunner:
     def _check_dynamic_action_is_running(self, rule_id: str) -> bool:
         """Check if dynamic action is running"""
         return rule_id in trigger_rule_dynamic_executor_cache
+
+    async def _on_detection_trigger(self, rule_id: str, camera_id: str, reason: str):
+        """
+        Callback when a detection-based rule is triggered.
+
+        Args:
+            rule_id: ID of the triggered rule
+            camera_id: ID of the camera that detected the target
+            reason: Human-readable trigger reason
+        """
+        logger.info(
+            "Detection trigger callback: rule=%s, camera=%s, reason=%s",
+            rule_id, camera_id, reason
+        )
+
+        rule = self.trigger_rules.get(rule_id)
+        if not rule:
+            logger.warning(f"Rule {rule_id} not found for detection trigger")
+            return
+
+        if not rule.enabled:
+            logger.debug(f"Rule {rule.name} is disabled, ignoring detection trigger")
+            return
+
+        # Check filter
+        if not trigger_filter.pre_filter(rule):
+            logger.debug(f"Rule {rule.name} failed pre-filter, ignoring detection trigger")
+            return
+
+        # Execute the rule immediately (detection conditions are already evaluated)
+        execute_id = str(uuid.uuid4())
+        start_time = int(time.time() * 1000)
+
+        # Prepare camera motion dict for logging
+        camera_motion_dict = {}
+
+        try:
+            execute_result = await self._execute_trigger_action(execute_id, rule, camera_motion_dict)
+
+            # Create condition result for logging
+            from miloco_server.schema.trigger_log_schema import TriggerConditionResult
+            condition_result = TriggerConditionResult(
+                camera_info=None,  # Could be enhanced to include camera info
+                channel=0,
+                result=True,
+                detection_reason=reason
+            )
+
+            await self._log_rule_execution(
+                execute_id, start_time, rule,
+                camera_motion_dict,
+                [condition_result],
+                execute_result
+            )
+
+            logger.info(f"Detection trigger executed for rule {rule.name}: {execute_id}")
+
+        except Exception as e:
+            logger.error(f"Error executing detection trigger for rule {rule.name}: {e}")
