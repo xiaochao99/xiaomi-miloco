@@ -12,7 +12,7 @@ import uuid
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from miloco_server.utils.database import get_db_connector
-from miloco_server.schema.trigger_schema import TriggerRule, Action, TriggerFilter, ExecuteInfo, ConditionType
+from miloco_server.schema.trigger_schema import TriggerRule, Action, TriggerFilter, ExecuteInfo, ConditionType, DetectionCondition
 
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,8 @@ class TriggerRuleDAO:
             "ha_devices": json.dumps(rule.ha_devices),
             "condition": rule.condition,
             "condition_type": rule.condition_type.value if hasattr(rule, 'condition_type') else "llm",
+            "ha_condition": rule.ha_condition,
+            "detection_condition": json.dumps(rule.detection_condition.model_dump(mode="json")) if rule.detection_condition else None,
             "execute_info": json.dumps(rule.execute_info.model_dump(mode="json")) if rule.execute_info else None,
             "filter": json.dumps(rule.filter.model_dump(mode="json")) if rule.filter else None,
         }
@@ -60,6 +62,10 @@ class TriggerRuleDAO:
             logger.warning("Invalid condition_type '%s', defaulting to 'llm'", condition_type_str)
             condition_type = ConditionType.LLM
 
+        # Parse detection_condition
+        detection_condition_data = json.loads(data["detection_condition"]) if data.get("detection_condition") else None
+        detection_condition = DetectionCondition(**detection_condition_data) if detection_condition_data else None
+
         return TriggerRule(
             id=data["id"],
             name=data["name"],
@@ -69,6 +75,7 @@ class TriggerRuleDAO:
             condition=data["condition"],
             condition_type=condition_type,
             ha_condition=data.get("ha_condition"),
+            detection_condition=detection_condition,
             execute_info=execute_info,
             filter=filter_obj,
         )
@@ -87,8 +94,8 @@ class TriggerRuleDAO:
             rule_id = str(uuid.uuid4())
 
             sql = """
-                INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition, condition_type, ha_condition, execute_info, filter, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition, condition_type, ha_condition, detection_condition, execute_info, filter, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             current_time = datetime.now().isoformat()
             params = (
@@ -100,6 +107,7 @@ class TriggerRuleDAO:
                 rule.condition,
                 rule.condition_type.value if hasattr(rule, 'condition_type') else "llm",
                 rule.ha_condition,
+                json.dumps(rule.detection_condition.model_dump(mode="json")) if rule.detection_condition else None,
                 json.dumps(rule.execute_info.model_dump(mode="json")) if rule.execute_info else None,
                 json.dumps(rule.filter.model_dump(mode="json")) if rule.filter else None,
                 current_time,
@@ -211,7 +219,7 @@ class TriggerRuleDAO:
         try:
             sql = """
                 UPDATE trigger_rule
-                SET name = ?, enabled = ?, camera_dids = ?, ha_devices = ?, condition = ?, condition_type = ?, ha_condition = ?, execute_info = ?, filter = ?, updated_at = ?
+                SET name = ?, enabled = ?, camera_dids = ?, ha_devices = ?, condition = ?, condition_type = ?, ha_condition = ?, detection_condition = ?, execute_info = ?, filter = ?, updated_at = ?
                 WHERE id = ?
             """
             params = (
@@ -222,6 +230,7 @@ class TriggerRuleDAO:
                 rule.condition,
                 rule.condition_type.value if hasattr(rule, 'condition_type') else "llm",
                 rule.ha_condition,
+                json.dumps(rule.detection_condition.model_dump(mode="json")) if rule.detection_condition else None,
                 json.dumps(rule.execute_info.model_dump(mode="json")) if rule.execute_info else None,
                 json.dumps(rule.filter.model_dump(mode="json")) if rule.filter else None,
                 datetime.now().isoformat(),
@@ -358,3 +367,44 @@ class TriggerRuleDAO:
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error("Error getting enabled trigger rule count: error=%s", e)
             return 0
+
+    def get_rules_by_camera_with_detection(self, camera_id: str, exclude_rule_id: Optional[str] = None) -> List[TriggerRule]:
+        """
+        Get rules that have detection condition enabled for a specific camera
+
+        Args:
+            camera_id: Camera device ID
+            exclude_rule_id: Rule ID to exclude (optional)
+
+        Returns:
+            List[TriggerRule]: List of trigger rules with detection enabled
+        """
+        try:
+            # Query all rules and filter in Python (since camera_dids is JSON)
+            sql = "SELECT * FROM trigger_rule WHERE enabled = 1 AND detection_condition IS NOT NULL"
+            results = self.db_connector.execute_query(sql)
+
+            rules = []
+            for row in results:
+                # Skip excluded rule
+                if exclude_rule_id and row["id"] == exclude_rule_id:
+                    continue
+
+                # Parse cameras list
+                try:
+                    camera_dids = json.loads(row["camera_dids"]) if row.get("camera_dids") else []
+                    if camera_id in camera_dids:
+                        # Parse detection_condition to check if enabled
+                        detection_condition_data = json.loads(row["detection_condition"]) if row.get("detection_condition") else None
+                        if detection_condition_data and detection_condition_data.get("enabled"):
+                            rule = self._dict_to_trigger_rule(row)
+                            rules.append(rule)
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.warning(f"Error parsing rule {row.get('id')}: {e}")
+                    continue
+
+            return rules
+
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
+            logger.error(f"Error getting rules by camera with detection: {e}")
+            return []

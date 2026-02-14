@@ -1,0 +1,356 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+
+.detectionConditionCard {
+  background: var(--bg-color-2);
+  border: 1px solid var(--border-color-1);
+  border-radius: 8px;
+}
+
+.detectionConditionCard :global(.ant-card-body) {
+  padding: 16px;
+}
+
+.enableItem {
+  margin-bottom: 16px;
+}
+
+.enableRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.enableLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color-1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.helpIcon {
+  color: var(--text-color-3);
+  cursor: help;
+  font-size: 14px;
+
+  &:hover {
+    color: var(--primary-color);
+  }
+}
+
+.configSection {
+  padding-top: 16px;
+  border-top: 1px dashed var(--border-color-1);
+}
+
+.sectionLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-color-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.valueTag {
+  font-size: 12px;
+  margin-left: auto;
+}
+
+// 目标类型选择
+.targetCheckboxGroup {
+  width: 100%;
+}
+
+.targetCheckbox {
+  width: 100%;
+}
+
+// 隐藏默认checkbox，使用自定义勾选样式
+.targetCheckbox :global(.ant-checkbox) {
+  display: none;
+}
+
+.targetCheckbox :global(.ant-checkbox + span) {
+  padding: 0;
+  display: block;
+  position: relative;
+}
+
+.targetItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 12px;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: #f5f5f5;
+  position: relative;
+  min-height: 100px;
+
+  &:hover {
+    background: #eeeeee;
+    transform: translateY(-2px);
+  }
+}
+
+// 未选中状态 - 灰色图标
+.targetIcon {
+  font-size: 40px;
+  margin-bottom: 12px;
+  filter: grayscale(100%);
+  opacity: 0.6;
+  transition: all 0.3s ease;
+}
+
+.targetLabel {
+  font-size: 15px;
+  font-weight: 500;
+  color: #757575;
+  transition: all 0.3s ease;
+}
+
+// 选中状态 - 彩色主题（去掉边框，仅改变背景色）
+.targetCheckbox :global(.ant-checkbox-checked + span) .targetItem {
+  background: #e3f2fd;
+}
+
+// 选中状态下的图标和标签 - 彩色
+.targetCheckbox :global(.ant-checkbox-checked + span) .targetIcon {
+  filter: grayscale(0%);
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.targetCheckbox :global(.ant-checkbox-checked + span) .targetLabel {
+  color: #1565c0;
+  font-weight: 600;
+}
+
+// 逻辑选择
+.logicSelect {
+  width: 100%;
+}
+
+.logicSelect :global(.ant-select-selector) {
+  height: 32px;
+  padding: 0 12px !important;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  border: 1px solid var(--border-color-1);
+  background: var(--bg-color-1);
+}
+
+.logicSelect :global(.ant-select-selection-item) {
+  line-height: 32px;
+  font-size: 14px;
+  color: var(--text-color-1);
+}
+
+.logicSelect :global(.ant-select-arrow) {
+  color: var(--text-color-3);
+}
+
+.logicSelect:hover :global(.ant-select-selector) {
+  border-color: var(--primary-color);
+}
+
+.logicOption {
+  padding: 8px 0;
+}
+
+.logicLabel {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--text-color-1);
+  line-height: 1.4;
+}
+
+.logicDesc {
+  font-size: 12px;
+  color: var(--text-color-3);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+// 下拉菜单样式
+.logicDropdown :global(.ant-select-item) {
+  padding: 12px 16px;
+  min-height: 56px;
+  border-bottom: 1px solid var(--border-color-1);
+}
+
+.logicDropdown :global(.ant-select-item:last-child) {
+  border-bottom: none;
+}
+
+.logicDropdown :global(.ant-select-item.ant-select-item-option-selected) {
+  background: var(--primary-color-1);
+  font-weight: 500;
+}
+
+.logicDropdown :global(.ant-select-item.ant-select-item-option-active) {
+  background: var(--bg-color-3);
+}
+
+.logicDropdown :global(.ant-select-item-option-content) {
+  line-height: 1.4;
+}
+
+// 数量输入
+.minCountInput {
+  width: 150px;
+}
+
+.cooldownInput {
+  width: 150px;
+}
+
+.durationInput {
+  width: 150px;
+}
+
+// 滑块样式
+:global(.ant-slider .ant-slider-track) {
+  background: var(--primary-color);
+}
+
+:global(.ant-slider .ant-slider-handle) {
+  border-color: var(--primary-color);
+}
+
+:global(.ant-slider .ant-slider-dot) {
+  border-color: var(--border-color-2);
+}
+
+:global(.ant-slider .ant-slider-mark-text) {
+  font-size: 12px;
+  color: var(--text-color-3);
+}
+
+// 高级选项
+.advancedSection {
+  margin-top: 16px;
+}
+
+.advancedToggle {
+  font-size: 13px;
+  color: var(--text-color-3);
+  cursor: pointer;
+  padding: 8px 0;
+  user-select: none;
+
+  &:hover {
+    color: var(--primary-color);
+  }
+}
+
+.advancedContent {
+  padding: 12px;
+  background: var(--bg-color-1);
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+// 配置摘要
+.configSummary {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--primary-color-1);
+  border-radius: 6px;
+  border-left: 3px solid var(--primary-color);
+}
+
+.summaryTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary-color);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.summaryContent {
+  font-size: 13px;
+  color: var(--text-color-2);
+  line-height: 1.6;
+
+  strong {
+    color: var(--text-color-1);
+    font-weight: 600;
+    padding: 0 4px;
+  }
+}
+
+// 只读模式
+.readOnlyContainer {
+  padding: 12px;
+  background: var(--bg-color-1);
+  border-radius: 6px;
+  border: 1px solid var(--border-color-1);
+}
+
+.readOnlyHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--text-color-1);
+
+  .anticon {
+    color: var(--primary-color);
+  }
+}
+
+.readOnlyContent {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-color-1);
+}
+
+.readOnlyItem {
+  display: flex;
+  margin-bottom: 8px;
+  font-size: 13px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.label {
+  color: var(--text-color-3);
+  min-width: 80px;
+}
+
+.value {
+  color: var(--text-color-1);
+  flex: 1;
+}
+
+// 响应式适配
+@media (max-width: 768px) {
+  .targetCheckbox :global(.ant-col-8) {
+    flex: 0 0 50%;
+    max-width: 50%;
+  }
+
+  .targetItem {
+    padding: 12px 4px;
+  }
+
+  .targetIcon {
+    font-size: 24px;
+  }
+
+  .targetLabel {
+    font-size: 12px;
+  }
+}

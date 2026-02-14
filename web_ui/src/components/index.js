@@ -18,6 +18,7 @@ export { default as ListItem } from './ListItem';
 
 export { default as ModelModal } from './ModelModal';
 export { default as RuleForm } from './RuleForm';
+export { default as DetectionConditionForm } from './DetectionConditionForm';
 export { default as TimeSelector } from './TimeSelector';
 
 export { default as LoadingScreen } from './LoadingScreen';

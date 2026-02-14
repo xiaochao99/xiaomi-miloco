@@ -29,6 +29,7 @@ from miloco_server.schema.trigger_schema import (
     Action, ExecuteInfoDetail, Notify, TriggerRule, TriggerRuleDetail)
 from miloco_server.service.trigger_rule_runner import TriggerRuleRunner
 from miloco_server.service.ha_service import HaService
+from miloco_server.service.trigger_rule_service_detection import DetectionTriggerServiceMixin
 
 from service import trigger_rule_dynamic_executor_cache
 from service.trigger_rule_dynamic_executor import RegisterWebSocket
@@ -36,7 +37,7 @@ from service.trigger_rule_dynamic_executor import RegisterWebSocket
 logger = logging.getLogger(__name__)
 
 
-class TriggerRuleService:
+class TriggerRuleService(DetectionTriggerServiceMixin):
     """Trigger rule service class"""
 
     def __init__(self, trigger_rule_dao: TriggerRuleDAO,
@@ -51,6 +52,55 @@ class TriggerRuleService:
         self._miot_proxy = miot_proxy
         self._mcp_client_manager = mcp_client_manager
         self._ha_service = ha_service
+
+    async def initialize_detection_on_startup(self):
+        """
+        服务启动时初始化所有已启用的目标检测规则
+        用于服务器重启后恢复检测状态
+        """
+        logger.info("[Startup] Initializing detection rules on startup...")
+        try:
+            # 等待一段时间让摄像头连接
+            logger.info("[Startup] Waiting 5 seconds for cameras to connect...")
+            import asyncio
+            await asyncio.sleep(5)
+
+            # 获取所有启用的规则
+            all_rules = self._trigger_rule_dao.get_all(enabled_only=True)
+            logger.info(f"[Startup] Found {len(all_rules)} enabled rules")
+
+            detection_rules_started = 0
+            cameras_started = set()
+
+            for rule in all_rules:
+                logger.info(f"[Startup] Checking rule {rule.id}: condition_type={rule.condition_type}, "
+                           f"has_detection={rule.detection_condition is not None}")
+
+                # 检查规则是否有检测条件且启用
+                if (rule.detection_condition and
+                    rule.detection_condition.enabled and
+                    rule.cameras):
+
+                    logger.info(f"[Startup] Starting detection for rule {rule.id} with cameras {rule.cameras}")
+                    try:
+                        detection_result = await self._handle_detection_condition_on_create(rule)
+                        if detection_result.get("cameras_started"):
+                            detection_rules_started += 1
+                            cameras_started.update(detection_result["cameras_started"])
+                            logger.info(f"[Startup] Successfully started detection for rule {rule.id}")
+
+                        if detection_result.get("errors"):
+                            logger.warning(f"[Startup] Failed to start detection for rule {rule.id}: {detection_result['errors']}")
+
+                    except Exception as e:
+                        logger.error(f"[Startup] Error starting detection for rule {rule.id}: {e}", exc_info=True)
+                else:
+                    logger.info(f"[Startup] Rule {rule.id} has no detection condition or disabled")
+
+            logger.info(f"[Startup] Detection initialization completed: {detection_rules_started} rules started, {len(cameras_started)} cameras active")
+
+        except Exception as e:
+            logger.error(f"[Startup] Error initializing detection on startup: {e}", exc_info=True)
 
     async def create_trigger_rule(self, trigger_rule: TriggerRule) -> str:
         """
@@ -103,6 +153,27 @@ class TriggerRuleService:
 
         trigger_rule.id = rule_id
         self._trigger_rule_runner.add_trigger_rule(trigger_rule)
+
+        logger.info(f"[CreateRule] Rule {rule_id} created, condition_type={trigger_rule.condition_type}, "
+                   f"has_detection_condition={trigger_rule.detection_condition is not None}")
+
+        # Handle detection condition if present
+        if trigger_rule.detection_condition:
+            logger.info(f"[CreateRule] Detection condition found: enabled={trigger_rule.detection_condition.enabled}, "
+                       f"targets={trigger_rule.detection_condition.targets}")
+            if trigger_rule.detection_condition.enabled:
+                logger.info(f"[CreateRule] Calling _handle_detection_condition_on_create for rule {rule_id}")
+                try:
+                    detection_result = await self._handle_detection_condition_on_create(trigger_rule)
+                    logger.info(f"[CreateRule] Detection result for rule {rule_id}: {detection_result}")
+                    if detection_result.get("errors"):
+                        logger.warning(f"[CreateRule] Detection condition errors: {detection_result['errors']}")
+                except Exception as e:
+                    logger.error(f"[CreateRule] Error handling detection condition: {e}", exc_info=True)
+            else:
+                logger.info(f"[CreateRule] Detection condition disabled for rule {rule_id}")
+        else:
+            logger.info(f"[CreateRule] No detection condition for rule {rule_id}")
 
         logger.info("Trigger rule created successfully: %s", rule_id)
         return rule_id
@@ -205,10 +276,33 @@ class TriggerRuleService:
         if trigger_rule.execute_info and trigger_rule.execute_info.notify:
             await self._check_notify(trigger_rule.execute_info.notify)
 
+        # Get old rule for detection condition comparison
+        old_rule = self._trigger_rule_dao.get_by_id(trigger_rule.id)
+
         success = self._trigger_rule_dao.update(trigger_rule)
 
         if success:
             self._trigger_rule_runner.add_trigger_rule(trigger_rule)
+
+            # Handle detection condition changes
+            try:
+                detection_result = await self._handle_detection_condition_on_update(
+                    trigger_rule, old_rule
+                )
+                if detection_result.get("detection_updated"):
+                    logger.info(
+                        f"Detection condition updated for rule {trigger_rule.id}: "
+                        f"action={detection_result.get('action')}, "
+                        f"cameras={detection_result.get('cameras_affected', [])}"
+                    )
+                if detection_result.get("errors"):
+                    logger.warning(
+                        f"Detection condition errors for rule {trigger_rule.id}: "
+                        f"{detection_result['errors']}"
+                    )
+            except Exception as e:
+                logger.error(f"Error handling detection condition update for rule {trigger_rule.id}: {e}")
+
             logger.info("Trigger rule updated successfully: %s", trigger_rule.id)
         else:
             logger.error("Failed to update trigger rule: %s", trigger_rule.id)
