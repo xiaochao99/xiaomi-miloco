@@ -231,12 +231,13 @@ class SQLiteConnector:
         """
         cursor = conn.cursor()
 
-        # Check if detection_condition column exists (for new schema)
+        # Check if columns exist in old table
         cursor.execute("PRAGMA table_info(trigger_rule)")
         columns_info = cursor.fetchall()
         column_names = {row[1] for row in columns_info}
         has_detection_condition = "detection_condition" in column_names
         has_condition_type = "condition_type" in column_names
+        has_ha_condition = "ha_condition" in column_names
 
         # Start transaction
         cursor.execute("BEGIN TRANSACTION")
@@ -284,35 +285,71 @@ class SQLiteConnector:
 
             # Copy data from old table
             if has_detection_condition and has_condition_type:
-                cursor.execute("""
-                    INSERT INTO trigger_rule
-                    SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                           condition_type, ha_condition, detection_condition, execute_info, filter, created_at, updated_at
-                    FROM trigger_rule_old
-                """)
+                if has_ha_condition:
+                    cursor.execute("""
+                        INSERT INTO trigger_rule
+                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
+                               condition_type, ha_condition, detection_condition, execute_info, filter, created_at, updated_at
+                        FROM trigger_rule_old
+                    """)
+                else:
+                    cursor.execute("""
+                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
+                               condition_type, ha_condition, detection_condition, execute_info, filter, created_at, updated_at)
+                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
+                               condition_type, NULL, detection_condition, execute_info, filter, created_at, updated_at
+                        FROM trigger_rule_old
+                    """)
             elif has_detection_condition:
-                # Old table doesn't have condition_type column, use default 'llm'
-                cursor.execute("""
-                    INSERT INTO trigger_rule
-                    SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                           'llm', ha_condition, detection_condition, execute_info, filter, created_at, updated_at
-                    FROM trigger_rule_old
-                """)
+                # Old table doesn't have condition_type column
+                if has_ha_condition:
+                    cursor.execute("""
+                        INSERT INTO trigger_rule
+                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
+                               'llm', ha_condition, detection_condition, execute_info, filter, created_at, updated_at
+                        FROM trigger_rule_old
+                    """)
+                else:
+                    cursor.execute("""
+                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
+                               condition_type, ha_condition, detection_condition, execute_info, filter, created_at, updated_at)
+                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
+                               'llm', NULL, detection_condition, execute_info, filter, created_at, updated_at
+                        FROM trigger_rule_old
+                    """)
             elif has_condition_type:
-                cursor.execute("""
-                    INSERT INTO trigger_rule
-                    SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                           condition_type, ha_condition, execute_info, filter, created_at, updated_at
-                    FROM trigger_rule_old
-                """)
+                if has_ha_condition:
+                    cursor.execute("""
+                        INSERT INTO trigger_rule
+                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
+                               condition_type, ha_condition, execute_info, filter, created_at, updated_at
+                        FROM trigger_rule_old
+                    """)
+                else:
+                    cursor.execute("""
+                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
+                               condition_type, ha_condition, execute_info, filter, created_at, updated_at)
+                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
+                               condition_type, NULL, execute_info, filter, created_at, updated_at
+                        FROM trigger_rule_old
+                    """)
             else:
                 # Old table doesn't have condition_type or detection_condition columns
-                cursor.execute("""
-                    INSERT INTO trigger_rule
-                    SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                           'llm', ha_condition, execute_info, filter, created_at, updated_at
-                    FROM trigger_rule_old
-                """)
+                if has_ha_condition:
+                    cursor.execute("""
+                        INSERT INTO trigger_rule
+                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
+                               'llm', ha_condition, execute_info, filter, created_at, updated_at
+                        FROM trigger_rule_old
+                    """)
+                else:
+                    cursor.execute("""
+                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
+                               condition_type, ha_condition, execute_info, filter, created_at, updated_at)
+                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
+                               'llm', NULL, execute_info, filter, created_at, updated_at
+                        FROM trigger_rule_old
+                    """)
 
             # Drop old table
             cursor.execute("DROP TABLE trigger_rule_old")
