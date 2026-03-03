@@ -146,3 +146,18 @@ def save_rtsp_cameras(cameras: List[Dict[str, Any]]) -> None:
     _config["rtsp_cameras"] = cameras
     RTSP_CAMERA_CONFIG = cameras
     save_yaml_config(CONFIG_FILE, _config)
+
+
+def save_rtsp_server_config(enabled: bool, port: int) -> None:
+    """
+    Save RTSP server configuration to YAML file.
+
+    Args:
+        enabled: Whether RTSP server is enabled
+        port: RTSP server listening port
+    """
+    global _config, RTSP_SERVER_CONFIG
+    _config["camera"]["rtsp_server"]["enabled"] = bool(enabled)
+    _config["camera"]["rtsp_server"]["port"] = int(port)
+    RTSP_SERVER_CONFIG = _config["camera"]["rtsp_server"]
+    save_yaml_config(CONFIG_FILE, _config)

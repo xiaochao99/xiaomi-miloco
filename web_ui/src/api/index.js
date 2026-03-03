@@ -79,6 +79,10 @@ export const deleteAPIToken = (data) => postApi('/api/tokens/delete', data);
 export const getCameraConfig = () => getApi('/api/miot/camera_config');
 export const setCameraConfig = (data) => postApi('/api/miot/camera_config', data);
 
+// RTSP server configuration
+export const getRTSPServerConfig = () => getApi('/api/miot/rtsp_server_config');
+export const setRTSPServerConfig = (data) => postApi('/api/miot/rtsp_server_config', data);
+
 // RTSP Camera management
 export const getRTSPCameras = () => getApi('/api/miot/rtsp_cameras');
 export const createRTSPCamera = (data) => postApi('/api/miot/rtsp_cameras', data);

@@ -411,7 +411,58 @@ class MiotService:
 
         logger.info("Camera configuration updated and saved successfully")
         return self.get_camera_config()
-    
+
+    # ==================== RTSP Server Configuration ====================
+
+    def get_rtsp_server_config(self) -> dict:
+        """
+        Get RTSP server configuration.
+
+        Returns:
+            dict: RTSP server configuration including enabled and port
+        """
+        from miloco_server.config.normal_config import RTSP_SERVER_CONFIG
+        return {
+            "enabled": bool(RTSP_SERVER_CONFIG.get("enabled", True)),
+            "port": int(RTSP_SERVER_CONFIG.get("port", 8554)),
+        }
+
+    def set_rtsp_server_config(self, enabled: bool, port: int) -> dict:
+        """
+        Set RTSP server configuration.
+
+        Args:
+            enabled: Whether RTSP server is enabled
+            port: RTSP server listening port
+
+        Returns:
+            dict: Updated RTSP server configuration
+        """
+        logger.info("Setting RTSP server config: enabled=%s, port=%s", enabled, port)
+
+        # Validate port
+        try:
+            port = int(port)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"port must be a valid integer, got: {port}") from exc
+
+        if port <= 0 or port > 65535:
+            raise ValueError(f"port must be between 1 and 65535, got: {port}")
+
+        # Persist to YAML file
+        from miloco_server.config.normal_config import save_rtsp_server_config
+        save_rtsp_server_config(bool(enabled), port)
+
+        # Update miot_proxy dynamically without restart
+        try:
+            self._miot_proxy.update_rtsp_server_config(bool(enabled), port)
+        except AttributeError:
+            # Older MiotProxy without dynamic update support, ignore
+            logger.warning("MiotProxy does not support dynamic RTSP server update")
+
+        logger.info("RTSP server configuration updated and saved successfully")
+        return self.get_rtsp_server_config()
+
     # ==================== RTSP Camera Management ====================
 
     def get_rtsp_cameras(self) -> List[dict]:

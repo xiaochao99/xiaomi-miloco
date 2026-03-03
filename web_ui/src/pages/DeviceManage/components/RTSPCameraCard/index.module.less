@@ -1,0 +1,146 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+
+.cameraCard {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  border: 1px solid #f0f0f0;
+
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+    border-color: #d9d9d9;
+  }
+}
+
+.cameraCardContent {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.cameraIcon {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.cameraInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cameraName {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-color);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cameraLocation {
+  font-size: 13px;
+  color: #8c8c8c;
+  line-height: 1.4;
+}
+
+.enableSwitch {
+  flex-shrink: 0;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 8px;
+}
+
+.infoRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .label {
+    font-size: 12px;
+    color: #8c8c8c;
+    flex-shrink: 0;
+    min-width: 60px;
+  }
+
+  .value {
+    font-size: 12px;
+    color: var(--text-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    font-family: monospace;
+  }
+}
+
+.tagsRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.actionButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #595959;
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: #f0f0f0;
+    color: #1890ff;
+  }
+
+  span {
+    font-size: 13px;
+  }
+}
+
+.deleteButton {
+  &:hover {
+    background: #fff2f0;
+    color: #ff4d4f;
+  }
+}

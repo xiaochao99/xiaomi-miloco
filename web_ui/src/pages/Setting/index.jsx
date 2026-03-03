@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typography, Segmented, Table, Popconfirm, Tag, Tooltip, Alert} from 'antd';
 import { useTranslation } from 'react-i18next';
 import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined, PlusOutlined, CopyOutlined, DeleteOutlined, EyeOutlined, VideoCameraOutlined } from '@ant-design/icons';
-import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig } from '@/api';
+import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig, getRTSPServerConfig, setRTSPServerConfig } from '@/api';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSettingStore } from '@/stores/settingStore';
 import { Card, Header } from '@/components';
@@ -54,6 +54,12 @@ const Setting = () => {
   });
   const [loadingCameraConfig, setLoadingCameraConfig] = useState(false);
 
+  // RTSP server config states
+  const [rtspServerConfig, setRtspServerConfigState] = useState({
+    enabled: true,
+    port: 8554
+  });
+  const [loadingRtspServerConfig, setLoadingRtspServerConfig] = useState(false);
 
   // language options
   const languageOptions = [
@@ -121,6 +127,11 @@ const Setting = () => {
     fetchCameraConfig();
   }, []);
 
+  // Load RTSP Server Config
+  useEffect(() => {
+    fetchRtspServerConfig();
+  }, []);
+
   const fetchCameraConfig = async () => {
     try {
       const res = await getCameraConfig();
@@ -129,6 +140,17 @@ const Setting = () => {
       }
     } catch (error) {
       console.error('Failed to load camera config:', error);
+    }
+  };
+
+  const fetchRtspServerConfig = async () => {
+    try {
+      const res = await getRTSPServerConfig();
+      if (res && res.code === 0) {
+        setRtspServerConfigState(res.data);
+      }
+    } catch (error) {
+      console.error('Failed to load RTSP server config:', error);
     }
   };
 
@@ -330,6 +352,61 @@ const Setting = () => {
     }
   };
 
+  const handleRtspEnabledChange = async (checked) => {
+    const nextConfig = { ...rtspServerConfig, enabled: checked };
+    setRtspServerConfigState(nextConfig);
+
+    setLoadingRtspServerConfig(true);
+    try {
+      const payload = { enabled: !!checked, port: Number(nextConfig.port) || 8554 };
+      const res = await setRTSPServerConfig(payload);
+      if (res && res.code === 0) {
+        message.success(t('setting.rtspServerConfigSaved'));
+        if (res.data) {
+          setRtspServerConfigState(res.data);
+        }
+      } else {
+        message.error(res?.message || t('setting.rtspServerConfigSaveFailed'));
+      }
+    } catch (error) {
+      console.error('Failed to save RTSP server config:', error);
+      message.error(t('setting.rtspServerConfigSaveFailed'));
+    } finally {
+      setLoadingRtspServerConfig(false);
+    }
+  };
+
+  const handleRtspPortChange = (value) => {
+    setRtspServerConfigState(prev => ({ ...prev, port: value }));
+  };
+
+  const handleRtspPortBlur = async () => {
+    const port = Number(rtspServerConfig.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      message.error(t('setting.pleaseEnterRtspPort'));
+      return;
+    }
+
+    setLoadingRtspServerConfig(true);
+    try {
+      const payload = { enabled: !!rtspServerConfig.enabled, port };
+      const res = await setRTSPServerConfig(payload);
+      if (res && res.code === 0) {
+        message.success(t('setting.rtspServerConfigSaved'));
+        if (res.data) {
+          setRtspServerConfigState(res.data);
+        }
+      } else {
+        message.error(res?.message || t('setting.rtspServerConfigSaveFailed'));
+      }
+    } catch (error) {
+      console.error('Failed to save RTSP server config:', error);
+      message.error(t('setting.rtspServerConfigSaveFailed'));
+    } finally {
+      setLoadingRtspServerConfig(false);
+    }
+  };
+
 
   return (
     <div className={styles.settingContainer}>
@@ -438,6 +515,40 @@ const Setting = () => {
                   placeholder={t('setting.pleaseEnterResolution')}
                 />
               </Tooltip>
+            </div>
+          </div>
+        </Card>
+
+        {/* RTSP server configuration */}
+        <Card className={styles.settingCard} contentClassName={styles.settingCardContent}>
+          <div className={styles.settingCardTitle}>{t('setting.rtspServerSetting')}</div>
+          <div className={styles.settingCardItemList}>
+            <div className={styles.settingItem}>
+              <div className={styles.settingLabel}>
+                <ToolOutlined /> {t('setting.rtspServerEnabled')}
+              </div>
+              <Switch
+                checked={!!rtspServerConfig.enabled}
+                onChange={handleRtspEnabledChange}
+                disabled={loadingRtspServerConfig}
+              />
+            </div>
+
+            <div className={styles.settingItem}>
+              <div className={styles.settingLabel}>
+                <ToolOutlined /> {t('setting.rtspServerPort')}
+              </div>
+              <Input
+                type="number"
+                min={1}
+                max={65535}
+                value={rtspServerConfig.port}
+                onChange={(e) => handleRtspPortChange(parseInt(e.target.value) || 0)}
+                onBlur={handleRtspPortBlur}
+                style={{ width: 382 }}
+                disabled={loadingRtspServerConfig}
+                placeholder={t('setting.rtspServerPortPlaceholder')}
+              />
             </div>
           </div>
         </Card>

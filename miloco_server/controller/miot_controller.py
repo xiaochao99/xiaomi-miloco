@@ -423,6 +423,57 @@ async def set_camera_config(request: Request, current_user: str = Depends(verify
         )
 
 
+# RTSP server configuration endpoints
+@router.get("/rtsp_server_config", summary="Get RTSP server configuration", response_model=NormalResponse)
+async def get_rtsp_server_config(current_user: str = Depends(verify_token)):
+    """Get RTSP server configuration including enabled flag and port."""
+    logger.info("Get RTSP server config API called, user: %s", current_user)
+    config = manager.miot_service.get_rtsp_server_config()
+    return NormalResponse(
+        code=0,
+        message="RTSP server configuration retrieved successfully",
+        data=config
+    )
+
+
+@router.post("/rtsp_server_config", summary="Set RTSP server configuration", response_model=NormalResponse)
+async def set_rtsp_server_config(request: Request, current_user: str = Depends(verify_token)):
+    """Set RTSP server configuration including enabled flag and port."""
+    logger.info("Set RTSP server config API called, user: %s", current_user)
+    try:
+        body = await request.json()
+        logger.info("Request body: %s", body)
+        enabled = body.get("enabled")
+        port = body.get("port")
+
+        if enabled is None:
+            raise ValueError("enabled is required")
+        if port is None:
+            raise ValueError("port is required")
+
+        result = manager.miot_service.set_rtsp_server_config(enabled, port)
+        logger.info("RTSP server config saved successfully: %s", result)
+        return NormalResponse(
+            code=0,
+            message="RTSP server configuration updated successfully",
+            data=result
+        )
+    except ValueError as e:
+        logger.error("Validation error for RTSP server config: %s", e)
+        return NormalResponse(
+            code=1,
+            message=str(e),
+            data=None
+        )
+    except Exception as e:
+        logger.error("Failed to set RTSP server config: %s", e, exc_info=True)
+        return NormalResponse(
+            code=1,
+            message=f"Internal error: {str(e)}",
+            data=None
+        )
+
+
 # ==================== RTSP Camera Management APIs ====================
 
 @router.get("/rtsp_cameras", summary="Get all RTSP cameras", response_model=NormalResponse)
