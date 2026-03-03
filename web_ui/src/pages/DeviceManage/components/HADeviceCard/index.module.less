@@ -1,0 +1,100 @@
+/**
+ * Copyright (C) 2025 Xiaomi Corporation
+ * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
+ */
+
+.deviceCard {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s ease;
+
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+  }
+}
+
+.deviceCardContent {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.deviceIcon {
+  width: 48px;
+  height: 48px;
+  background: #f5f5f5;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.deviceInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.deviceName {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-color);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceArea {
+  font-size: 13px;
+  color: #8c8c8c;
+  line-height: 1.4;
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 4px;
+}
+
+.entityCount {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .count {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1890ff;
+  }
+
+  .label {
+    font-size: 13px;
+    color: #8c8c8c;
+  }
+}
+
+.arrowIcon {
+  color: #bfbfbf;
+  transition: color 0.3s ease;
+
+  .deviceCard:hover & {
+    color: #1890ff;
+  }
+}

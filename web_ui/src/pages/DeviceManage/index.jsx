@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, Spin, Empty } from 'antd';
 import { Header, Icon } from '@/components';
-import { DeviceList, RTSPCameraList, RTSPCameraModal } from './components';
+import { DeviceList, HADeviceList, RTSPCameraList, RTSPCameraModal } from './components';
 import { useDevices } from './hooks/useDevices';
 import { useHADevices } from './hooks/useHADevices';
 import { useRTSPCameras } from './hooks/useRTSPCameras';
@@ -35,7 +35,8 @@ const DeviceManage = () => {
     openCreateModal,
     openEditModal,
     closeModal,
-    handleSave
+    handleSave,
+    toggleCameraEnable
   } = useRTSPCameras();
 
   const handleRefresh = () => {
@@ -48,29 +49,41 @@ const DeviceManage = () => {
     }
   };
 
-  const renderContent = (devices, loading, emptyText) => {
-      if (loading) {
-          return <div style={{display: 'flex', justifyContent: 'center', padding: '50px 0'}}><Spin /></div>;
-      }
-      if (!devices || devices.length === 0) {
-           return <Empty
-              description={emptyText}
-              imageStyle={{ width: 72, height: 72 }}
-            />;
-      }
-      return <DeviceList devices={devices} />;
-  }
+  const renderMiotContent = () => {
+    if (miotLoading) {
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '50px 0' }}>
+          <Spin />
+        </div>
+      );
+    }
+    if (!miotDevices || miotDevices.length === 0) {
+      return (
+        <Empty
+          description={t('deviceManage.noDevice')}
+          imageStyle={{ width: 72, height: 72 }}
+        />
+      );
+    }
+    return <DeviceList devices={miotDevices} />;
+  };
 
   const tabItems = [
     {
       key: 'miot',
       label: t('deviceManage.miotDevices'),
-      children: renderContent(miotDevices, miotLoading, t('deviceManage.noDevice'))
+      children: renderMiotContent()
     },
     {
       key: 'ha',
       label: t('deviceManage.haDevices'),
-      children: renderContent(haDevices, haLoading, t('deviceManage.noDevice'))
+      children: (
+        <HADeviceList
+          devices={haDevices}
+          loading={haLoading}
+          onRefresh={refreshHa}
+        />
+      )
     },
     {
       key: 'rtsp',
@@ -82,6 +95,7 @@ const DeviceManage = () => {
           onEdit={openEditModal}
           onDelete={deleteCamera}
           onAdd={openCreateModal}
+          onToggleEnable={toggleCameraEnable}
         />
       )
     }

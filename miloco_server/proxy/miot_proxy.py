@@ -72,17 +72,11 @@ class MiotProxy:
 
         # Initialize RTSP Server
         self._rtsp_server: Optional[RtspServer] = None
-        if RTSP_SERVER_CONFIG.get("enabled", True):
-            try:
-                rtsp_port = RTSP_SERVER_CONFIG.get("port", 8554)
-                self._rtsp_server = RtspServer(port=rtsp_port)
-                self._rtsp_server.start()
-                logger.info(
-                    "RTSP Server started on port %s ",
-                    rtsp_port
-                )
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.error("Failed to start RTSP Server: %s", e)
+        self._rtsp_server_enabled: bool = bool(RTSP_SERVER_CONFIG.get("enabled", True))
+        self._rtsp_server_port: int = int(RTSP_SERVER_CONFIG.get("port", 8554))
+
+        if self._rtsp_server_enabled:
+            self._start_rtsp_server(self._rtsp_server_port)
         else:
             logger.info("RTSP Server is disabled in configuration")
 
@@ -97,6 +91,63 @@ class MiotProxy:
                 logger.warning("RTSP library not found, will mark RTSP cameras offline: %s", exc)
             except Exception as exc:  # pylint: disable=broad-exception-caught
                 logger.error("Failed to initialize RTSP camera client: %s", exc, exc_info=True)
+
+    def _start_rtsp_server(self, port: int) -> None:
+        """Start RTSP server on given port."""
+        try:
+            self._rtsp_server = RtspServer(port=port)
+            self._rtsp_server.start()
+            logger.info("RTSP Server started on port %s", port)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.error("Failed to start RTSP Server on port %s: %s", port, exc)
+            self._rtsp_server = None
+
+    def _stop_rtsp_server(self) -> None:
+        """Stop and destroy current RTSP server if running."""
+        if not self._rtsp_server:
+            return
+        try:
+            self._rtsp_server.stop()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.warning("Error while stopping RTSP Server: %s", exc)
+        try:
+            self._rtsp_server.destroy()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.warning("Error while destroying RTSP Server: %s", exc)
+        finally:
+            self._rtsp_server = None
+            logger.info("RTSP Server instance cleared")
+
+    def update_rtsp_server_config(self, enabled: bool, port: int) -> None:
+        """
+        Update RTSP server configuration at runtime.
+
+        Args:
+            enabled: Whether RTSP server should be enabled
+            port: Listening port
+        """
+        enabled = bool(enabled)
+        port = int(port)
+
+        logger.info("Updating RTSP Server config: enabled=%s, port=%s", enabled, port)
+
+        # If nothing changes, do nothing
+        if enabled == self._rtsp_server_enabled and port == self._rtsp_server_port:
+            logger.info("RTSP Server config unchanged, skip update")
+            return
+
+        self._rtsp_server_enabled = enabled
+        self._rtsp_server_port = port
+
+        # Stop current server if running
+        if self._rtsp_server:
+            self._stop_rtsp_server()
+
+        # Start new server if enabled
+        if self._rtsp_server_enabled:
+            self._start_rtsp_server(self._rtsp_server_port)
+        else:
+            logger.info("RTSP Server disabled via configuration update")
 
     @property
     def miot_client(self) -> MIoTClient:

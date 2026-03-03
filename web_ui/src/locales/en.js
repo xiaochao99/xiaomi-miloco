@@ -447,10 +447,25 @@ export default {
     fetchDeviceListFailed: 'Failed to get device list',
     refreshDeviceListFailed: 'Failed to refresh device list',
     noDevice: 'No devices',
+    noHADevice: 'No HA devices',
     miotDevices: 'Mi Home Devices',
     haDevices: 'HA Devices',
     rtspCameras: 'RTSP Cameras',
     defaultRoom: 'Unassigned Area',
+    defaultArea: 'Unassigned Area',
+    entities: 'entities',
+    unavailable: 'Unavailable',
+    unknown: 'Unknown',
+    deviceId: 'Device ID',
+    area: 'Area',
+    entityList: 'Entity List',
+    // HA Device Management
+    ha: {
+      deviceInfo: 'Device Info',
+      entityList: 'Entity List',
+      noEntities: 'No entities',
+      entityCount: 'Entity Count',
+    },
     // RTSP Camera Management
     rtsp: {
       addCamera: 'Add Camera',
@@ -483,6 +498,10 @@ export default {
       homeNamePlaceholder: 'e.g., Home',
       roomName: 'Room Name',
       roomNamePlaceholder: 'e.g., Living Room',
+      audioEnabled: 'Audio Enabled',
+      audioDisabled: 'Audio Disabled',
+      enableSuccess: 'Camera enabled',
+      disableSuccess: 'Camera disabled',
     },
   },
   logManage: {
@@ -575,6 +594,13 @@ export default {
     cameraConfigSaved: 'Camera configuration saved successfully',
     cameraConfigSaveFailed: 'Failed to save camera configuration',
     pleaseEnterResolution: 'Please enter resolution',
+    rtspServerSetting: 'RTSP Server Settings',
+    rtspServerEnabled: 'Enable RTSP Server',
+    rtspServerPort: 'RTSP Server Port',
+    rtspServerPortPlaceholder: 'Enter RTSP server port, e.g. 8554',
+    rtspServerConfigSaved: 'RTSP server configuration saved successfully',
+    rtspServerConfigSaveFailed: 'Failed to save RTSP server configuration',
+    pleaseEnterRtspPort: 'Please enter a valid port (1-65535)',
   },
 
   login: {

@@ -126,6 +126,31 @@ export const useRTSPCameras = () => {
     }
   };
 
+  // Toggle camera enable status
+  const toggleCameraEnable = async (did, enabled) => {
+    try {
+      const camera = cameras.find(c => c.did === did);
+      if (!camera) return false;
+      
+      const res = await updateRTSPCamera(did, { ...camera, enabled });
+      if (res && res.code === 0) {
+        message.success(enabled 
+          ? t('deviceManage.rtsp.enableSuccess') 
+          : t('deviceManage.rtsp.disableSuccess')
+        );
+        await fetchCameras();
+        return true;
+      } else {
+        message.error(res?.message || t('deviceManage.rtsp.updateFailed'));
+        return false;
+      }
+    } catch (error) {
+      console.error('Failed to toggle camera enable status:', error);
+      message.error(t('deviceManage.rtsp.updateFailed'));
+      return false;
+    }
+  };
+
   return {
     cameras,
     loading,
@@ -138,6 +163,7 @@ export const useRTSPCameras = () => {
     openCreateModal,
     openEditModal,
     closeModal,
-    handleSave
+    handleSave,
+    toggleCameraEnable
   };
 };

@@ -226,8 +226,35 @@ export const iconLibrary = {
 </g>
 </svg>
 `
+  },
+  // New icons for device management
+  arrowRight: () => {
+    return `<path d="M6.5 4L11.5 9L6.5 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`
+  },
+  camera: () => {
+    return `<path d="M15 6.5H14.2L12.6 4.9C12.4 4.7 12.1 4.6 11.8 4.6H8.2C7.9 4.6 7.6 4.7 7.4 4.9L5.8 6.5H5C4.2 6.5 3.5 7.2 3.5 8V15C3.5 15.8 4.2 16.5 5 16.5H15C15.8 16.5 16.5 15.8 16.5 15V8C16.5 7.2 15.8 6.5 15 6.5ZM10 14C8.3 14 7 12.7 7 11C7 9.3 8.3 8 10 8C11.7 8 13 9.3 13 11C13 12.7 11.7 14 10 14ZM10 9C8.9 9 8 9.9 8 11C8 12.1 8.9 13 10 13C11.1 13 12 12.1 12 11C12 9.9 11.1 9 10 9Z" fill="currentColor"/>`
+  },
+  light: () => {
+    return `<path d="M10 2C7.8 2 6 3.8 6 6C6 7.5 6.8 8.8 8 9.5V11C8 11.6 8.4 12 9 12H11C11.6 12 12 11.6 12 11V9.5C13.2 8.8 14 7.5 14 6C14 3.8 12.2 2 10 2ZM11 14H9V16H11V14Z" fill="currentColor"/>`
+  },
+  switch: () => {
+    return `<path d="M14 6H6C4.9 6 4 6.9 4 8V12C4 13.1 4.9 14 6 14H14C15.1 14 16 13.1 16 12V8C16 6.9 15.1 6 14 6ZM6 12V8H14V12H6Z" fill="currentColor"/>`
+  },
+  sensor: () => {
+    return `<path d="M10 2C5.6 2 2 5.6 2 10C2 14.4 5.6 18 10 18C14.4 18 18 14.4 18 10C18 5.6 14.4 2 10 2ZM10 16C6.7 16 4 13.3 4 10C4 6.7 6.7 4 10 4C13.3 4 16 6.7 16 10C16 13.3 13.3 16 10 16ZM10 6C7.8 6 6 7.8 6 10C6 12.2 7.8 14 10 14C12.2 14 14 12.2 14 10C14 7.8 12.2 6 10 6Z" fill="currentColor"/>`
+  },
+  climate: () => {
+    return `<path d="M10 2C7.8 2 6 3.8 6 6V12C6 14.2 7.8 16 10 16C12.2 16 14 14.2 14 12V6C14 3.8 12.2 2 10 2ZM10 14C8.9 14 8 13.1 8 12V6C8 4.9 8.9 4 10 4C11.1 4 12 4.9 12 6V12C12 13.1 11.1 14 10 14ZM10 18C10.6 18 11 17.6 11 17V15H9V17C9 17.6 9.4 18 10 18Z" fill="currentColor"/>`
+  },
+  cover: () => {
+    return `<path d="M4 6H16V14H4V6ZM5 7V13H15V7H5Z" fill="currentColor"/>`
+  },
+  fan: () => {
+    return `<path d="M10 2C6.7 2 4 4.7 4 8C4 11.3 6.7 14 10 14C13.3 14 16 11.3 16 8C16 4.7 13.3 2 10 2ZM10 12C7.8 12 6 10.2 6 8C6 5.8 7.8 4 10 4C12.2 4 14 5.8 14 8C14 10.2 12.2 12 10 12ZM10 6C8.9 6 8 6.9 8 8C8 9.1 8.9 10 10 10C11.1 10 12 9.1 12 8C12 6.9 11.1 6 10 6Z" fill="currentColor"/>`
+  },
+  media: () => {
+    return `<path d="M8 4L16 10L8 16V4ZM6 4H4V16H6V4Z" fill="currentColor"/>`
   }
-
 
 
 };

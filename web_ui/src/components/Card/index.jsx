@@ -14,12 +14,13 @@ import styles from './index.module.less'
  * @param {string} [props.className] - Additional CSS class for the card container
  * @param {string} [props.contentClassName] - Additional CSS class for the card content area
  * @param {string} [props.title=''] - Optional title text displayed in the card header
+ * @param {Function} [props.onClick] - Click handler for the card
  * @param {React.ReactNode} props.children - Content to be rendered inside the card
  * @returns {JSX.Element} Card component with optional header and content
  */
-const Card = ({ className,contentClassName, title = '', children }) => {
+const Card = ({ className, contentClassName, title = '', onClick, children }) => {
   return (
-    <div className={`${styles.card} ${className}`}>
+    <div className={`${styles.card} ${className}`} onClick={onClick}>
       {
         title && (
           <div className={styles.cardHeader}>
