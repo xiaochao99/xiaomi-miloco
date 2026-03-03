@@ -47,11 +47,32 @@ class LocalModels:
 
     def __init__(self):
         self._local_models: List[LLMModelInfo] = []
+        # 异步获取模型列表，失败不阻塞启动
+        asyncio.create_task(self._fetch_models_from_http_sync())
+
+    async def _fetch_models_from_http_sync(self):
+        """Fetch model list from ai_engine via HTTP request synchronously."""
         try:
-            asyncio.create_task(self._fetch_models_from_http_sync())
+            models_url = self._get_service_url(LocalModelApi.MODELS_DESCRIPTION)
+            json_resp = await self._forward_local_models_services(models_url, method_get=True)
+            data = json_resp["data"]
+            models = []
+            if data:
+                models = [
+                    LLMModelInfo(
+                        id=f"{LOCAL_MODEL_ID_PREFIX}{idx}",
+                        base_url=self._get_service_url(LocalModelApi.BASE_VERSION),
+                        api_key=LOCAL_MODEL_API_KEY,
+                        local=True,
+                        model_name=model.get("id"),
+                        loaded=model.get("loaded", False),
+                        estimate_vram_usage=model.get("estimate_vram_usage", -1.0))
+                    for idx, model in enumerate(data)
+                ]
+            self._local_models = models
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.error("Init local model list failed: %s", e)
-            raise LLMServiceException("Init local model list failed") from e
+            logger.warning("Local AI engine not available: %s", e)
+            self._local_models = []
 
     async def toggle_model(self, model_name: str, load: bool):
         """Load or unload specified model."""
@@ -88,27 +109,6 @@ class LocalModels:
         host: str = LOCAL_MODEL_CONFIG["host"]
         port: str = LOCAL_MODEL_CONFIG["port"]
         return f"http://{host}:{port}/{api.value}"
-
-    async def _fetch_models_from_http_sync(self):
-        """Fetch model list from ai_engine via HTTP request synchronously."""
-        models_url = self._get_service_url(LocalModelApi.MODELS_DESCRIPTION)
-
-        json_resp = await self._forward_local_models_services(models_url, method_get=True)
-        data = json_resp["data"]
-        models = []
-        if data:
-            models = [
-                LLMModelInfo(
-                    id=f"{LOCAL_MODEL_ID_PREFIX}{idx}",
-                    base_url=self._get_service_url(LocalModelApi.BASE_VERSION),
-                    api_key=LOCAL_MODEL_API_KEY,
-                    local=True,
-                    model_name=model.get("id"),
-                    loaded=model.get("loaded", False),
-                    estimate_vram_usage=model.get("estimate_vram_usage", -1.0))
-                for idx, model in enumerate(data)
-            ]
-        self._local_models = models
 
     async def _forward_local_models_services(self,
                                              target_url: str,
