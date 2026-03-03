@@ -16,6 +16,7 @@ from .model_controller import router as model_router
 from .mcp_controller import router as mcp_router
 from .api_token_controller import router as api_token_router
 from .ai_chat_controller import router as ai_chat_router
+from .openai_compat_controller import router as openai_compat_router
 from .detection_controller import detection_router
 
 __all__ = [
@@ -29,5 +30,6 @@ __all__ = [
     "mcp_router",
     "api_token_router",
     "ai_chat_router",
+    "openai_compat_router",
     "detection_router",
 ]

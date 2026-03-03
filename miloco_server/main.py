@@ -27,6 +27,7 @@ from miloco_server.controller import (
     mcp_router,
     miot_router,
     model_router,
+    openai_compat_router,
     trigger_router,
     web_router,
 )
@@ -67,6 +68,7 @@ app.include_router(mcp_router, prefix="/api")
 app.include_router(api_token_router, prefix="/api")
 app.include_router(ai_chat_router, prefix="/api")
 app.include_router(detection_router, prefix="/api")
+app.include_router(openai_compat_router)
 
 
 @app.get("/{full_path:path}")
