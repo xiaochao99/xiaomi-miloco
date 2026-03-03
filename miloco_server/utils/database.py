@@ -156,7 +156,6 @@ class SQLiteConnector:
                 camera_dids TEXT NOT NULL,  -- JSON format storage for camera device ID list
                 ha_devices TEXT,            -- JSON format storage for Home Assistant device ID list
                 condition TEXT,             -- Trigger condition (nullable for detection mode)
-                condition TEXT,             -- Trigger condition (nullable for detection mode)
                 execute_info TEXT,          -- JSON format storage for ExecuteInfo object
                 filter TEXT,                 -- JSON format storage for TriggerFilter object
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -207,10 +206,6 @@ class SQLiteConnector:
         if "ha_condition" not in columns:
             logger.info("Adding ha_condition column to trigger_rule table")
             cursor.execute("ALTER TABLE trigger_rule ADD COLUMN ha_condition TEXT")
-
-        if "detection_condition" not in columns:
-            logger.info("Adding detection_condition column to trigger_rule table")
-            cursor.execute("ALTER TABLE trigger_rule ADD COLUMN detection_condition TEXT")
 
         if "detection_condition" not in columns:
             logger.info("Adding detection_condition column to trigger_rule table")
