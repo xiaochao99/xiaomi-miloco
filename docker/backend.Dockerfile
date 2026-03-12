@@ -5,7 +5,7 @@
 # For China: 
 # - https://mirrors.aliyun.com/pypi/simple/
 # - https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-ARG PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+ARG PIP_INDEX_URL=https://pypi.org/simple/
 
 
 ################################################
@@ -39,7 +39,7 @@ COPY miloco_server/pyproject.toml /app/miloco_server/pyproject.toml
 COPY miot_kit/pyproject.toml /app/miot_kit/pyproject.toml
 
 # Install dependencies
-RUN pip config set global.index-url "${PIP_INDEX_URL}" \
+RUN if [ -n "${PIP_INDEX_URL}" ]; then pip config set global.index-url "${PIP_INDEX_URL}"; fi \
     && pip install --upgrade pip setuptools wheel \
     && pip install --no-build-isolation /app/miloco_server \
     && pip install --no-build-isolation /app/miot_kit \
