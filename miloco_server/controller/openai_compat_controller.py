@@ -21,46 +21,24 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from typing import Any, AsyncGenerator, List, Literal, Optional, Union
+from typing import Any, AsyncGenerator, Optional
+import re
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, ConfigDict
 
 from miloco_server.middleware import verify_token
-from miloco_server.controller.ai_chat_controller import APIChatAdapter, parse_ai_response
+from miloco_server.service.ai_chat_adapter import APIChatAdapter, parse_ai_response
+from miloco_server.schema.openai_compat_schema import (
+    OpenAIChatCompletionRequest,
+    build_query_from_messages,
+)
 
 
 router = APIRouter(prefix="/v1", tags=["OpenAI Compatible API"])
 
 MILOCO_OPENAI_MODEL_ID = "miloco-ai-chat"
 MILOCO_OPENAI_MODEL_ALIASES = {"miloco", "miloco-chat", "miloco-ai-chat"}
-
-
-class OpenAIChatMessage(BaseModel):
-    role: Literal["system", "user", "assistant", "tool"] = Field(...)
-    content: Optional[Union[str, List[Any]]] = Field(default=None)
-
-
-class OpenAIChatCompletionRequest(BaseModel):
-    """
-    Minimal OpenAI-compatible chat completion request.
-
-    Notes:
-    - We accept extra fields for compatibility (e.g. `session_id`, `camera_ids`, `mcp_list`)
-    - If `session_id` is provided, it will be forwarded to Miloco AI Chat for multi-turn.
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    model: Optional[str] = Field(default=MILOCO_OPENAI_MODEL_ID)
-    messages: List[OpenAIChatMessage] = Field(default_factory=list)
-    stream: bool = Field(default=False)
-
-    # Non-standard extensions (optional)
-    session_id: Optional[str] = Field(default=None, description="Miloco AI Chat session_id")
-    camera_ids: Optional[List[str]] = Field(default=None, description="Camera DID list")
-    mcp_list: Optional[List[str]] = Field(default=None, description="MCP service id list")
 
 
 def _canonicalize_model(model: Optional[str]) -> str:
@@ -72,63 +50,163 @@ def _canonicalize_model(model: Optional[str]) -> str:
     return MILOCO_OPENAI_MODEL_ID
 
 
-def _extract_text_from_content(content: Optional[Union[str, List[Any]]]) -> str:
+def _estimate_tokens(text: str) -> int:
     """
-    OpenAI messages.content can be a string or a list of content parts.
-    We support:
-    - string
-    - list of {"type":"text","text": "..."} parts (join)
+    Best-effort token estimate without introducing tokenizer dependency.
+    Many clients only require integers here; accuracy is not critical.
     """
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        texts: List[str] = []
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "text":
-                texts.append(str(part.get("text", "")))
-            elif isinstance(part, str):
-                texts.append(part)
-        return "".join(texts)
-    return str(content)
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
 
 
-def _build_query_from_messages(messages: List[OpenAIChatMessage], session_id: Optional[str]) -> str:
+def _tool_call_delta(payload: dict) -> dict:
     """
-    Build a single query string for Miloco AI Chat.
-
-    - If session_id is provided: use the latest user message content as query.
-    - Otherwise: include a short history prefix (best-effort) and the latest user message.
+    Map internal Template.CallTool payload to OpenAI `tool_calls` delta.
+    Payload example:
+      {"id": "...", "service_name": "...", "tool_name": "...", "tool_params": {...}}
     """
-    # Find the last user message
-    last_user = ""
-    for m in reversed(messages or []):
-        if m.role == "user":
-            last_user = _extract_text_from_content(m.content).strip()
-            if last_user:
-                break
+    tool_id = str(payload.get("id") or f"call_{uuid.uuid4().hex[:12]}")
+    tool_name = str(payload.get("tool_name") or "tool")
+    tool_params = payload.get("tool_params")
+    try:
+        arguments = json.dumps(tool_params or {}, ensure_ascii=False)
+    except Exception:
+        arguments = "{}"
 
-    if session_id:
-        return last_user or ""
+    return {
+        "id": tool_id,
+        "type": "function",
+        "function": {"name": tool_name, "arguments": arguments},
+    }
 
-    # No session_id: embed brief history for better continuity
-    history_lines: List[str] = []
-    for m in messages[:-1]:
-        if m.role in ("user", "assistant", "system"):
-            txt = _extract_text_from_content(m.content).strip()
-            if not txt:
+
+class _ReflectFinalStreamSplitter:
+    """
+    Split streamed text into:
+    - reasoning: text inside <reflect>...</reflect>
+    - content: text inside <final_answer>...</final_answer>
+
+    If no tags are seen, treat all text as content.
+    Tag matching is case-insensitive, supports tags spanning multiple chunks.
+    """
+
+    _OPEN_REFLECT = re.compile(r"<reflect>", re.IGNORECASE)
+    _CLOSE_REFLECT = re.compile(r"</reflect>", re.IGNORECASE)
+    _OPEN_FINAL = re.compile(r"<final_answer>", re.IGNORECASE)
+    _CLOSE_FINAL = re.compile(r"</final_answer>", re.IGNORECASE)
+    _ANY_TAG = re.compile(r"</?reflect>|</?final_answer>", re.IGNORECASE)
+    _MAX_TAG_LEN = max(len("<reflect>"), len("</reflect>"), len("<final_answer>"), len("</final_answer>"))
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._mode: str = "outside"  # outside | reflect | final
+        self._saw_any_tag = False
+
+    def _strip_stray_tags(self, text: str) -> str:
+        if not text:
+            return ""
+        return self._ANY_TAG.sub("", text)
+
+    def feed(self, chunk: str) -> list[dict[str, str]]:
+        """
+        Feed one chunk, return a list of deltas:
+        - {"reasoning": "..."} or {"content": "..."}
+        """
+        if not chunk:
+            return []
+        self._buf += chunk
+        out: list[dict[str, str]] = []
+
+        while self._buf:
+            if self._mode == "outside":
+                # Find next tag (open/close). Close tags are treated as control tokens and dropped.
+                m_candidates = [
+                    ("open_reflect", self._OPEN_REFLECT.search(self._buf)),
+                    ("close_reflect", self._CLOSE_REFLECT.search(self._buf)),
+                    ("open_final", self._OPEN_FINAL.search(self._buf)),
+                    ("close_final", self._CLOSE_FINAL.search(self._buf)),
+                ]
+                m_candidates = [(mode, m) for mode, m in m_candidates if m is not None]
+                if not m_candidates:
+                    # No tags found; if we never saw tags, stream as normal content.
+                    if not self._saw_any_tag:
+                        # Keep a small tail to avoid leaking partial tags across chunk boundaries.
+                        if len(self._buf) <= self._MAX_TAG_LEN:
+                            break
+                        emit, self._buf = self._buf[:-self._MAX_TAG_LEN], self._buf[-self._MAX_TAG_LEN:]
+                        cleaned = self._strip_stray_tags(emit)
+                        if cleaned:
+                            out.append({"content": cleaned})
+                    else:
+                        # Tags have been seen before; outside-tag text is usually meta noise. Drop it,
+                        # but still keep a small tail to avoid leaking partial tags.
+                        if len(self._buf) <= self._MAX_TAG_LEN:
+                            break
+                        self._buf = self._buf[-self._MAX_TAG_LEN:]
+                    break
+
+                # Pick earliest match
+                mode, m = min(m_candidates, key=lambda x: x[1].start())
+                before = self._buf[: m.start()]
+                if before and not self._saw_any_tag:
+                    cleaned = self._strip_stray_tags(before)
+                    if cleaned:
+                        out.append({"content": cleaned})
+                self._buf = self._buf[m.end() :]
+                self._saw_any_tag = True
+                if mode == "open_reflect":
+                    self._mode = "reflect"
+                elif mode == "open_final":
+                    self._mode = "final"
+                else:
+                    # close tags outside: drop and continue
+                    self._mode = "outside"
                 continue
-            prefix = "User" if m.role == "user" else ("Assistant" if m.role == "assistant" else "System")
-            history_lines.append(f"{prefix}: {txt}")
 
-    history = "\n".join(history_lines)
-    if history:
-        # Keep it bounded
-        history = history[-2000:]
-        return f"对话历史（供参考）：\n{history}\n\n当前问题：{last_user}"
+            if self._mode == "reflect":
+                m_close = self._CLOSE_REFLECT.search(self._buf)
+                if not m_close:
+                    # Emit most and keep tail to avoid leaking partial close tag.
+                    if len(self._buf) <= self._MAX_TAG_LEN:
+                        break
+                    emit, self._buf = self._buf[:-self._MAX_TAG_LEN], self._buf[-self._MAX_TAG_LEN:]
+                    if emit:
+                        out.append({"reasoning": emit})
+                    break
+                inside = self._buf[: m_close.start()]
+                if inside:
+                    out.append({"reasoning": inside})
+                self._buf = self._buf[m_close.end() :]
+                self._mode = "outside"
+                continue
 
-    return last_user
+            if self._mode == "final":
+                m_close = self._CLOSE_FINAL.search(self._buf)
+                if not m_close:
+                    # Emit most and keep tail so `</final_answer>` split across chunks won't leak.
+                    if len(self._buf) <= self._MAX_TAG_LEN:
+                        break
+                    emit, self._buf = self._buf[:-self._MAX_TAG_LEN], self._buf[-self._MAX_TAG_LEN:]
+                    cleaned = self._strip_stray_tags(emit)
+                    if cleaned:
+                        out.append({"content": cleaned})
+                    break
+                inside = self._buf[: m_close.start()]
+                if inside:
+                    cleaned = self._strip_stray_tags(inside)
+                    if cleaned:
+                        out.append({"content": cleaned})
+                self._buf = self._buf[m_close.end() :]
+                self._mode = "outside"
+                continue
+
+            # Fallback: should not happen
+            out.append({"content": self._buf})
+            self._buf = ""
+            break
+
+        return out
 
 
 @router.get("/models")
@@ -173,7 +251,8 @@ async def _stream_chat_completions(req: OpenAIChatCompletionRequest) -> AsyncGen
         session_id=req.session_id,
     )
 
-    query = _build_query_from_messages(req.messages, req.session_id)
+    query = build_query_from_messages(req.messages, req.session_id)
+    splitter = _ReflectFinalStreamSplitter()
 
     async for event in adapter.process_query(
         query=query,
@@ -194,12 +273,22 @@ async def _stream_chat_completions(req: OpenAIChatCompletionRequest) -> AsyncGen
             chunk_text = str(payload.get("stream", ""))
             if not chunk_text:
                 continue
+            for delta_piece in splitter.feed(chunk_text):
+                yield _sse_data({
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model_id,
+                    "choices": [{"index": 0, "delta": delta_piece, "finish_reason": None}],
+                })
+        elif header.get("namespace") == "Template" and header.get("name") == "CallTool":
+            tool_call = _tool_call_delta(payload)
             yield _sse_data({
                 "id": completion_id,
                 "object": "chat.completion.chunk",
                 "created": created,
                 "model": model_id,
-                "choices": [{"index": 0, "delta": {"content": chunk_text}, "finish_reason": None}],
+                "choices": [{"index": 0, "delta": {"tool_calls": [tool_call]}, "finish_reason": None}],
             })
 
     # Final chunk
@@ -245,8 +334,9 @@ async def chat_completions(
         session_id=req.session_id,
     )
 
-    query = _build_query_from_messages(req.messages, req.session_id)
+    query = build_query_from_messages(req.messages, req.session_id)
     full_response = ""
+    tool_calls: list[dict] = []
 
     async for event in adapter.process_query(
         query=query,
@@ -265,12 +355,18 @@ async def chat_completions(
 
         if header.get("namespace") == "Template" and header.get("name") == "ToastStream":
             full_response += str(payload.get("stream", ""))
+        elif header.get("namespace") == "Template" and header.get("name") == "CallTool":
+            tool_calls.append(_tool_call_delta(payload))
 
     parsed = parse_ai_response(full_response)
     assistant_content = parsed.get("final_answer") or full_response
+    assistant_reasoning = parsed.get("thinking")
 
     created = int(time.time())
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    prompt_text = "\n".join((m.role + ": " + (m.content if isinstance(m.content, str) else "")) for m in (req.messages or []))
+    prompt_tokens = _estimate_tokens(prompt_text)
+    completion_tokens = _estimate_tokens(assistant_content)
     return {
         "id": completion_id,
         "object": "chat.completion",
@@ -279,9 +375,19 @@ async def chat_completions(
         "choices": [
             {
                 "index": 0,
-                "message": {"role": "assistant", "content": assistant_content},
+                "message": {
+                    "role": "assistant",
+                    "content": assistant_content,
+                    **({"reasoning": assistant_reasoning} if assistant_reasoning else {}),
+                    **({"tool_calls": tool_calls} if tool_calls else {}),
+                },
                 "finish_reason": "stop",
             }
         ],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        },
     }
 
