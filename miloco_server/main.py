@@ -18,7 +18,6 @@ from fastapi.staticfiles import StaticFiles
 
 from miloco_server.config import APP_CONFIG, IMAGE_DIR, SERVER_CONFIG, STATIC_DIR
 from miloco_server.controller import (
-    ai_chat_router,
     api_token_router,
     auth_router,
     chat_router,
@@ -66,7 +65,6 @@ app.include_router(trigger_router, prefix="/api")
 app.include_router(model_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api")
 app.include_router(api_token_router, prefix="/api")
-app.include_router(ai_chat_router, prefix="/api")
 app.include_router(detection_router, prefix="/api")
 app.include_router(openai_compat_router)
 
