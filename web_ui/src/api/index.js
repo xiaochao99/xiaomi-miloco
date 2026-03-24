@@ -88,3 +88,9 @@ export const getRTSPCameras = () => getApi('/api/miot/rtsp_cameras');
 export const createRTSPCamera = (data) => postApi('/api/miot/rtsp_cameras', data);
 export const updateRTSPCamera = (did, data) => putApi(`/api/miot/rtsp_cameras/${did}`, data);
 export const deleteRTSPCamera = (did) => deleteApi(`/api/miot/rtsp_cameras/${did}`);
+
+// Face library / recognition
+export const enrollFace = (data) => postApi('/api/face/library/enroll', data, 60000);
+export const listFaceProfiles = () => getApi('/api/face/library/list');
+export const deleteFaceProfile = (profileId) => deleteApi(`/api/face/library/${profileId}`);
+export const searchFaces = (data) => postApi('/api/face/search', data, 60000);

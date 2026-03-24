@@ -93,6 +93,7 @@ class DetectionTargetType(str, Enum):
     PERSON = "person"
     CAT = "cat"
     DOG = "dog"
+    FACE = "face"
 
 
 class DetectionLogicType(str, Enum):
@@ -107,7 +108,7 @@ class DetectionCondition(BaseModel):
     enabled: bool = Field(False, description="Enable detection-based trigger")
     targets: List[DetectionTargetType] = Field(
         default_factory=list,
-        description="Target types to detect: person, cat, dog"
+        description="Target types to detect: person, cat, dog, face"
     )
     logic: DetectionLogicType = Field(
         DetectionLogicType.ANY,

@@ -155,6 +155,7 @@ class DetectionConditionChecker:
             "person": "person",
             "cat": "cat",
             "dog": "dog",
+            "face": "face",
         }
         return mapping.get(class_name.lower())
 
@@ -269,12 +270,28 @@ class DetectionConditionChecker:
     ) -> str:
         """Build human-readable trigger reason."""
         parts = []
+        face_names = []
+        for det in detections:
+            if det.class_name != "face":
+                continue
+            extra = getattr(det, "extra", None) or {}
+            identity = extra.get("identity") if isinstance(extra, dict) else None
+            if identity and isinstance(identity, dict) and identity.get("name"):
+                face_names.append(str(identity["name"]))
+
         for target, count in detected_targets.items():
             if count > 0:
                 if count == 1:
                     parts.append(f"检测到1个{self._translate_target(target)}")
                 else:
                     parts.append(f"检测到{count}个{self._translate_target(target)}")
+
+        if face_names:
+            uniq = []
+            for n in face_names:
+                if n not in uniq:
+                    uniq.append(n)
+            parts.append(f"识别到：{'、'.join(uniq[:5])}")
 
         return "，".join(parts) if parts else "检测到目标"
 
@@ -284,6 +301,7 @@ class DetectionConditionChecker:
             "person": "人",
             "cat": "猫",
             "dog": "狗",
+            "face": "人脸",
         }
         return translations.get(target, target)
 

@@ -23,7 +23,7 @@ RUN npm run build
 ################################################
 # Backend Base
 ################################################
-FROM python:3.12-slim AS backend-base
+FROM python:3.11-slim AS backend-base
 
 # Restate PIP index URL.
 ARG PIP_INDEX_URL

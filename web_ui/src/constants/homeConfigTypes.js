@@ -108,6 +108,13 @@ export const MENU_ITEMS = [
     icon: 'menuSetting',
     selectedIcon: 'menuSettingSelected',
     path: '/home/setting',
+  },
+  {
+    key: '9',
+    label: 'home.menu.faceLibrary',
+    icon: 'menuDevice',
+    selectedIcon: 'menuDeviceSelected',
+    path: '/home/faceLibrary',
   }
 ];
 

@@ -20,6 +20,7 @@ import Setting from './pages/Setting'
 import ExecutionManage from './pages/ExecutionManage'
 import ModelManage from './pages/ModelManage'
 import DeviceManage from './pages/DeviceManage'
+import FaceLibrary from './pages/FaceLibrary'
 
 function App() {
   return (
@@ -41,6 +42,7 @@ function App() {
             <Route path="deviceManage" element={<DeviceManage />} />
             <Route path="logManage" element={<LogManage />} />
             <Route path="setting" element={<Setting />} />
+            <Route path="faceLibrary" element={<FaceLibrary />} />
           </Route>
         </Routes>
         <LogViewerModal />

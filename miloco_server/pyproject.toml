@@ -23,6 +23,7 @@ dependencies = [
     "numpy>=1.24.0",
     "pillow>=10.3.0",
     "imagehash>=4.3.0",
+    "insightface>=0.7.3",
     "fastmcp>=2.11",
     "aiohttp>=3.12.14",
     "thespian>=3.10.0",
