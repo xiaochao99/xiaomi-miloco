@@ -14,6 +14,8 @@ from typing import Callable, Dict, List, Optional, Set, Any
 from dataclasses import asdict
 
 from miloco_server.detection.detector import ObjectDetector, DetectionConfig
+from miloco_server.detection.face_detector import FaceDetector, FaceDetectionConfig
+from miloco_server.detection.multitask_detector import MultiTaskDetector
 from miloco_server.detection.stream_processor import (
     StreamConfig,
     StreamDetectionEvent,
@@ -31,9 +33,13 @@ class DetectionService:
     """
 
     def __init__(self):
-        self._detector: Optional[ObjectDetector] = None
+        self._object_detector: Optional[ObjectDetector] = None
+        self._face_detector: Optional[FaceDetector] = None
         self._processors: Dict[str, StreamProcessor] = {}
         self._camera_handlers: Dict[str, BaseCameraVisionHandler] = {}
+        # Per-camera flag: whether face recognition is enabled for the running detector.
+        # We only switch it from False -> True to avoid breaking other rules that share a camera.
+        self._camera_face_enabled: Dict[str, bool] = {}
         self._ws_callbacks: List[Callable[[Dict], None]] = []
         self._event_callbacks: List[Callable[[StreamDetectionEvent], None]] = []
         self._running = False
@@ -62,13 +68,19 @@ class DetectionService:
     async def initialize(self) -> bool:
         """Initialize the detection service."""
         try:
-            # Initialize detector
-            self._detector = ObjectDetector(self._default_detection_config)
-            success = await self._detector.initialize()
+            # Initialize object detector
+            self._object_detector = ObjectDetector(self._default_detection_config)
+            success = await self._object_detector.initialize()
 
             if not success:
                 logger.error("Failed to initialize object detector")
                 return False
+
+            # Initialize face detector (optional; keep server working if it fails)
+            self._face_detector = FaceDetector(
+                FaceDetectionConfig(min_face_score=0.3, max_faces=10)
+            )
+            await self._face_detector.initialize()
 
             self._running = True
             self._stats['start_time'] = time.time()
@@ -90,12 +102,16 @@ class DetectionService:
             self._processors.clear()
             self._camera_handlers.clear()
 
-        if self._detector:
-            await self._detector.destroy()
-            self._detector = None
+        if self._object_detector:
+            await self._object_detector.destroy()
+            self._object_detector = None
+        if self._face_detector:
+            await self._face_detector.destroy()
+            self._face_detector = None
 
         self._ws_callbacks.clear()
         self._event_callbacks.clear()
+        self._camera_face_enabled.clear()
 
         logger.info("Detection service destroyed")
 
@@ -121,9 +137,45 @@ class DetectionService:
         async with self._lock:
             if camera_id in self._processors:
                 logger.debug(f"Detection already running for camera {camera_id}")
-                return True
 
-            if not self._detector or not self._detector.is_initialized():
+                # Apply basic config updates even if already running.
+                if config_override and 'confidence_threshold' in config_override and self._object_detector:
+                    self._object_detector.config.confidence_threshold = config_override['confidence_threshold']
+                    logger.info(
+                        f"Updated detector confidence_threshold to {config_override['confidence_threshold']}"
+                    )
+
+                if config_override and 'process_fps' in config_override:
+                    processor = self._processors.get(camera_id)
+                    if processor:
+                        processor.update_config({'process_fps': config_override['process_fps']})
+
+                requested_enable_face = False
+                if config_override:
+                    requested_enable_face = bool(
+                        config_override.get(
+                            "enable_face_recognition",
+                            config_override.get("enable_face", False),
+                        )
+                    )
+
+                current_enable_face = bool(self._camera_face_enabled.get(camera_id, False))
+
+                # Only enable face when requested; never disable (prevents breaking other rules).
+                if requested_enable_face and not current_enable_face:
+                    # Restart processor with face enabled
+                    processor = self._processors.get(camera_id)
+                    if processor:
+                        await camera_handler.unregister_jpeg_stream(channel=0)
+                        await processor.stop()
+                        self._processors.pop(camera_id, None)
+                        self._camera_handlers.pop(camera_id, None)
+
+                    # Continue to the normal start path below (do not return)
+                else:
+                    return True
+
+            if not self._object_detector or not self._object_detector.is_initialized():
                 logger.error("Detector not initialized")
                 return False
 
@@ -135,8 +187,17 @@ class DetectionService:
 
                 # Update detector config if confidence_threshold provided
                 if config_override and 'confidence_threshold' in config_override:
-                    self._detector.config.confidence_threshold = config_override['confidence_threshold']
+                    self._object_detector.config.confidence_threshold = config_override['confidence_threshold']
                     logger.info(f"Updated detector confidence_threshold to {config_override['confidence_threshold']}")
+
+                enable_face_recognition = False
+                if config_override:
+                    enable_face_recognition = bool(
+                        config_override.get(
+                            "enable_face_recognition",
+                            config_override.get("enable_face", False),
+                        )
+                    )
 
                 stream_config = StreamConfig(
                     camera_id=camera_id,
@@ -147,9 +208,17 @@ class DetectionService:
                 )
 
                 # Create processor
+                detector = MultiTaskDetector(
+                    object_detector=self._object_detector,
+                    face_detector=self._face_detector,
+                    enable_face_recognition=enable_face_recognition,
+                    face_accept_threshold=float(
+                        config_override.get("face_accept_threshold", 0.35)
+                    ) if config_override else 0.35,
+                )
                 processor = StreamProcessor(
                     config=stream_config,
-                    detector=self._detector,
+                    detector=detector,
                     event_callback=self._on_detection_event
                 )
 
@@ -161,6 +230,7 @@ class DetectionService:
 
                 self._processors[camera_id] = processor
                 self._camera_handlers[camera_id] = camera_handler
+                self._camera_face_enabled[camera_id] = bool(enable_face_recognition)
                 self._stats['active_streams'] = len(self._processors)
 
                 logger.info(f"[Detection] Successfully started detection for camera {camera_id}")
@@ -189,6 +259,7 @@ class DetectionService:
                 # Remove from tracking
                 del self._processors[camera_id]
                 del self._camera_handlers[camera_id]
+                self._camera_face_enabled.pop(camera_id, None)
                 self._stats['active_streams'] = len(self._processors)
 
                 logger.info(f"Stopped detection for camera {camera_id}")
@@ -281,6 +352,7 @@ class DetectionService:
                     'class_name': d.class_name,
                     'confidence': round(d.confidence, 3),
                     'bbox': [round(x, 4) for x in d.bbox],
+                    **({'extra': d.extra} if getattr(d, 'extra', None) else {}),
                 }
                 for d in event.detections
             ],
@@ -357,8 +429,8 @@ class DetectionService:
         """
         try:
             # Update detector confidence threshold if provided
-            if 'confidence_threshold' in config and self._detector:
-                self._detector.config.confidence_threshold = config['confidence_threshold']
+            if 'confidence_threshold' in config and self._object_detector:
+                self._object_detector.config.confidence_threshold = config['confidence_threshold']
                 logger.info(f"[Detection] Updated confidence_threshold to {config['confidence_threshold']}")
 
             # Update stream processor config if camera is active
@@ -387,14 +459,14 @@ class DetectionService:
 
     def get_detector_info(self) -> Dict:
         """Get information about the detector."""
-        if not self._detector:
+        if not self._object_detector:
             return {}
 
         return {
-            'initialized': self._detector.is_initialized(),
-            'device': self._detector._device if hasattr(self._detector, '_device') else 'unknown',
-            'input_size': self._detector.config.input_size if self._detector.config else None,
-            'confidence_threshold': self._detector.config.confidence_threshold if self._detector.config else 0.5,
+            'initialized': self._object_detector.is_initialized(),
+            'device': self._object_detector._device if hasattr(self._object_detector, '_device') else 'unknown',
+            'input_size': self._object_detector.config.input_size if self._object_detector.config else None,
+            'confidence_threshold': self._object_detector.config.confidence_threshold if self._object_detector.config else 0.5,
         }
 
 

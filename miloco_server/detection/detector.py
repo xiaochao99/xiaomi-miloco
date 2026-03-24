@@ -11,7 +11,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 import numpy as np
 
@@ -54,6 +54,7 @@ class DetectionResult:
     confidence: float
     bbox: Tuple[float, float, float, float]  # x1, y1, x2, y2 (normalized 0-1)
     bbox_px: Optional[Tuple[int, int, int, int]] = None  # pixel coordinates
+    extra: Optional[Dict[str, Any]] = None
 
 
 @dataclass

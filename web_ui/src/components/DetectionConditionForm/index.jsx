@@ -66,6 +66,7 @@ const DetectionConditionForm = ({
     { value: 'person', label: t('detection.targetPerson') || '人', icon: '👤', color: '#1890ff' },
     { value: 'cat', label: t('detection.targetCat') || '猫', icon: '🐱', color: '#722ed1' },
     { value: 'dog', label: t('detection.targetDog') || '狗', icon: '🐶', color: '#eb2f96' },
+    { value: 'face', label: t('detection.targetFace') || '人脸', icon: '🧑‍🦰', color: '#fa8c16' },
   ];
 
   // 逻辑类型选项

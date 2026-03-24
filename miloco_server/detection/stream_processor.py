@@ -409,6 +409,7 @@ class StreamProcessor:
                 'person': (0, 255, 0),  # Green
                 'cat': (255, 0, 0),     # Blue
                 'dog': (0, 0, 255),     # Red
+                'face': (0, 255, 255),   # Yellow/Cyan
             }
 
             # Draw bounding boxes
