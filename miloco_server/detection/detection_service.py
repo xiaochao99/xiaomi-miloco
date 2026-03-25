@@ -78,7 +78,7 @@ class DetectionService:
 
             # Initialize face detector (optional; keep server working if it fails)
             self._face_detector = FaceDetector(
-                FaceDetectionConfig(min_face_score=0.3, max_faces=10)
+                FaceDetectionConfig(min_face_score=0.1, max_faces=10)
             )
             await self._face_detector.initialize()
 
