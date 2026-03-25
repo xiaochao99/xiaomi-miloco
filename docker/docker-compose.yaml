@@ -8,6 +8,9 @@ services:
       - AI_ENGINE_HOST=${AI_ENGINE_HOST:-0.0.0.0}
       - AI_ENGINE_PORT=${AI_ENGINE_PORT:-8001}
       - AI_ENGINE_LOG_LEVEL=${AI_ENGINE_LOG_LEVEL:-info}
+      # Face recognition: cpu | openvino | openvino_gpu (Intel OpenVINO EP, install onnxruntime-openvino in image)
+      - FACE_INFERENCE_PROVIDER=${FACE_INFERENCE_PROVIDER:-cpu}
+      - INSIGHTFACE_MODEL_ROOT=${INSIGHTFACE_MODEL_ROOT:-/models/insightface}
       - TZ=${TZ:-Asia/Shanghai}
     volumes:
       - ./models:/models
@@ -40,6 +43,8 @@ services:
       - AI_ENGINE_HOST=${AI_ENGINE_HOST:-0.0.0.0}
       - AI_ENGINE_PORT=${AI_ENGINE_PORT:-8001}
       - INSIGHTFACE_MODEL_ROOT=${INSIGHTFACE_MODEL_ROOT:-/models/insightface}
+      # auto: use AI Engine /face if reachable; 0: local InsightFace; 1: require remote
+      - FACE_USE_REMOTE=${FACE_USE_REMOTE:-auto}
       - BACKEND_LOG_LEVEL=${BACKEND_LOG_LEVEL:-info}
       - TZ=${TZ:-Asia/Shanghai}
     volumes:
