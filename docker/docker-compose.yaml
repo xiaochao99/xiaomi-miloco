@@ -39,6 +39,7 @@ services:
       - BACKEND_PORT=${BACKEND_PORT:-8000}
       - AI_ENGINE_HOST=${AI_ENGINE_HOST:-0.0.0.0}
       - AI_ENGINE_PORT=${AI_ENGINE_PORT:-8001}
+      - INSIGHTFACE_MODEL_ROOT=${INSIGHTFACE_MODEL_ROOT:-/models/insightface}
       - BACKEND_LOG_LEVEL=${BACKEND_LOG_LEVEL:-info}
       - TZ=${TZ:-Asia/Shanghai}
     volumes:

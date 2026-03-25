@@ -9,11 +9,16 @@ Uses Tool.from_function() to automatically generate parameter definitions, more 
 import asyncio
 import logging
 from typing import Dict, Any, Optional, Annotated
+
+import numpy as np
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 from miloco_server import actor_system
+from miloco_server.detection.face_detector import FaceDetectionConfig, FaceDetector
+from miloco_server.face_recognition.face_library_service import FaceLibraryService
 from miloco_server.schema.mcp_schema import LocalMcpClientId
 from miloco_server.utils.chat_companion import ChatCachedData
+from miloco_server.utils.llm_utils.device_chooser import DeviceChooser
 from miloco_server.tools.rule_create_tool import RuleCreateMessage, RuleCreateTool
 from miloco_server.tools.vision_chat_tool import VisionChatTool, VisionUnderstandStart
 from thespian.actors import ActorExitRequest
@@ -92,6 +97,16 @@ class LocalDefaultMcp(LocalMCPBase):
             name="vision_understand",
             description="Tool for understanding images, used when users want to understand the home cameras displayed.")
         self.mcp.add_tool(tool=vision_tool)
+
+        who_am_i_tool = Tool.from_function(
+            fn=self.who_am_i,
+            name="who_am_i",
+            description=(
+                "用于识别人脸身份的工具。适用于用户问“我是谁/看看我是谁/你认识我吗”等请求。"
+                "工具会从摄像头截图中检测人脸，并与人脸库做1:N比对。"
+            ),
+        )
+        self.mcp.add_tool(tool=who_am_i_tool)
 
     async def create_rule(
         self,
@@ -172,6 +187,131 @@ class LocalDefaultMcp(LocalMCPBase):
         actor_system.tell(vision_chat_tool, ActorExitRequest())
         logger.info("VisionUnderstandTool: vision understand response: %s", response)
         return response
+
+    async def who_am_i(
+        self,
+        request_id: Annotated[str, "Request ID"],
+        location: Annotated[Optional[str], "可选，房间位置，比如 living room / 客厅"] = None,
+        accept_threshold: Annotated[float, "人脸匹配阈值，默认0.35，越高越严格"] = 0.35,
+    ) -> dict[str, Any]:
+        """Detect face from camera snapshot and identify user from face library."""
+        chat_data: ChatCachedData | None = self._manager.chat_companion.get_chat_data(request_id)
+        if chat_data is None:
+            return {"success": False, "message": "request_id not found"}
+
+        choose_camera_ids = chat_data.camera_ids or []
+        camera_img_seqs = chat_data.camera_images
+
+        if not camera_img_seqs:
+            device_chooser = DeviceChooser(
+                request_id=request_id,
+                location=location,
+                choose_camera_device_ids=choose_camera_ids,
+            )
+            camera_list, all_cameras, _, _ = await device_chooser.run()
+            if len(camera_list) == 0:
+                camera_list = all_cameras
+
+            camera_dids = [camera.did for camera in camera_list]
+            if not camera_dids:
+                return {
+                    "success": False,
+                    "recognized": False,
+                    "reason_code": "no_available_camera",
+                    "message": (
+                        "当前没有可用摄像头，无法进行“我是谁”识别。"
+                        "请先在设备页确认已接入并在线至少一个摄像头。"
+                    ),
+                }
+
+            camera_img_seqs = await self._manager.miot_service.get_miot_cameras_img(camera_dids, 1)
+
+        total_count = len(camera_img_seqs or [])
+        online_count = len([seq for seq in (camera_img_seqs or []) if seq.camera_info.online])
+        camera_img_seqs = [
+            seq for seq in (camera_img_seqs or [])
+            if seq.camera_info.online and len(seq.img_list) > 0
+        ]
+        if len(camera_img_seqs) == 0:
+            if total_count == 0:
+                return {
+                    "success": False,
+                    "recognized": False,
+                    "reason_code": "no_camera_snapshot",
+                    "message": (
+                        "当前无法获取摄像头截图，暂时不能识别你是谁。"
+                        "请检查摄像头网络连接后重试。"
+                    ),
+                }
+            if online_count == 0:
+                return {
+                    "success": False,
+                    "recognized": False,
+                    "reason_code": "camera_offline",
+                    "message": (
+                        "检测到摄像头均不在线，无法进行人脸识别。"
+                        "请先让摄像头上线后再试。"
+                    ),
+                }
+            return {
+                "success": False,
+                "recognized": False,
+                "reason_code": "empty_camera_frames",
+                "message": (
+                    "摄像头在线但未获取到有效画面，无法进行人脸识别。"
+                    "请稍后重试或调整摄像头。"
+                ),
+            }
+
+        from miloco_server.detection.detection_service import get_detection_service  # pylint: disable=import-outside-toplevel
+        detection_service = await get_detection_service()
+        face_detector = getattr(detection_service, "_face_detector", None)
+        if not face_detector or not face_detector.is_initialized():
+            face_detector = FaceDetector(FaceDetectionConfig(model_pack="buffalo_l", ctx_id=-1, min_face_score=0.1))
+            ok = await face_detector.initialize()
+            if not ok:
+                return {"success": False, "message": "Face detector initialization failed"}
+
+        face_library = FaceLibraryService()
+
+        for seq in camera_img_seqs:
+            camera_name = seq.camera_info.name or seq.camera_info.did
+            for img in seq.img_list:
+                faces = face_detector.analyze(img.data, with_embedding=True)
+                if not faces:
+                    continue
+
+                best = max(faces, key=lambda f: f.det_score)
+                if best.embedding is None or best.embedding.size == 0:
+                    continue
+
+                matches = face_library.search(
+                    query_embedding=np.asarray(best.embedding, dtype=np.float32),
+                    top_k=1,
+                    accept_threshold=accept_threshold,
+                )
+                if matches:
+                    m = matches[0]
+                    return {
+                        "success": True,
+                        "recognized": True,
+                        "name": m.name,
+                        "score": round(float(m.score), 4),
+                        "camera_name": camera_name,
+                        "message": f"识别到你可能是 {m.name}",
+                    }
+                return {
+                    "success": True,
+                    "recognized": False,
+                    "camera_name": camera_name,
+                    "message": "看到了人脸，但我不认识你",
+                }
+
+        return {
+            "success": True,
+            "recognized": False,
+            "message": "当前截图中没有检测到清晰人脸",
+        }
 
 
 class LocalMCPServerFactory:

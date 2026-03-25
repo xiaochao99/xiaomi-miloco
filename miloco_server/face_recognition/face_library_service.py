@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 INDEX_KEY = "face_library:index"
 PROFILE_KEY_PREFIX = "face_library:profile:"
+MAX_EMBEDDINGS_PER_PROFILE = 20
 
 
 @dataclass
@@ -118,15 +119,54 @@ class FaceLibraryService:
             embeddings=normed,
         )
 
+    def _find_profile_id_by_name(self, name: str) -> Optional[str]:
+        target = (name or "").strip()
+        if not target:
+            return None
+        for fid in self._load_index():
+            profile = self._get_profile(fid)
+            if not profile:
+                continue
+            if profile.name.strip() == target:
+                return fid
+        return None
+
     def enroll(self, name: str, embedding: np.ndarray) -> Dict:
-        profile_id = str(uuid.uuid4())
+        clean_name = (name or "").strip()
+        if not clean_name:
+            raise ValueError("name is required")
+
         emb = np.asarray(embedding, dtype=np.float32)
         norm = float(np.linalg.norm(emb)) if emb.size else 0.0
         if emb.size and norm > 0:
             emb = emb / norm
+
+        # Same-name aggregation: append embedding to existing profile instead of creating a new one.
+        existing_id = self._find_profile_id_by_name(clean_name)
+        if existing_id:
+            key = f"{PROFILE_KEY_PREFIX}{existing_id}"
+            raw = self._kv_get(key)
+            if raw:
+                data = json.loads(raw)
+                embeddings = data.get("embeddings", [])
+                embeddings.append(emb.tolist())
+                # Keep only latest N vectors to avoid unbounded growth.
+                if len(embeddings) > MAX_EMBEDDINGS_PER_PROFILE:
+                    embeddings = embeddings[-MAX_EMBEDDINGS_PER_PROFILE:]
+                data["embeddings"] = embeddings
+                data["name"] = clean_name
+                self._kv_set(key, json.dumps(data, ensure_ascii=False))
+                return {
+                    "id": existing_id,
+                    "name": clean_name,
+                    "merged": True,
+                    "embedding_count": len(embeddings),
+                }
+
+        profile_id = str(uuid.uuid4())
         profile = {
             "id": profile_id,
-            "name": name,
+            "name": clean_name,
             "embeddings": [emb.tolist()],
         }
 
@@ -139,7 +179,7 @@ class FaceLibraryService:
             ids.append(profile_id)
             self._save_index(ids)
 
-        return {"id": profile_id, "name": name}
+        return {"id": profile_id, "name": clean_name, "merged": False, "embedding_count": 1}
 
     def delete_profile(self, profile_id: str) -> bool:
         key = f"{PROFILE_KEY_PREFIX}{profile_id}"

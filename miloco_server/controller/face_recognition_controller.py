@@ -44,25 +44,30 @@ async def _ensure_face_detector(
 
     detector = getattr(detection_service, "_face_detector", None)
     if detector and detector.is_initialized():
+        logger.info("[FaceAPI] use detection_service face detector")
         return detector
 
     # Try to initialize detection service once, then re-check.
     try:
         if not detection_service.is_running():
+            logger.info("[FaceAPI] detection service not running, try initialize")
             await detection_service.initialize()
             detector = getattr(detection_service, "_face_detector", None)
             if detector and detector.is_initialized():
+                logger.info("[FaceAPI] detection_service face detector initialized")
                 return detector
     except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.warning("DetectionService initialize failed while preparing face detector: %s", e)
+        logger.exception("[FaceAPI] DetectionService initialize failed while preparing face detector: %s", e)
 
     # Fallback detector for face-library APIs.
     if _fallback_face_detector is None:
+        logger.info("[FaceAPI] create fallback face detector")
         _fallback_face_detector = FaceDetector(
-            FaceDetectionConfig(model_pack="buffalo_sc", ctx_id=-1)
+            FaceDetectionConfig(model_pack="buffalo_l", ctx_id=-1)
         )
 
     if not _fallback_face_detector.is_initialized():
+        logger.info("[FaceAPI] initialize fallback face detector")
         ok = await _fallback_face_detector.initialize()
         if not ok:
             raise HTTPException(
@@ -82,7 +87,9 @@ def _decode_image_base64(image_base64: str) -> bytes:
     if "," in raw:
         raw = raw.split(",", 1)[1]
     try:
-        return base64.b64decode(raw, validate=True)
+        decoded = base64.b64decode(raw, validate=True)
+        logger.info("[FaceAPI] base64 decoded: bytes=%d", len(decoded))
+        return decoded
     except Exception as e:  # pylint: disable=broad-exception-caught
         raise HTTPException(status_code=400, detail=f"Invalid base64 image: {e}") from e
 
@@ -130,16 +137,19 @@ async def enroll_face(
     face_library: FaceLibraryService = Depends(get_face_library_service),
     detection_service: DetectionService = Depends(get_detection_service),
 ):
+    logger.info("[FaceAPI] enroll request start: name=%s", request.name)
     face_detector = await _ensure_face_detector(detection_service)
 
     # Analyze image and get embedding from the largest face (by det_score).
     image_bytes = _decode_image_base64(request.image_base64)
     faces: List[FaceInfo] = face_detector.analyze(image_bytes, with_embedding=True)
+    logger.info("[FaceAPI] enroll analyze result: faces=%d", len(faces))
 
     if not faces:
         raise HTTPException(status_code=400, detail="No face detected in the image")
 
     best = max(faces, key=lambda f: f.det_score)
+    logger.info("[FaceAPI] enroll best face score=%.4f bbox=%s", best.det_score, best.bbox_px)
     if best.embedding is None or best.embedding.size == 0:
         raise HTTPException(status_code=400, detail="Failed to extract face embedding")
 
@@ -184,16 +194,23 @@ async def search_faces(
     face_library: FaceLibraryService = Depends(get_face_library_service),
     detection_service: DetectionService = Depends(get_detection_service),
 ):
+    logger.info(
+        "[FaceAPI] search request start: top_k=%d accept_threshold=%.3f",
+        request.top_k,
+        request.accept_threshold,
+    )
     face_detector = await _ensure_face_detector(detection_service)
 
     image_bytes = _decode_image_base64(request.image_base64)
     faces: List[FaceInfo] = face_detector.analyze(image_bytes, with_embedding=True)
+    logger.info("[FaceAPI] search analyze result: faces=%d", len(faces))
 
     if not faces:
         raise HTTPException(status_code=400, detail="No face detected in the image")
 
     # MVP: use the best face embedding.
     best = max(faces, key=lambda f: f.det_score)
+    logger.info("[FaceAPI] search best face score=%.4f bbox=%s", best.det_score, best.bbox_px)
     if best.embedding is None or best.embedding.size == 0:
         raise HTTPException(status_code=400, detail="Failed to extract face embedding")
 
@@ -202,6 +219,7 @@ async def search_faces(
         top_k=request.top_k,
         accept_threshold=request.accept_threshold,
     )
+    logger.info("[FaceAPI] search matches=%d", len(matches))
 
     data = FaceSearchResponse(
         success=True,

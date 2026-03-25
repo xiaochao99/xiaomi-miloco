@@ -193,4 +193,9 @@ async def get_cuda_info(current_user: str = Depends(verify_token)):
     """
     logger.info("Get CUDA info API called - User: %s", current_user)
     result = await manager.model_service.get_local_cuda_info()
-    return NormalResponse(code=0, message="Get CUDA info successfully", data=result)
+    message = "Get CUDA info successfully"
+    if isinstance(result, dict):
+        available = (result.get("data") or {}).get("available", True)
+        if available is False:
+            message = "Local AI engine unavailable"
+    return NormalResponse(code=0, message=message, data=result)
