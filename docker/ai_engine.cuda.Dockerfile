@@ -88,6 +88,12 @@ COPY scripts/start_ai_engine.py /app/start_ai_engine.py
 # Install project.
 RUN pip install --no-build-isolation --break-system-packages -e /app/miloco_ai_engine
 
+# InsightFace uses ONNX Runtime; use OpenVINO build for Intel CPU / iGPU acceleration.
+# Uninstall stock onnxruntime first (cannot coexist with onnxruntime-openvino in the same env).
+RUN set -eux \
+    && pip uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true \
+    && pip install --no-cache-dir --break-system-packages "onnxruntime-openvino>=1.19.0"
+
 EXPOSE 8001
 
 # Override by docker-compose, this is the default command.

@@ -29,6 +29,7 @@ from miloco_ai_engine.schema.models_schema import (
     VramUsage,
 )
 from miloco_ai_engine.utils.utils import get_uvicorn_log_config
+from miloco_ai_engine.face_recognition.router import router as face_router
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(face_router)
 
 
 @app.middleware("http")

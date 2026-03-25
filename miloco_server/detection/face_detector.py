@@ -45,12 +45,102 @@ class FaceInfo:
 class FaceDetector:
     """
     Face detector that outputs DetectionResult list for class_name="face".
+
+    When FACE_USE_REMOTE is auto/1 and AI Engine exposes /face/health, inference runs
+    in miloco_ai_engine (CPU or OpenVINO iGPU). Otherwise uses local InsightFace.
     """
 
     def __init__(self, config: Optional[FaceDetectionConfig] = None):
         self.config = config or FaceDetectionConfig()
         self._app = None
         self._initialized = False
+        self._remote = False
+        self._remote_base: Optional[str] = None
+
+    def _face_engine_base_url(self) -> str:
+        explicit = os.getenv("FACE_ENGINE_URL")
+        if explicit:
+            return explicit.rstrip("/")
+        from miloco_server.config import LOCAL_MODEL_CONFIG  # pylint: disable=import-outside-toplevel
+
+        host = str(LOCAL_MODEL_CONFIG["host"])
+        if host in ("0.0.0.0", "::", "[::]"):
+            host = "127.0.0.1"
+        port = LOCAL_MODEL_CONFIG["port"]
+        return f"http://{host}:{port}/face"
+
+    async def _probe_face_engine(self, base: str) -> bool:
+        import httpx  # pylint: disable=import-outside-toplevel
+
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(f"{base}/health")
+                return resp.status_code == 200
+        except Exception:  # pylint: disable=broad-exception-caught
+            return False
+
+    def _image_to_jpeg_bytes(self, image: Union[np.ndarray, bytes]) -> bytes:
+        if isinstance(image, bytes):
+            return image
+        import cv2  # pylint: disable=import-outside-toplevel
+
+        ok, buf = cv2.imencode(".jpg", image)
+        if not ok:
+            return b""
+        return buf.tobytes()
+
+    def _analyze_remote(
+        self,
+        image: Union[np.ndarray, bytes],
+        with_embedding: bool,
+    ) -> List[FaceInfo]:
+        import base64
+        import httpx  # pylint: disable=import-outside-toplevel
+
+        raw = self._image_to_jpeg_bytes(image)
+        if not raw:
+            logger.warning("[FaceDetector] remote: empty image bytes")
+            return []
+        b64 = base64.b64encode(raw).decode("ascii")
+        payload = {
+            "image_base64": b64,
+            "with_embedding": with_embedding,
+            "min_face_score": self.config.min_face_score,
+            "max_faces": self.config.max_faces,
+        }
+        url = f"{self._remote_base}/analyze"
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                resp = client.post(url, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.exception("[FaceDetector] remote analyze failed: %s", e)
+            return []
+
+        faces = data.get("faces") or []
+        infos: List[FaceInfo] = []
+        for f in faces:
+            bn = f.get("bbox_norm") or []
+            bp = f.get("bbox_px") or []
+            if len(bn) != 4 or len(bp) != 4:
+                continue
+            emb = None
+            if with_embedding and f.get("embedding") is not None:
+                emb = np.asarray(f["embedding"], dtype=np.float32)
+                norm = float(np.linalg.norm(emb)) if emb.size else 0.0
+                if norm > 0:
+                    emb = emb / norm
+            infos.append(
+                FaceInfo(
+                    bbox_norm=(float(bn[0]), float(bn[1]), float(bn[2]), float(bn[3])),
+                    bbox_px=(int(bp[0]), int(bp[1]), int(bp[2]), int(bp[3])),
+                    det_score=float(f.get("det_score", 0.0)),
+                    embedding=emb,
+                )
+            )
+        logger.info("[FaceDetector] remote analyze faces=%d", len(infos))
+        return infos
 
     def _build_root_candidates(self) -> List[Optional[str]]:
         """
@@ -104,6 +194,35 @@ class FaceDetector:
             self.config.ctx_id,
             self.config.min_face_score,
         )
+
+        use = os.getenv("FACE_USE_REMOTE", "auto").strip().lower()
+        base = self._face_engine_base_url()
+        if use == "0":
+            self._remote = False
+        elif use == "1":
+            if not await self._probe_face_engine(base):
+                logger.error(
+                    "[FaceDetector] FACE_USE_REMOTE=1 but AI Engine face API unreachable: %s",
+                    base,
+                )
+                self._initialized = False
+                return False
+            self._remote = True
+            self._remote_base = base
+            self._initialized = True
+            self._app = None
+            logger.info("[FaceDetector] using remote face engine: %s", base)
+            return True
+        else:
+            if await self._probe_face_engine(base):
+                self._remote = True
+                self._remote_base = base
+                self._initialized = True
+                self._app = None
+                logger.info("[FaceDetector] using remote face engine (auto): %s", base)
+                return True
+            self._remote = False
+
         try:
             from insightface.app import FaceAnalysis  # pylint: disable=import-error
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -172,6 +291,8 @@ class FaceDetector:
             return False
 
     def is_initialized(self) -> bool:
+        if self._remote:
+            return bool(self._initialized)
         return bool(self._initialized and self._app is not None)
 
     def analyze(
@@ -192,6 +313,9 @@ class FaceDetector:
         if image is None:
             logger.warning("[FaceDetector] analyze got empty image input")
             return []
+
+        if self._remote:
+            return self._analyze_remote(image, with_embedding)
 
         try:
             if isinstance(image, bytes):
@@ -351,6 +475,8 @@ class FaceDetector:
     async def destroy(self):
         """Release resources."""
         self._app = None
+        self._remote = False
+        self._remote_base = None
         self._initialized = False
         logger.info("FaceDetector destroyed")
 
