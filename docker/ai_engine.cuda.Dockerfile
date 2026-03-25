@@ -6,19 +6,11 @@ ARG BASE_CUDA_DEV_CONTAINER=nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VER
 # Target the CUDA run image.
 ARG BASE_CUDA_RUN_CONTAINER=nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
 # Set apt repository.
-# For Worldwide:
-# - http://archive.ubuntu.com/ubuntu/
-# For China:
-# - https://mirrors.aliyun.com/ubuntu/
-# - https://mirrors.tuna.tsinghua.edu.cn/ubuntu/
-ARG APT_MIRRORS_URL=https://mirrors.tuna.tsinghua.edu.cn/ubuntu/
+
+ARG APT_MIRRORS_URL=http://archive.ubuntu.com/ubuntu/
 # Set pip index URL.
-# For Worldwide: 
-# - https://pypi.org/simple/
-# For China: 
-# - https://mirrors.aliyun.com/pypi/simple/
-# - https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-ARG PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+
+ARG PIP_INDEX_URL=https://pypi.org/simple/
 
 ################################################
 # AI Engine Builder
@@ -62,8 +54,10 @@ COPY miloco_ai_engine/pyproject.toml /app/miloco_ai_engine/pyproject.toml
 RUN set -eux \
     && sed -i "s|http://archive.ubuntu.com/ubuntu/|${APT_MIRRORS_URL}|g" /etc/apt/sources.list.d/ubuntu.sources \
     && apt update \
-    && apt install -y curl python3 python3-pip \
+    && apt install -y curl python3 python3-pip python3-dev build-essential \
     && pip config set global.index-url "${PIP_INDEX_URL}" \
+    && pip install --upgrade --break-system-packages setuptools packaging \
+    && pip install --no-build-isolation --break-system-packages "numpy>=1.24.0" Cython \
     && pip install --no-build-isolation --break-system-packages /app/miloco_ai_engine \
     && rm -rf /app/miloco_ai_engine \
     && apt clean \
@@ -87,12 +81,6 @@ COPY scripts/start_ai_engine.py /app/start_ai_engine.py
 
 # Install project.
 RUN pip install --no-build-isolation --break-system-packages -e /app/miloco_ai_engine
-
-# InsightFace uses ONNX Runtime; use OpenVINO build for Intel CPU / iGPU acceleration.
-# Uninstall stock onnxruntime first (cannot coexist with onnxruntime-openvino in the same env).
-RUN set -eux \
-    && pip uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true \
-    && pip install --no-cache-dir --break-system-packages "onnxruntime-openvino>=1.19.0"
 
 EXPOSE 8001
 
