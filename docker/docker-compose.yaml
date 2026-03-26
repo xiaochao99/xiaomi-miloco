@@ -15,6 +15,8 @@ services:
     # NOTICE: If you want to use your own configuration files or models path, please mount them here.
     #   - ./config/ai_engine_config.yaml:/app/config/ai_engine_config.yaml
     #   - ./config/prompt_config.yaml:/app/config/prompt_config.yaml
+    devices:
+      - /dev/dri:/dev/dri
 
     deploy:
       resources:

@@ -55,6 +55,9 @@ RUN set -eux \
     && sed -i "s|http://archive.ubuntu.com/ubuntu/|${APT_MIRRORS_URL}|g" /etc/apt/sources.list.d/ubuntu.sources \
     && apt update \
     && apt install -y curl python3 python3-pip python3-dev build-essential \
+        clinfo \
+        ocl-icd-libopencl1 \
+        intel-opencl-icd \
     && pip config set global.index-url "${PIP_INDEX_URL}" \
     && pip install --upgrade --break-system-packages setuptools packaging \
     && pip install --no-build-isolation --break-system-packages "numpy>=1.24.0" Cython \
@@ -85,7 +88,8 @@ COPY scripts/start_ai_engine.py /app/start_ai_engine.py
 RUN pip install --no-build-isolation --break-system-packages -e "/app/miloco_ai_engine[face]" \
     && pip uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true \
     && pip install --no-cache-dir --break-system-packages "onnxruntime-openvino>=1.19.0" \
-    && python3 -c "import insightface; import onnxruntime; print('face deps ok')"
+    && pip install --no-cache-dir --break-system-packages "openvino>=2025.0.0" \
+    && python3 -c "import insightface; import onnxruntime; from openvino import Core; print('face deps ok, ov devices=', Core().available_devices)"
 
 EXPOSE 8001
 
