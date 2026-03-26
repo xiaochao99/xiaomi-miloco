@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -51,21 +52,50 @@ class FaceRecognitionService:
         self._app = None
         self._initialized = False
         self._init_error: Optional[str] = None
+        self._last_timings_ms: Optional[Dict[str, float]] = None
         self._model_pack = os.getenv("FACE_MODEL_PACK", "buffalo_l")
         _ds = int(os.getenv("FACE_DET_SIZE", "640"))
         self._det_size = (_ds, _ds)
         self._ctx_id = int(os.getenv("FACE_CTX_ID", "-1"))
+        self._face_provider_mode = os.getenv("FACE_INFERENCE_PROVIDER", "cpu").lower().strip()
+        # Cache whether insightface.app.FaceAnalysis.get supports filtering params.
+        self._get_supports_det_thresh: bool = False
+        self._get_supports_max_num: bool = False
+        self._get_supports_max_faces: bool = False
+        self._get_param_names: List[str] = []
 
     def is_ready(self) -> bool:
-        return bool(self._initialized and self._app is not None)
+        cur_mode = os.getenv("FACE_INFERENCE_PROVIDER", "cpu").lower().strip()
+        return bool(
+            self._initialized
+            and self._app is not None
+            and self._face_provider_mode == cur_mode,
+        )
 
     def last_error(self) -> Optional[str]:
         return self._init_error
 
+    def get_last_timings_ms(self) -> Optional[Dict[str, float]]:
+        """Return timings collected from the last /face/analyze call."""
+        return self._last_timings_ms
+
+    def get_last_get_param_names(self) -> List[str]:
+        """Return FaceAnalysis.get() parameter names (best-effort)."""
+        return list(self._get_param_names)
+
     def initialize(self) -> bool:
         with self._lock:
-            if self._initialized:
+            cur_mode = os.getenv("FACE_INFERENCE_PROVIDER", "cpu").lower().strip()
+            # If provider mode changed at runtime, force re-create FaceAnalysis so that
+            # ORT sessions use the correct EP configuration.
+            if self._initialized and self._app is not None and self._face_provider_mode == cur_mode:
                 return True
+            if self._initialized:
+                self._app = None
+                self._initialized = False
+                self._init_error = None
+            self._face_provider_mode = cur_mode
+
             apply_face_onnx_providers()
             try:
                 from insightface.app import FaceAnalysis  # pylint: disable=import-error
@@ -111,7 +141,7 @@ class FaceRecognitionService:
                     if mode in ("openvino", "openvino_gpu"):
                         providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
                         if mode == "openvino_gpu":
-                            provider_options = [{"device_type": "GPU_FP16"}, {}]
+                            provider_options = [{"device_type": "GPU", "precision": "FP32"}, {}]
                         else:
                             provider_options = [{}, {}]
 
@@ -137,6 +167,20 @@ class FaceRecognitionService:
                     )
 
                     app.prepare(**prep_kwargs)
+                    # Determine which optional args FaceAnalysis.get supports so we can
+                    # reduce unnecessary work (e.g. limit candidates early).
+                    try:
+                        get_sig = inspect.signature(app.get)
+                        self._get_supports_det_thresh = "det_thresh" in get_sig.parameters
+                        self._get_supports_max_num = "max_num" in get_sig.parameters
+                        self._get_supports_max_faces = "max_faces" in get_sig.parameters
+                        self._get_param_names = list(get_sig.parameters.keys())
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        self._get_supports_det_thresh = False
+                        self._get_supports_max_num = False
+                        self._get_supports_max_faces = False
+                        self._get_param_names = []
+
                     self._app = app
                     self._initialized = True
                     self._init_error = None
@@ -168,15 +212,39 @@ class FaceRecognitionService:
         if image is None:
             return []
         try:
+            t_total0 = time.perf_counter()
             img = self._decode_image(image)
+            t_decode_ms = (time.perf_counter() - t_total0) * 1000.0
             if img is None:
+                self._last_timings_ms = {
+                    "decode_ms": t_decode_ms,
+                    "detect_ms": 0.0,
+                    "embedding_ms": 0.0,
+                    "postprocess_ms": 0.0,
+                    "total_ms": (time.perf_counter() - t_total0) * 1000.0,
+                }
                 return []
             h, w = img.shape[:2]
-            faces = self._detect_with_fallback_scales(img, max_faces)
+            t_detect0 = time.perf_counter()
+            faces, detect_meta = self._detect_with_fallback_scales(
+                img, max_faces, min_face_score, with_embedding=with_embedding
+            )
+            t_detect_ms = (time.perf_counter() - t_detect0) * 1000.0
             if not faces:
+                self._last_timings_ms = {
+                    "decode_ms": t_decode_ms,
+                    "detect_ms": t_detect_ms,
+                    "embedding_ms": 0.0,
+                    "postprocess_ms": 0.0,
+                    "total_ms": (time.perf_counter() - t_total0) * 1000.0,
+                    **detect_meta,
+                }
                 return []
 
             out: List[Dict[str, Any]] = []
+            t_post0 = time.perf_counter()
+            t_emb0 = 0.0
+            embedding_ms = 0.0
             for face in faces[:max_faces]:
                 det_score = float(getattr(face, "det_score", 0.0) or 0.0)
                 if det_score < min_face_score:
@@ -196,6 +264,7 @@ class FaceRecognitionService:
 
                 emb_list = None
                 if with_embedding:
+                    t_emb0 = time.perf_counter()
                     emb_candidate = getattr(face, "normed_embedding", None)
                     if emb_candidate is None:
                         emb_candidate = getattr(face, "embedding_normed", None)
@@ -207,6 +276,7 @@ class FaceRecognitionService:
                         if norm > 0:
                             emb = emb / norm
                         emb_list = emb.tolist()
+                    embedding_ms += (time.perf_counter() - t_emb0) * 1000.0
 
                 out.append(
                     {
@@ -216,6 +286,16 @@ class FaceRecognitionService:
                         "embedding": emb_list,
                     }
                 )
+            t_post_ms = (time.perf_counter() - t_post0) * 1000.0
+            t_total_ms = (time.perf_counter() - t_total0) * 1000.0
+            self._last_timings_ms = {
+                "decode_ms": float(t_decode_ms),
+                "detect_ms": float(t_detect_ms),
+                "embedding_ms": float(embedding_ms),
+                "postprocess_ms": float(t_post_ms),
+                "total_ms": float(t_total_ms),
+                **detect_meta,
+            }
             return out
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.exception("[FaceEngine] analyze failed: %s", e)
@@ -240,12 +320,38 @@ class FaceRecognitionService:
             logger.exception("[FaceEngine] decode failed")
             return None
 
-    def _detect_with_fallback_scales(self, img: np.ndarray, max_faces: int):
+    def _detect_with_fallback_scales(
+        self,
+        img: np.ndarray,
+        max_faces: int,
+        min_face_score: float,
+        *,
+        with_embedding: bool,
+    ):
         import cv2  # pylint: disable=import-error
 
         h, w = img.shape[:2]
         attempts = [1.0, 0.75, 1.25]
         best_faces = []
+        scale_timings_ms: List[float] = []
+        ran_scales: List[float] = []
+        early_return_scale: Optional[float] = None
+
+        def _has_usable_face(faces: Any) -> bool:
+            # InsightFace returns Face objects; we only use lightweight checks here
+            # and leave bbox coordinate validity to later post-processing.
+            for f in faces or []:
+                det_score = float(getattr(f, "det_score", 0.0) or 0.0)
+                bbox_px = getattr(f, "bbox", None)
+                if det_score < min_face_score or bbox_px is None:
+                    continue
+                try:
+                    x1, y1, x2, y2 = [float(v) for v in bbox_px]
+                    if x2 > x1 and y2 > y1:
+                        return True
+                except Exception:  # pylint: disable=broad-exception-caught
+                    continue
+            return False
 
         for scale in attempts:
             if scale == 1.0:
@@ -255,12 +361,58 @@ class FaceRecognitionService:
                 nw = max(64, int(w * scale))
                 probe = cv2.resize(img, (nw, nh))
 
-            faces = self._app.get(probe)
+            get_kwargs: Dict[str, Any] = {}
+            if self._get_supports_det_thresh:
+                get_kwargs["det_thresh"] = float(min_face_score)
+            if self._get_supports_max_num:
+                get_kwargs["max_num"] = int(max_faces)
+            elif self._get_supports_max_faces:
+                get_kwargs["max_faces"] = int(max_faces)
+
+            # Best-effort: if insightface.app.FaceAnalysis.get() exposes a switch to
+            # avoid embedding computation, we pass it when supported.
+            # (In many versions, embeddings are computed regardless of what we read later.)
+            if not with_embedding:
+                for candidate_key in (
+                    "return_embedding",
+                    "return_embeddings",
+                    "with_embedding",
+                    "return_emb",
+                    "output_embedding",
+                    "output_embeddings",
+                ):
+                    if candidate_key in self._get_param_names:
+                        get_kwargs[candidate_key] = False
+                        break
+
+            if get_kwargs:
+                t_scale0 = time.perf_counter()
+                faces = self._app.get(probe, **get_kwargs)
+                scale_ms = (time.perf_counter() - t_scale0) * 1000.0
+            else:
+                t_scale0 = time.perf_counter()
+                faces = self._app.get(probe)
+                scale_ms = (time.perf_counter() - t_scale0) * 1000.0
+
+            scale_timings_ms.append(float(scale_ms))
+            ran_scales.append(float(scale))
+            if faces and scale == 1.0 and _has_usable_face(faces):
+                # Most frames will be detected at scale=1.0; avoid 3x inference cost.
+                early_return_scale = scale
+                return faces, {
+                    "detect_scale_timings_ms": scale_timings_ms,
+                    "detect_ran_scales": ran_scales,
+                    "detect_early_return_scale": early_return_scale,
+                }
             if faces and len(faces) > len(best_faces):
                 best_faces = faces
                 if len(best_faces) >= max_faces:
                     break
-        return best_faces
+        return best_faces, {
+            "detect_scale_timings_ms": scale_timings_ms,
+            "detect_ran_scales": ran_scales,
+            "detect_early_return_scale": early_return_scale,
+        }
 
 
 _service: Optional[FaceRecognitionService] = None

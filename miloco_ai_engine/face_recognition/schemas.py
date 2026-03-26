@@ -3,7 +3,7 @@
 
 """Pydantic models for face HTTP API."""
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,4 +26,8 @@ class FaceAnalyzeResponse(BaseModel):
     success: bool = True
     faces: List[FaceItem] = Field(default_factory=list)
     provider: str = Field("cpu", description="FACE_INFERENCE_PROVIDER value")
+    timings_ms: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Breakdown timings (ms) for decode/detect/embedding/postprocess",
+    )
     message: Optional[str] = None
