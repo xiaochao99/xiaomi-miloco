@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
+import inspect
 
 from miloco_ai_engine.face_recognition.runtime import apply_face_onnx_providers
 
@@ -73,6 +74,19 @@ class FaceRecognitionService:
                 logger.error("[FaceEngine] %s", self._init_error)
                 return False
 
+            # Debug: log what ORT providers we can actually use.
+            try:
+                import onnxruntime as ort  # pylint: disable=import-error
+
+                logger.info(
+                    "[FaceEngine][debug] requested FACE_INFERENCE_PROVIDER=%s FACE_CTX_ID=%s; onnxruntime available providers=%s",
+                    os.getenv("FACE_INFERENCE_PROVIDER", "cpu"),
+                    self._ctx_id,
+                    ort.get_available_providers(),
+                )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.warning("[FaceEngine][debug] cannot get onnxruntime providers: %s", e)
+
             roots = _build_root_candidates()
             last_err = None
             for root in roots:
@@ -88,7 +102,41 @@ class FaceRecognitionService:
                             exists,
                         )
                         app = FaceAnalysis(name=self._model_pack, root=root)
-                    app.prepare(ctx_id=self._ctx_id, det_size=self._det_size)
+                    # Optionally configure ONNX Runtime execution providers.
+                    # InsightFace's prepare() signature may differ across versions,
+                    # so we only pass arguments it supports.
+                    providers = None
+                    provider_options = None
+                    mode = os.getenv("FACE_INFERENCE_PROVIDER", "cpu").lower().strip()
+                    if mode in ("openvino", "openvino_gpu"):
+                        providers = ["OpenVINOExecutionProvider", "CPUExecutionProvider"]
+                        if mode == "openvino_gpu":
+                            provider_options = [{"device_type": "GPU_FP16"}, {}]
+                        else:
+                            provider_options = [{}, {}]
+
+                    prep_sig = inspect.signature(app.prepare)
+                    prep_kwargs: Dict[str, Any] = {
+                        "ctx_id": self._ctx_id,
+                        "det_size": self._det_size,
+                    }
+                    if providers is not None and "providers" in prep_sig.parameters:
+                        prep_kwargs["providers"] = providers
+                    if provider_options is not None and "provider_options" in prep_sig.parameters:
+                        prep_kwargs["provider_options"] = provider_options
+
+                    logger.info(
+                        "[FaceEngine][debug] prepare supports=%s; will_pass=%s",
+                        list(prep_sig.parameters.keys()),
+                        {
+                            "providers": prep_kwargs.get("providers"),
+                            "provider_options": prep_kwargs.get("provider_options"),
+                            "ctx_id": prep_kwargs.get("ctx_id"),
+                            "det_size": prep_kwargs.get("det_size"),
+                        },
+                    )
+
+                    app.prepare(**prep_kwargs)
                     self._app = app
                     self._initialized = True
                     self._init_error = None

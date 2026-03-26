@@ -267,10 +267,15 @@ class LocalDefaultMcp(LocalMCPBase):
         detection_service = await get_detection_service()
         face_detector = getattr(detection_service, "_face_detector", None)
         if not face_detector or not face_detector.is_initialized():
-            face_detector = FaceDetector(FaceDetectionConfig(model_pack="buffalo_l", ctx_id=-1, min_face_score=0.1))
-            ok = await face_detector.initialize()
-            if not ok:
-                return {"success": False, "message": "Face detector initialization failed"}
+            return {
+                "success": False,
+                "recognized": False,
+                "reason_code": "face_service_unavailable",
+                "message": (
+                    "人脸识别服务不可用：未连接到 ai_engine 的 /face/analyze。"
+                    "请先启动 ai_engine（确保 /face/health/face/analyze 可用）。"
+                ),
+            }
 
         face_library = FaceLibraryService()
 

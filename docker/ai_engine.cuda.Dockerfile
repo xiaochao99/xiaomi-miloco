@@ -80,7 +80,12 @@ COPY miloco_ai_engine /app/miloco_ai_engine
 COPY scripts/start_ai_engine.py /app/start_ai_engine.py
 
 # Install project.
-RUN pip install --no-build-isolation --break-system-packages -e /app/miloco_ai_engine
+# Install project with face recognition extras.
+# This is required for /face/analyze (insightface + onnxruntime).
+RUN pip install --no-build-isolation --break-system-packages -e "/app/miloco_ai_engine[face]" \
+    && pip uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true \
+    && pip install --no-cache-dir --break-system-packages "onnxruntime-openvino>=1.19.0" \
+    && python3 -c "import insightface; import onnxruntime; print('face deps ok')"
 
 EXPOSE 8001
 

@@ -22,26 +22,23 @@ from pydantic import BaseModel, Field
 
 from miloco_server.face_recognition.face_library_service import FaceLibraryService
 from miloco_server.detection.detection_service import get_detection_service, DetectionService
-from miloco_server.detection.face_detector import FaceInfo, FaceDetector, FaceDetectionConfig
+from miloco_server.detection.face_detector import FaceDetector, FaceInfo
 
 logger = logging.getLogger(__name__)
 
 face_recognition_router = APIRouter(prefix="/face", tags=["face"])
-_fallback_face_detector: FaceDetector | None = None
 
 
 async def _ensure_face_detector(
     detection_service: DetectionService,
 ) -> FaceDetector:
     """
-    Ensure we always have an initialized face detector.
+    Ensure we have an initialized face detector.
 
-    Priority:
-    1) reuse detector from DetectionService
-    2) lazily create a lightweight fallback detector for enroll/search APIs
+    Pure remote mode:
+    - face inference must come from ai_engine (/face/analyze)
+    - if ai_engine is unavailable, we do NOT fall back to local InsightFace
     """
-    global _fallback_face_detector
-
     detector = getattr(detection_service, "_face_detector", None)
     if detector and detector.is_initialized():
         logger.info("[FaceAPI] use detection_service face detector")
@@ -59,27 +56,14 @@ async def _ensure_face_detector(
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.exception("[FaceAPI] DetectionService initialize failed while preparing face detector: %s", e)
 
-    # Fallback detector for face-library APIs.
-    if _fallback_face_detector is None:
-        logger.info("[FaceAPI] create fallback face detector")
-        _fallback_face_detector = FaceDetector(
-            FaceDetectionConfig(model_pack="buffalo_l", ctx_id=-1)
-        )
-
-    if not _fallback_face_detector.is_initialized():
-        logger.info("[FaceAPI] initialize fallback face detector")
-        ok = await _fallback_face_detector.initialize()
-        if not ok:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Face detector initialization failed. "
-                    "Please ensure insightface and onnxruntime are installed, "
-                    "then restart backend."
-                ),
-            )
-
-    return _fallback_face_detector
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "Face recognition service is unavailable because ai_engine face API "
+            "is not reachable. Please start the ai_engine container (with /face/analyze), "
+            "then restart backend."
+        ),
+    )
 
 
 def _decode_image_base64(image_base64: str) -> bytes:
