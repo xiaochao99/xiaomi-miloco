@@ -186,114 +186,52 @@ class FaceDetector:
         return p1.exists() or p2.exists()
 
     async def initialize(self) -> bool:
-        """Initialize InsightFace face analysis pipeline."""
+        """
+        Initialize face analysis pipeline.
+
+        Pure remote mode (no local InsightFace fallback):
+        - FACE_USE_REMOTE=1: require ai_engine face API reachable
+        - FACE_USE_REMOTE=auto: if unreachable, disable face service
+        - FACE_USE_REMOTE=0: disable face service
+        """
         logger.info(
-            "[FaceDetector] initialize start: model=%s det_size=%s ctx_id=%s min_face_score=%.3f",
-            self.config.model_pack,
+            "[FaceDetector] initialize start: det_size=%s min_face_score=%.3f FACE_USE_REMOTE=%s",
             self.config.det_size,
-            self.config.ctx_id,
             self.config.min_face_score,
+            os.getenv("FACE_USE_REMOTE", "auto"),
         )
+
+        # reset
+        self._remote = False
+        self._remote_base = None
+        self._app = None
+        self._initialized = False
 
         use = os.getenv("FACE_USE_REMOTE", "auto").strip().lower()
         base = self._face_engine_base_url()
-        if use == "0":
-            self._remote = False
-        elif use == "1":
-            if not await self._probe_face_engine(base):
-                logger.error(
-                    "[FaceDetector] FACE_USE_REMOTE=1 but AI Engine face API unreachable: %s",
-                    base,
-                )
-                self._initialized = False
-                return False
-            self._remote = True
-            self._remote_base = base
-            self._initialized = True
-            self._app = None
-            logger.info("[FaceDetector] using remote face engine: %s", base)
-            return True
-        else:
-            if await self._probe_face_engine(base):
-                self._remote = True
-                self._remote_base = base
-                self._initialized = True
-                self._app = None
-                logger.info("[FaceDetector] using remote face engine (auto): %s", base)
-                return True
-            self._remote = False
 
-        try:
-            from insightface.app import FaceAnalysis  # pylint: disable=import-error
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.warning(
-                "InsightFace not available, face detection disabled: %s", e
-            )
-            self._initialized = False
+        if use in ("0", "false", "no"):
+            logger.info("[FaceDetector] face service disabled by FACE_USE_REMOTE=0")
             return False
 
-        try:
-            # Local-first initialization strategy:
-            # 1) try explicit local roots (env + /models paths)
-            # 2) fallback to insightface default root (may download)
-            roots = self._build_root_candidates()
-            last_error = None
-            for root in roots:
-                try:
-                    if root is None:
-                        logger.info(
-                            "[FaceDetector] trying default insightface root for model=%s",
-                            self.config.model_pack,
-                        )
-                        app = FaceAnalysis(name=self.config.model_pack)
-                    else:
-                        exists = self._root_has_model_pack(root)
-                        logger.info(
-                            "[FaceDetector] trying local root=%s model=%s exists=%s",
-                            root,
-                            self.config.model_pack,
-                            exists,
-                        )
-                        app = FaceAnalysis(name=self.config.model_pack, root=root)
-
-                    # prepare() runs model load (and may download if root has no model files)
-                    app.prepare(ctx_id=self.config.ctx_id, det_size=self.config.det_size)
-                    self._app = app
-                    self._initialized = True
-                    logger.info(
-                        "FaceDetector initialized (model=%s, det_size=%s, ctx_id=%s, root=%s)",
-                        self.config.model_pack,
-                        self.config.det_size,
-                        self.config.ctx_id,
-                        root if root is not None else "default",
-                    )
-                    return True
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    last_error = e
-                    logger.warning(
-                        "[FaceDetector] init failed on root=%s: %s",
-                        root if root is not None else "default",
-                        e,
-                    )
-
+        reachable = await self._probe_face_engine(base)
+        if not reachable:
             logger.error(
-                "[FaceDetector] all roots failed for model=%s, last_error=%s",
-                self.config.model_pack,
-                last_error,
+                "[FaceDetector] ai_engine face API unreachable: %s (FACE_USE_REMOTE=%s)",
+                base,
+                use,
             )
-            self._app = None
-            self._initialized = False
             return False
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.exception("[FaceDetector] Failed to initialize FaceDetector: %s", e)
-            self._app = None
-            self._initialized = False
-            return False
+
+        # reachable
+        self._remote = True
+        self._remote_base = base
+        self._initialized = True
+        logger.info("[FaceDetector] using remote face engine: %s", base)
+        return True
 
     def is_initialized(self) -> bool:
-        if self._remote:
-            return bool(self._initialized)
-        return bool(self._initialized and self._app is not None)
+        return bool(self._initialized and self._remote and self._remote_base)
 
     def analyze(
         self,
@@ -314,84 +252,11 @@ class FaceDetector:
             logger.warning("[FaceDetector] analyze got empty image input")
             return []
 
-        if self._remote:
-            return self._analyze_remote(image, with_embedding)
-
-        try:
-            if isinstance(image, bytes):
-                logger.info("[FaceDetector] analyze bytes input: size=%d with_embedding=%s", len(image), with_embedding)
-            else:
-                logger.info("[FaceDetector] analyze ndarray input: shape=%s with_embedding=%s", getattr(image, "shape", None), with_embedding)
-            img = self._decode_image(image)
-
-            if img is None:
-                logger.warning("[FaceDetector] image decode failed: got None")
-                return []
-
-            h, w = img.shape[:2]
-            logger.info("[FaceDetector] decoded image shape: h=%d w=%d", h, w)
-            faces = self._detect_with_fallback_scales(img)
-            if not faces:
-                logger.warning("[FaceDetector] no faces from detector across fallback scales")
-                return []
-
-            logger.info("[FaceDetector] raw detected faces=%d", len(faces))
-
-            infos: List[FaceInfo] = []
-            for face in faces[: self.config.max_faces]:
-                det_score = float(getattr(face, "det_score", 0.0) or 0.0)
-                if det_score < self.config.min_face_score:
-                    continue
-
-                bbox_px = getattr(face, "bbox", None)
-                if bbox_px is None:
-                    continue
-
-                x1, y1, x2, y2 = [float(v) for v in bbox_px]
-                # clip
-                x1 = max(0.0, min(float(w), x1))
-                x2 = max(0.0, min(float(w), x2))
-                y1 = max(0.0, min(float(h), y1))
-                y2 = max(0.0, min(float(h), y2))
-
-                if x2 <= x1 or y2 <= y1:
-                    continue
-
-                bbox_norm = (x1 / w, y1 / h, x2 / w, y2 / h)
-                bbox_px_int = (int(x1), int(y1), int(x2), int(y2))
-
-                emb = None
-                if with_embedding:
-                    emb_candidate = getattr(face, "normed_embedding", None)
-                    if emb_candidate is None:
-                        emb_candidate = getattr(face, "embedding_normed", None)
-                    if emb_candidate is None:
-                        emb_candidate = getattr(face, "embedding", None)
-                    if emb_candidate is not None:
-                        emb = np.asarray(emb_candidate, dtype=np.float32)
-                        # Normalize for cosine similarity.
-                        norm = float(np.linalg.norm(emb)) if emb.size else 0.0
-                        if norm > 0:
-                            emb = emb / norm
-
-                infos.append(
-                    FaceInfo(
-                        bbox_norm=bbox_norm,
-                        bbox_px=bbox_px_int,
-                        det_score=det_score,
-                        embedding=emb,
-                    )
-                )
-
-            logger.info(
-                "[FaceDetector] final accepted faces=%d (threshold=%.3f)",
-                len(infos),
-                self.config.min_face_score,
-            )
-            return infos
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.exception("[FaceDetector] Face analyze failed: %s", e)
+        # pure remote: no local fallback.
+        if not self._remote:
             return []
+
+        return self._analyze_remote(image, with_embedding)
 
     def _decode_image(self, image: Union[np.ndarray, bytes]):
         """Decode bytes to OpenCV BGR image, with PIL fallback."""
