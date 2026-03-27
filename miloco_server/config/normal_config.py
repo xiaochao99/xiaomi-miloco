@@ -109,6 +109,9 @@ CAMERA_CONFIG = {
     ),
 }
 
+# Detection configuration
+DETECTION_CONFIG = _config.get("detection", {}) or {}
+
 # RTSP server configuration
 RTSP_SERVER_CONFIG = _config["camera"]["rtsp_server"]
 

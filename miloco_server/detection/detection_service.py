@@ -22,6 +22,7 @@ from miloco_server.detection.stream_processor import (
     StreamProcessor,
 )
 from miloco_server.utils.carmera_vision_handler import BaseCameraVisionHandler
+from miloco_server.config.normal_config import DETECTION_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -47,15 +48,15 @@ class DetectionService:
 
         # Configuration
         self._default_detection_config = DetectionConfig(
-            confidence_threshold=0.5,
-            iou_threshold=0.45,
-            device='auto',
-            half_precision=True,
+            confidence_threshold=float(DETECTION_CONFIG.get("confidence_threshold", 0.5)),
+            iou_threshold=float(DETECTION_CONFIG.get("iou_threshold", 0.45)),
+            device=str(DETECTION_CONFIG.get("device", "auto")),
+            half_precision=bool(DETECTION_CONFIG.get("half_precision", True)),
         )
         self._default_stream_config = {
-            'process_fps': 5.0,
-            'min_detection_interval': 0.5,
-            'enable_tracking': True,
+            "process_fps": float(DETECTION_CONFIG.get("process_fps", 5.0)),
+            "min_detection_interval": float(DETECTION_CONFIG.get("min_detection_interval", 0.5)),
+            "enable_tracking": bool(DETECTION_CONFIG.get("enable_tracking", True)),
         }
 
         # Statistics

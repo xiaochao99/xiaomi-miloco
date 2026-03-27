@@ -71,6 +71,21 @@ camera:
     port: 8554     # RTSP server port
     # RTSP URL format: rtsp://<server_ip>:{port}/<camera_did>
 
+# Real-time detection configuration (YOLO / ONNXRuntime)
+detection:
+  enabled: true
+  # Backend selection:
+  # - auto: prefer CUDA -> DirectML -> OpenVINO -> CoreML -> CPU
+  # - cpu / cuda / directml(dml) / openvino / mps(coreml)
+  device: "auto"
+  confidence_threshold: 0.5
+  iou_threshold: 0.45
+  half_precision: true
+  # Stream settings
+  process_fps: 5.0
+  min_detection_interval: 0.5
+  enable_tracking: true
+
 rtsp_cameras:
   # Example RTSP camera configuration. Remove or duplicate entries as needed.
   - did: "ip_camera_1"

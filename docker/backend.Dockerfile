@@ -23,20 +23,13 @@ RUN npm run build
 ################################################
 # Backend Base
 ################################################
-FROM python:3.11-slim AS backend-base
+FROM python:3.12-slim AS backend-base
 
 # Restate PIP index URL.
 ARG PIP_INDEX_URL
-ARG TARGETARCH
 
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
-# Build tools for packages that may fall back to source builds
-# (e.g. insightface on some Linux/arch combinations).
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential \
-    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory.
 WORKDIR /app
@@ -48,9 +41,7 @@ COPY miot_kit/pyproject.toml /app/miot_kit/pyproject.toml
 # Install dependencies
 RUN if [ -n "${PIP_INDEX_URL}" ]; then pip config set global.index-url "${PIP_INDEX_URL}"; fi \
     && pip install --upgrade pip setuptools wheel \
-    && pip install numpy cython \
     && pip install --no-build-isolation /app/miloco_server \
-    && if [ "${TARGETARCH}" = "amd64" ]; then pip install "insightface>=0.7.3"; else echo "Skip insightface on ${TARGETARCH}"; fi \
     && pip install --no-build-isolation /app/miot_kit \
     && rm -rf /app/miloco_server \
     && rm -rf /app/miot_kit
@@ -73,6 +64,7 @@ COPY miot_kit /app/miot_kit
 
 # Install project.
 RUN pip install --no-build-isolation -e /app/miloco_server \
+    && pip install --no-cache-dir onnxruntime-openvino \
     && pip install --no-build-isolation -e /app/miot_kit \
     && rm -rf /app/miloco_server/static \
     && rm -rf /app/miloco_server/.temp \
