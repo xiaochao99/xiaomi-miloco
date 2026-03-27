@@ -71,7 +71,9 @@ class MultiTaskDetector:
         detections: List[DetectionResult] = list(obj_result.detections)
 
         # Face detection + identification (class_name="face")
-        if self._enable_face_recognition and self._face_detector:
+        # Optimization: only run face analysis when a person is detected first.
+        has_person = any(det.class_name == "person" for det in detections)
+        if self._enable_face_recognition and self._face_detector and has_person:
             face_start = time.time()
             face_infos = self._face_detector.analyze(img, with_embedding=True)
             for info in face_infos:
