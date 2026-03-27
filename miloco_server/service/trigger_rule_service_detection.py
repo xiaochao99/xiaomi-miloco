@@ -104,7 +104,7 @@ class DetectionTriggerServiceMixin:
 
                     # 启动检测
                     enable_face_recognition = any(
-                        t.value == "face" for t in condition.targets
+                        t.value in ("face", "face_recognition") for t in condition.targets
                     )
                     config_override = {
                         "confidence_threshold": condition.confidence_threshold,
@@ -210,8 +210,8 @@ class DetectionTriggerServiceMixin:
             from miloco_server.detection.detection_service import get_detection_service
             detection_service = await get_detection_service()
 
-            old_has_face = any(t.value == "face" for t in old_condition.targets)
-            new_has_face = any(t.value == "face" for t in new_condition.targets)
+            old_has_face = any(t.value in ("face", "face_recognition") for t in old_condition.targets)
+            new_has_face = any(t.value in ("face", "face_recognition") for t in new_condition.targets)
             face_flag_changed = old_has_face != new_has_face
 
             active_cameras = detection_service.get_active_cameras()
@@ -360,11 +360,9 @@ class DetectionTriggerServiceMixin:
                 "confidence_threshold": condition.confidence_threshold,
                 "process_fps": self._calculate_optimal_fps(
                     condition.sensitivity,
-                    any(t.value == "face" for t in condition.targets),
+                    any(t.value in ("face", "face_recognition") for t in condition.targets),
                 ),
-                "enable_face_recognition": any(
-                    t.value == "face" for t in condition.targets
-                ),
+                "enable_face_recognition": any(t.value in ("face", "face_recognition") for t in condition.targets),
             }
             detection_service.update_config(camera_id, config)
 
@@ -439,43 +437,57 @@ class DetectionTriggerServiceMixin:
     ) -> tuple[bool, Optional[str]]:
         """
         验证检测条件配置
-        
+
         Args:
             condition: 检测条件
-            
+
         Returns:
             (是否有效, 错误信息)
         """
         if not condition:
             return True, None
-            
+
         if not condition.enabled:
             return True, None
-            
+
         # 验证目标类型
         if not condition.targets:
             return False, "At least one target type must be selected"
-            
-        # 验证置信度阈值
-        if not 0.0 <= condition.confidence_threshold <= 1.0:
-            return False, "Confidence threshold must be between 0.0 and 1.0"
-            
-        # 验证灵敏度
-        if not 1 <= condition.sensitivity <= 10:
-            return False, "Sensitivity must be between 1 and 10"
-            
-        # 验证冷却时间
+
+        # 验证人脸识别目标及相关参数
+        has_face_recognition = "face_recognition" in [t.value for t in condition.targets]
+        if has_face_recognition:
+            if not condition.face_target:
+                return False, "Face recognition target must be specified"
+
+            # 验证人脸识别专用参数
+            if not 0.0 <= condition.min_face_score <= 1.0:
+                return False, "Min face score must be between 0.0 and 1.0"
+
+            if not 1 <= condition.max_faces <= 32:
+                return False, "Max faces must be between 1 and 32"
+
+        # 验证置信度阈值（仅非人脸识别模式）
+        if not has_face_recognition:
+            if not 0.0 <= condition.confidence_threshold <= 1.0:
+                return False, "Confidence threshold must be between 0.0 and 1.0"
+
+            # 验证灵敏度（仅非人脸识别模式）
+            if not 1 <= condition.sensitivity <= 10:
+                return False, "Sensitivity must be between 1 and 10"
+
+            # 验证COUNT逻辑（仅非人脸识别模式）
+            if condition.logic.value == "count":
+                if condition.min_count is None or condition.min_count < 1:
+                    return False, "Min count must be at least 1 for COUNT logic"
+
+            # 验证最小持续时长（仅非人脸识别模式）
+            if condition.min_duration_seconds is not None:
+                if not 1 <= condition.min_duration_seconds <= 300:
+                    return False, "Min duration must be between 1 and 300 seconds"
+
+        # 验证冷却时间（通用）
         if not 5 <= condition.cooldown_seconds <= 3600:
             return False, "Cooldown must be between 5 and 3600 seconds"
-            
-        # 验证COUNT逻辑
-        if condition.logic.value == "count":
-            if condition.min_count is None or condition.min_count < 1:
-                return False, "Min count must be at least 1 for COUNT logic"
-                
-        # 验证最小持续时长
-        if condition.min_duration_seconds is not None:
-            if not 1 <= condition.min_duration_seconds <= 300:
-                return False, "Min duration must be between 1 and 300 seconds"
-                
+
         return True, None

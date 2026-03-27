@@ -236,7 +236,7 @@ class TriggerRuleRunner:
                 # Skip detection mode rules - they are handled by detection trigger integration
                 is_detection_mode = (
                     hasattr(rule, 'condition_type') and
-                    rule.condition_type == ConditionType.DETECTION
+                    rule.condition_type in (ConditionType.DETECTION, ConditionType.FACE_RECOGNITION)
                 )
                 if is_detection_mode:
                     continue
@@ -328,7 +328,7 @@ class TriggerRuleRunner:
                 # Check if this is a detection mode rule (handled by detection trigger integration)
                 is_detection_mode = (
                     hasattr(rule, 'condition_type') and
-                    rule.condition_type == ConditionType.DETECTION
+                    rule.condition_type in (ConditionType.DETECTION, ConditionType.FACE_RECOGNITION)
                 )
 
                 # Skip detection mode rules - they are handled by detection trigger integration
@@ -599,7 +599,7 @@ class TriggerRuleRunner:
             # Skip detection mode rules - they are handled by detection trigger integration
             is_detection_mode = (
                 hasattr(rule, 'condition_type') and
-                rule.condition_type == ConditionType.DETECTION
+                rule.condition_type in (ConditionType.DETECTION, ConditionType.FACE_RECOGNITION)
             )
             if is_detection_mode:
                 logger.debug("Skipping detection mode rule %s in scheduled task", rule.name)
