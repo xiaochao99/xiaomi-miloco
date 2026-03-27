@@ -28,6 +28,11 @@ class ModelLoader:
     """
 
     MODEL_FILENAME = "yolov8n.onnx"
+    PREFERRED_MODEL_NAMES = (
+        "yolo26n.onnx",
+        "yolo26s.onnx",
+        "yolov8n.onnx",
+    )
     MODEL_SIZE = 6340543  # Expected file size in bytes (approx 6MB)
 
     def __init__(self):
@@ -76,18 +81,20 @@ class ModelLoader:
 
     def _load_from_docker_models(self) -> Optional[str]:
         """Load model from /models directory (shared with ai_engine in Docker)."""
-        # Primary location: /models (mounted from ./models in docker-compose)
-        docker_models_path = Path("/models") / self.MODEL_FILENAME
-        
-        if docker_models_path.exists():
-            logger.debug(f"Found model in Docker shared models directory: {docker_models_path}")
-            return str(docker_models_path)
-        
-        # Also check environment variable for custom path
+        # Highest priority: explicit environment variable path
         env_model_path = os.environ.get("YOLO_MODEL_PATH")
         if env_model_path and os.path.exists(env_model_path):
             logger.debug(f"Found model from environment variable: {env_model_path}")
             return env_model_path
+
+        models_dir = Path("/models")
+        if not models_dir.exists():
+            return None
+
+        discovered = self._discover_model_file(models_dir)
+        if discovered:
+            logger.debug(f"Found model in Docker shared models directory: {discovered}")
+            return str(discovered)
             
         return None
 
@@ -95,10 +102,10 @@ class ModelLoader:
         """Load model from source directory (development mode)."""
         # Get the directory containing this file
         current_dir = Path(__file__).parent
-        model_path = current_dir / "models" / self.MODEL_FILENAME
-        
-        if model_path.exists():
-            return str(model_path)
+        models_dir = current_dir / "models"
+        discovered = self._discover_model_file(models_dir)
+        if discovered:
+            return str(discovered)
         return None
 
     def _load_from_package(self) -> Optional[str]:
@@ -158,13 +165,36 @@ class ModelLoader:
         try:
             import miloco_server
             package_dir = Path(miloco_server.__file__).parent
-            model_path = package_dir / "detection" / "models" / self.MODEL_FILENAME
-            
-            if model_path.exists():
-                return str(model_path)
+            models_dir = package_dir / "detection" / "models"
+            discovered = self._discover_model_file(models_dir)
+            if discovered:
+                return str(discovered)
         except Exception as e:
             logger.debug(f"site-packages loading failed: {e}")
             
+        return None
+
+    def _discover_model_file(self, models_dir: Path) -> Optional[Path]:
+        """Discover available ONNX detection model from a directory."""
+        if not models_dir.exists() or not models_dir.is_dir():
+            return None
+
+        # 1) Preferred fixed names first (allows yolo26 to override yolov8)
+        for name in self.PREFERRED_MODEL_NAMES:
+            candidate = models_dir / name
+            if candidate.exists() and candidate.is_file():
+                return candidate
+
+        # 2) Backward-compatible fixed filename
+        legacy = models_dir / self.MODEL_FILENAME
+        if legacy.exists() and legacy.is_file():
+            return legacy
+
+        # 3) Fallback: pick first .onnx file by name
+        onnx_files = sorted(models_dir.glob("*.onnx"))
+        if onnx_files:
+            return onnx_files[0]
+
         return None
 
     def _extract_to_temp(self, model_ref) -> Optional[str]:

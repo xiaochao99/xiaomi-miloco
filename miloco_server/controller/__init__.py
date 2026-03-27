@@ -17,6 +17,7 @@ from .mcp_controller import router as mcp_router
 from .api_token_controller import router as api_token_router
 from .openai_compat_controller import router as openai_compat_router
 from .detection_controller import detection_router
+from .face_recognition_controller import face_recognition_router
 
 __all__ = [
     "web_router",
@@ -30,4 +31,5 @@ __all__ = [
     "api_token_router",
     "openai_compat_router",
     "detection_router",
+    "face_recognition_router",
 ]
