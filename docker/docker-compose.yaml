@@ -2,12 +2,15 @@ services:
   ai_engine:
     container_name: miloco-ai_engine
     image: ${DOCKER_REPO}xiaomi/miloco-ai_engine:latest
+    privileged: true
     ports:
       - ${AI_ENGINE_PORT:-8001}:${AI_ENGINE_PORT:-8001}
     environment:
       - AI_ENGINE_HOST=${AI_ENGINE_HOST:-0.0.0.0}
       - AI_ENGINE_PORT=${AI_ENGINE_PORT:-8001}
       - AI_ENGINE_LOG_LEVEL=${AI_ENGINE_LOG_LEVEL:-info}
+      - FACE_INFERENCE_PROVIDER=openvino_gpu
+      - FACE_CTX_ID=-1
       - TZ=${TZ:-Asia/Shanghai}
     volumes:
       - ./models:/models
@@ -15,6 +18,8 @@ services:
     # NOTICE: If you want to use your own configuration files or models path, please mount them here.
     #   - ./config/ai_engine_config.yaml:/app/config/ai_engine_config.yaml
     #   - ./config/prompt_config.yaml:/app/config/prompt_config.yaml
+    devices:
+      - /dev/dri:/dev/dri
 
     deploy:
       resources:

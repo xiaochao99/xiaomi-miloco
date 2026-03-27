@@ -7,6 +7,7 @@ Provides functionality to manage local AI models including loading, unloading, a
 """
 
 import asyncio
+import json
 import logging
 from enum import Enum
 from typing import List
@@ -84,8 +85,21 @@ class LocalModels:
     async def local_cuda_info(self):
         """Get local CUDA info."""
         url = self._get_service_url(LocalModelApi.CUDA_INFO)
-        json_resp = await self._forward_local_models_services(url, method_get=True)
-        return json_resp
+        try:
+            json_resp = await self._forward_local_models_services(url, method_get=True)
+            return json_resp
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.warning("Local CUDA info unavailable: %s", e)
+            # Graceful fallback for deployments without ai_engine.
+            return {
+                "code": 1,
+                "message": "Local AI engine unavailable",
+                "data": {
+                    "available": False,
+                    "cuda_available": False,
+                    "reason": str(e),
+                },
+            }
 
     async def get_local_models(self) -> List[LLMModelInfo]:
         """Get cached local model list."""
@@ -128,7 +142,7 @@ class LocalModels:
         try:
             response.raise_for_status()
         except Exception as e:  # pylint: disable=broad-exception-caught
-            error_data = response.json()
+            error_data = self._safe_response_json(response)
             if error_data and error_data.get("code", None) and error_data.get("message", None):
                 logger.error("Forward local model service failed: errCode[%s]: %s",
                             error_data["code"], error_data["message"])
@@ -136,4 +150,21 @@ class LocalModels:
             else:
                 logger.error("Forward local model service failed: %s", e)
                 raise LLMServiceException(f"Forward local model service failed: {str(e)}") from e
-        return response.json()
+        return self._safe_response_json(response)
+
+    def _safe_response_json(self, response) -> dict:
+        """Safely parse response JSON, tolerating HTML/text error pages."""
+        try:
+            return response.json()
+        except (json.JSONDecodeError, ValueError):
+            text = ""
+            try:
+                text = response.text or ""
+            except Exception:  # pylint: disable=broad-exception-caught
+                text = ""
+            logger.warning(
+                "Local model service returned non-JSON body: status=%s, body_prefix=%s",
+                getattr(response, "status_code", "unknown"),
+                text[:200],
+            )
+            return {}

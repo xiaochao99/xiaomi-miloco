@@ -22,6 +22,7 @@ from miloco_server.controller import (
     auth_router,
     chat_router,
     detection_router,
+    face_recognition_router,
     ha_router,
     mcp_router,
     miot_router,
@@ -66,6 +67,7 @@ app.include_router(model_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api")
 app.include_router(api_token_router, prefix="/api")
 app.include_router(detection_router, prefix="/api")
+app.include_router(face_recognition_router, prefix="/api")
 app.include_router(openai_compat_router)
 
 

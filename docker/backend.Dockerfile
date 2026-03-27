@@ -64,6 +64,7 @@ COPY miot_kit /app/miot_kit
 
 # Install project.
 RUN pip install --no-build-isolation -e /app/miloco_server \
+    && pip install --no-cache-dir onnxruntime-openvino \
     && pip install --no-build-isolation -e /app/miot_kit \
     && rm -rf /app/miloco_server/static \
     && rm -rf /app/miloco_server/.temp \

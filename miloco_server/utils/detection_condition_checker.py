@@ -140,12 +140,12 @@ class DetectionConditionChecker:
     ) -> Dict[str, int]:
         """Count occurrences of each target type in detections."""
         counts = defaultdict(int)
+        expected = {t.value for t in target_types}
 
         for det in detections:
-            # Map COCO class names to our target types
-            target_type = self._map_class_to_target(det.class_name)
-            if target_type and target_type in [t.value for t in target_types]:
-                counts[target_type] += 1
+            for t in self._map_detection_to_targets(det):
+                if t in expected:
+                    counts[t] += 1
 
         return dict(counts)
 
@@ -155,8 +155,27 @@ class DetectionConditionChecker:
             "person": "person",
             "cat": "cat",
             "dog": "dog",
+            "face": "face",
         }
         return mapping.get(class_name.lower())
+
+    def _map_detection_to_targets(self, det: DetectionResult) -> Set[str]:
+        """
+        Map a detection result to one or more target keys.
+
+        - face -> 'face'
+        - face with identity.name -> also 'face_recognition'
+        """
+        target = self._map_class_to_target(det.class_name)
+        if not target:
+            return set()
+        out = {target}
+        if target == "face":
+            extra = getattr(det, "extra", None) or {}
+            identity = extra.get("identity") if isinstance(extra, dict) else None
+            if identity and isinstance(identity, dict) and identity.get("name"):
+                out.add("face_recognition")
+        return out
 
     def _evaluate_logic(
         self,
@@ -167,6 +186,42 @@ class DetectionConditionChecker:
         """Evaluate detection logic against detected targets."""
         logic = condition.logic
         expected_targets = [t.value for t in condition.targets]
+
+        # Special handling for face_recognition with face_target
+        if 'face_recognition' in expected_targets:
+            if condition.face_target:
+                target_face_name = condition.face_target
+                face_matches = []
+
+                for det in detections:
+                    if det.class_name != 'face':
+                        continue
+
+                    # Apply min_face_score filter if specified
+                    if condition.min_face_score is not None:
+                        if det.confidence < condition.min_face_score:
+                            continue
+
+                    extra = getattr(det, 'extra', None) or {}
+                    identity = extra.get('identity') if isinstance(extra, dict) else None
+
+                    if target_face_name == 'unknown':
+                        # For 'unknown' target, match faces without identity name
+                        if identity and isinstance(identity, dict) and not identity.get('name'):
+                            face_matches.append(True)
+                        elif not identity or not isinstance(identity, dict):
+                            face_matches.append(True)
+                    else:
+                        # For specific name target, match faces with that identity name
+                        if identity and isinstance(identity, dict) and identity.get('name') == target_face_name:
+                            face_matches.append(True)
+
+                # Apply max_faces limit if specified
+                if condition.max_faces is not None:
+                    face_matches = face_matches[:condition.max_faces]
+
+                # If face_recognition is in targets, check if target face is detected
+                return len(face_matches) > 0
 
         if logic == DetectionLogicType.ANY:
             # Any of the specified targets must be detected
@@ -269,12 +324,28 @@ class DetectionConditionChecker:
     ) -> str:
         """Build human-readable trigger reason."""
         parts = []
+        face_names = []
+        for det in detections:
+            if det.class_name != "face":
+                continue
+            extra = getattr(det, "extra", None) or {}
+            identity = extra.get("identity") if isinstance(extra, dict) else None
+            if identity and isinstance(identity, dict) and identity.get("name"):
+                face_names.append(str(identity["name"]))
+
         for target, count in detected_targets.items():
             if count > 0:
                 if count == 1:
                     parts.append(f"检测到1个{self._translate_target(target)}")
                 else:
                     parts.append(f"检测到{count}个{self._translate_target(target)}")
+
+        if face_names:
+            uniq = []
+            for n in face_names:
+                if n not in uniq:
+                    uniq.append(n)
+            parts.append(f"识别到：{'、'.join(uniq[:5])}")
 
         return "，".join(parts) if parts else "检测到目标"
 
@@ -284,6 +355,8 @@ class DetectionConditionChecker:
             "person": "人",
             "cat": "猫",
             "dog": "狗",
+            "face": "人脸",
+            "face_recognition": "人脸识别",
         }
         return translations.get(target, target)
 

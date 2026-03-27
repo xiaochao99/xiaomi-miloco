@@ -97,13 +97,21 @@ class DetectionTriggerServiceMixin:
                     # 检查是否已在检测中
                     active_cameras = detection_service.get_active_cameras()
                     if camera_id in active_cameras:
-                        result["cameras_started"].append(camera_id)
-                        continue
+                        logger.info(
+                            f"[Detection] Camera {camera_id} already active, "
+                            f"will request face enable/upgrade if needed"
+                        )
 
                     # 启动检测
+                    enable_face_recognition = any(
+                        t.value in ("face", "face_recognition") for t in condition.targets
+                    )
                     config_override = {
                         "confidence_threshold": condition.confidence_threshold,
-                        "process_fps": self._calculate_optimal_fps(condition.sensitivity),
+                        "process_fps": self._calculate_optimal_fps(
+                            condition.sensitivity, enable_face_recognition
+                        ),
+                        "enable_face_recognition": enable_face_recognition,
                     }
 
                     success = await detection_service.start_detection(
@@ -202,6 +210,10 @@ class DetectionTriggerServiceMixin:
             from miloco_server.detection.detection_service import get_detection_service
             detection_service = await get_detection_service()
 
+            old_has_face = any(t.value in ("face", "face_recognition") for t in old_condition.targets)
+            new_has_face = any(t.value in ("face", "face_recognition") for t in new_condition.targets)
+            face_flag_changed = old_has_face != new_has_face
+
             active_cameras = detection_service.get_active_cameras()
             cameras_to_start = [cid for cid in trigger_rule.cameras if cid not in active_cameras]
 
@@ -213,10 +225,21 @@ class DetectionTriggerServiceMixin:
                 result["detection_updated"] = True
                 result["action"] = "restarted"
             else:
-                # 更新检测配置
-                result["detection_updated"] = True
-                result["action"] = "updated"
-                await self._update_detection_config(trigger_rule)
+                if face_flag_changed:
+                    # face 目标开关影响检测器是否需要启用 face 分支
+                    logger.info(
+                        "[Detection] Face flag changed, requesting detection re-init for cameras: %s",
+                        trigger_rule.cameras,
+                    )
+                    create_result = await self._handle_detection_condition_on_create(trigger_rule)
+                    result.update(create_result)
+                    result["detection_updated"] = True
+                    result["action"] = "restarted_face"
+                else:
+                    # 更新检测配置（仅 YOLO 相关参数）
+                    result["detection_updated"] = True
+                    result["action"] = "updated"
+                    await self._update_detection_config(trigger_rule)
 
         return result
 
@@ -335,11 +358,19 @@ class DetectionTriggerServiceMixin:
         for camera_id in trigger_rule.cameras:
             config = {
                 "confidence_threshold": condition.confidence_threshold,
-                "process_fps": self._calculate_optimal_fps(condition.sensitivity),
+                "process_fps": self._calculate_optimal_fps(
+                    condition.sensitivity,
+                    any(t.value in ("face", "face_recognition") for t in condition.targets),
+                ),
+                "enable_face_recognition": any(t.value in ("face", "face_recognition") for t in condition.targets),
             }
             detection_service.update_config(camera_id, config)
 
-    def _calculate_optimal_fps(self, sensitivity: int) -> float:
+    def _calculate_optimal_fps(
+        self,
+        sensitivity: int,
+        enable_face_recognition: bool,
+    ) -> float:
         """
         根据灵敏度计算最优FPS
         
@@ -349,10 +380,15 @@ class DetectionTriggerServiceMixin:
         Returns:
             推荐的FPS值
         """
-        # 灵敏度越高，FPS越高
-        # sensitivity 1 -> 2 FPS
-        # sensitivity 10 -> 10 FPS
-        return 2 + (sensitivity - 1) * 0.9
+        # 灵敏度越高，FPS越高。
+        # face 识别通常更耗 CPU，所以给更保守的上限，避免抢占系统资源。
+        base_fps = 2 + (sensitivity - 1) * 0.9
+        if not enable_face_recognition:
+            return base_fps
+
+        # 保守上限：1.5~3.0 FPS
+        capped = 1.5 + (sensitivity - 1) * 0.15
+        return float(min(base_fps, capped))
 
     async def _get_camera_handler(self, camera_id: str):
         """
@@ -401,43 +437,57 @@ class DetectionTriggerServiceMixin:
     ) -> tuple[bool, Optional[str]]:
         """
         验证检测条件配置
-        
+
         Args:
             condition: 检测条件
-            
+
         Returns:
             (是否有效, 错误信息)
         """
         if not condition:
             return True, None
-            
+
         if not condition.enabled:
             return True, None
-            
+
         # 验证目标类型
         if not condition.targets:
             return False, "At least one target type must be selected"
-            
-        # 验证置信度阈值
-        if not 0.0 <= condition.confidence_threshold <= 1.0:
-            return False, "Confidence threshold must be between 0.0 and 1.0"
-            
-        # 验证灵敏度
-        if not 1 <= condition.sensitivity <= 10:
-            return False, "Sensitivity must be between 1 and 10"
-            
-        # 验证冷却时间
+
+        # 验证人脸识别目标及相关参数
+        has_face_recognition = "face_recognition" in [t.value for t in condition.targets]
+        if has_face_recognition:
+            if not condition.face_target:
+                return False, "Face recognition target must be specified"
+
+            # 验证人脸识别专用参数
+            if not 0.0 <= condition.min_face_score <= 1.0:
+                return False, "Min face score must be between 0.0 and 1.0"
+
+            if not 1 <= condition.max_faces <= 32:
+                return False, "Max faces must be between 1 and 32"
+
+        # 验证置信度阈值（仅非人脸识别模式）
+        if not has_face_recognition:
+            if not 0.0 <= condition.confidence_threshold <= 1.0:
+                return False, "Confidence threshold must be between 0.0 and 1.0"
+
+            # 验证灵敏度（仅非人脸识别模式）
+            if not 1 <= condition.sensitivity <= 10:
+                return False, "Sensitivity must be between 1 and 10"
+
+            # 验证COUNT逻辑（仅非人脸识别模式）
+            if condition.logic.value == "count":
+                if condition.min_count is None or condition.min_count < 1:
+                    return False, "Min count must be at least 1 for COUNT logic"
+
+            # 验证最小持续时长（仅非人脸识别模式）
+            if condition.min_duration_seconds is not None:
+                if not 1 <= condition.min_duration_seconds <= 300:
+                    return False, "Min duration must be between 1 and 300 seconds"
+
+        # 验证冷却时间（通用）
         if not 5 <= condition.cooldown_seconds <= 3600:
             return False, "Cooldown must be between 5 and 3600 seconds"
-            
-        # 验证COUNT逻辑
-        if condition.logic.value == "count":
-            if condition.min_count is None or condition.min_count < 1:
-                return False, "Min count must be at least 1 for COUNT logic"
-                
-        # 验证最小持续时长
-        if condition.min_duration_seconds is not None:
-            if not 1 <= condition.min_duration_seconds <= 300:
-                return False, "Min duration must be between 1 and 300 seconds"
-                
+
         return True, None

@@ -45,6 +45,9 @@ dev = [
     "black>=23.0.0",
     "flake8>=6.0.0",
 ]
+face = [
+    "insightface>=0.7.3",
+]
 [project.scripts]
 miloco-server = "miloco_server.main:start_server"
 

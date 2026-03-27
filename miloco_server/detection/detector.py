@@ -11,7 +11,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 import numpy as np
 
@@ -42,7 +42,11 @@ class DetectionConfig:
     iou_threshold: float = 0.45
     input_size: Tuple[int, int] = (640, 640)
     max_detections: int = 50
-    device: str = 'auto'  # 'auto', 'cpu', 'cuda', 'mps'
+    # Supported values:
+    # - auto: pick best available provider automatically
+    # - cpu / cuda / mps(coreml) / directml(dml) / openvino
+    # For Intel/Windows iGPU acceleration, prefer directml or openvino.
+    device: str = 'auto'
     half_precision: bool = True  # Use FP16 for faster inference
 
 
@@ -54,6 +58,7 @@ class DetectionResult:
     confidence: float
     bbox: Tuple[float, float, float, float]  # x1, y1, x2, y2 (normalized 0-1)
     bbox_px: Optional[Tuple[int, int, int, int]] = None  # pixel coordinates
+    extra: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -101,10 +106,6 @@ class ObjectDetector:
                     logger.error("Neither onnxruntime nor onnxruntime-gpu is installed")
                     return False
 
-            # Determine device
-            self._device = self._get_device()
-            logger.info(f"Using device: {self._device}")
-
             # Get or download model
             model_path = await self._ensure_model()
             if not model_path:
@@ -112,6 +113,7 @@ class ObjectDetector:
 
             # Create inference session
             providers = self._get_providers(ort)
+            logger.info(f"Using detection backend: {self._device}, providers={providers}")
             sess_options = ort.SessionOptions()
             sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
             sess_options.intra_op_num_threads = 4  # Limit threads for lower CPU usage
@@ -146,33 +148,61 @@ class ObjectDetector:
             logger.error(f"Failed to initialize detector: {e}")
             return False
 
-    def _get_device(self) -> str:
-        """Determine the best available device."""
-        if self.config.device != 'auto':
-            return self.config.device
-
-        try:
-            import torch
-            if torch.cuda.is_available():
-                return 'cuda'
-            elif torch.backends.mps.is_available():
-                return 'mps'
-        except ImportError:
-            pass
-
-        return 'cpu'
-
     def _get_providers(self, ort) -> List[str]:
-        """Get execution providers based on device."""
+        """Get execution providers based on configured/available backend."""
         available_providers = ort.get_available_providers()
         logger.info(f"Available ONNX Runtime providers: {available_providers}")
+        requested = (self.config.device or "auto").lower().strip()
 
-        if self._device == 'cuda' and 'CUDAExecutionProvider' in available_providers:
-            return ['CUDAExecutionProvider', 'CPUExecutionProvider']
-        elif self._device == 'mps' and 'CoreMLExecutionProvider' in available_providers:
-            return ['CoreMLExecutionProvider', 'CPUExecutionProvider']
+        provider_aliases = {
+            "cuda": ["CUDAExecutionProvider"],
+            "mps": ["CoreMLExecutionProvider"],
+            "coreml": ["CoreMLExecutionProvider"],
+            "directml": ["DmlExecutionProvider"],
+            "dml": ["DmlExecutionProvider"],
+            "igpu": ["DmlExecutionProvider", "OpenVINOExecutionProvider"],
+            "intel_gpu": ["OpenVINOExecutionProvider", "DmlExecutionProvider"],
+            "openvino": ["OpenVINOExecutionProvider"],
+            "cpu": ["CPUExecutionProvider"],
+        }
 
-        return ['CPUExecutionProvider']
+        # Auto priority: dedicated GPU -> iGPU acceleration -> Apple -> CPU fallback
+        auto_priority = [
+            "CUDAExecutionProvider",
+            "DmlExecutionProvider",
+            "OpenVINOExecutionProvider",
+            "CoreMLExecutionProvider",
+            "CPUExecutionProvider",
+        ]
+
+        if requested == "auto":
+            chain = [p for p in auto_priority if p in available_providers]
+        else:
+            preferred = provider_aliases.get(requested, [])
+            chain = [p for p in preferred if p in available_providers]
+            if not chain:
+                logger.warning(
+                    f"Requested detection backend '{requested}' is unavailable; falling back to CPU."
+                )
+
+        if "CPUExecutionProvider" in available_providers and "CPUExecutionProvider" not in chain:
+            chain.append("CPUExecutionProvider")
+        if not chain:
+            chain = ["CPUExecutionProvider"]
+
+        first = chain[0]
+        if first == "CUDAExecutionProvider":
+            self._device = "cuda"
+        elif first == "CoreMLExecutionProvider":
+            self._device = "mps"
+        elif first == "DmlExecutionProvider":
+            self._device = "directml"
+        elif first == "OpenVINOExecutionProvider":
+            self._device = "openvino"
+        else:
+            self._device = "cpu"
+
+        return chain
 
     async def _ensure_model(self) -> Optional[str]:
         """Ensure model file exists, load from built-in resources."""
@@ -190,7 +220,10 @@ class ObjectDetector:
                 logger.info(f"Using built-in model: {builtin_path}")
                 return builtin_path
             else:
-                logger.error("Built-in model not found. Please ensure yolov8n.onnx is present in miloco_server/detection/models/")
+                logger.error(
+                    "Built-in model not found. Please set YOLO_MODEL_PATH or place an ONNX file "
+                    "under /models or miloco_server/detection/models/ (e.g. yolo26n.onnx)."
+                )
                 
         except Exception as e:
             logger.error(f"Failed to load built-in model: {e}")
@@ -350,21 +383,31 @@ class ObjectDetector:
         try:
             # Run inference
             outputs = self._session.run([self._output_name], {self._input_name: input_tensor})
-            predictions = outputs[0][0]  # Remove batch dimension
-            logger.debug(f"ONNX inference successful, output shape: {predictions.shape}")
+            predictions = outputs[0]
+            logger.debug(f"ONNX inference successful, raw output shape: {getattr(predictions, 'shape', None)}")
 
-            # Parse predictions (YOLOv8 format: [x_center, y_center, width, height, conf, class0, class1, ...])
+            # Handle common output layouts:
+            # - YOLOv8: [1, 84, N] / [84, N]
+            # - End2End/NMS export: [1, N, 6] / [N, 6] (x1,y1,x2,y2,score,class_id)
+            # - Some variants: [1, N, 7] / [N, 7] (x1,y1,x2,y2,obj,score,class_id)
+            if isinstance(predictions, np.ndarray) and predictions.ndim >= 3:
+                predictions = predictions[0]  # Remove batch dimension when present
+            logger.debug(f"Parsed model output shape: {getattr(predictions, 'shape', None)}")
+
             return self._parse_predictions(predictions, original_shape)
         except Exception as e:
             logger.error(f"ONNX inference failed: {e}")
             return []
 
     def _parse_predictions(self, predictions: np.ndarray, original_shape: Tuple[int, int]) -> List[DetectionResult]:
-        """Parse YOLO predictions into detection results."""
+        """Parse multiple YOLO-style prediction formats into detection results."""
         detections = []
 
-        # Transpose predictions to [num_predictions, features]
-        if predictions.shape[0] == 84:  # Standard YOLOv8 output [84, num_predictions]
+        if not isinstance(predictions, np.ndarray) or predictions.size == 0:
+            return detections
+
+        # Common YOLOv8 output: [84, N] -> transpose to [N, 84]
+        if predictions.ndim == 2 and predictions.shape[0] >= 80 and predictions.shape[1] > predictions.shape[0]:
             predictions = predictions.T
 
         # Get target class IDs
@@ -380,36 +423,22 @@ class ObjectDetector:
         # Sample first prediction for diagnostics
         if predictions.shape[0] > 0:
             pred = predictions[0]
-            class_scores_sample = pred[4:]
-            max_score = float(np.max(class_scores_sample))
-            max_class = int(np.argmax(class_scores_sample))
-            logger.debug(f"Top prediction: max_score={max_score:.3f}, class={max_class}")
+            logger.debug(f"First prediction feature length: {len(pred)}")
 
-        for pred in predictions:
-            # Extract box coordinates and confidence
-            x_center, y_center, width, height = pred[:4]
-            class_scores = pred[4:]
-            class_id = int(np.argmax(class_scores))
-            confidence = float(class_scores[class_id])
+        features = predictions.shape[1] if predictions.ndim == 2 else 0
 
-            # Filter by target classes and confidence
-            if class_id not in target_ids:
-                continue
-            if confidence < self.config.confidence_threshold:
-                # Log for filtered detections
-                if class_id in target_ids and confidence > 0.3:  # Log near-threshold detections
-                    logger.info(f"Filtered detection: class={class_id}, conf={confidence:.3f} < {self.config.confidence_threshold}")
-                continue
-
-            # Convert to corner format
-            x1 = (x_center - width / 2) / self.config.input_size[0]
-            y1 = (y_center - height / 2) / self.config.input_size[1]
-            x2 = (x_center + width / 2) / self.config.input_size[0]
-            y2 = (y_center + height / 2) / self.config.input_size[1]
-
-            boxes.append([x1, y1, x2, y2])
-            scores.append(confidence)
-            class_ids.append(class_id)
+        # Format A: [N, 6] => [x1, y1, x2, y2, score, class_id]
+        if features == 6:
+            self._collect_from_xyxy_score_cls(predictions, boxes, scores, class_ids, target_ids)
+        # Format B: [N, 7] => [x1, y1, x2, y2, obj, score, class_id] (common E2E variant)
+        elif features == 7:
+            self._collect_from_xyxy_obj_score_cls(predictions, boxes, scores, class_ids, target_ids)
+        # Format C: [N, >= 84] => [xc, yc, w, h, class0, class1, ...] (YOLOv8 style)
+        elif features >= 8:
+            self._collect_from_xywh_class_scores(predictions, boxes, scores, class_ids, target_ids)
+        else:
+            logger.warning(f"Unsupported prediction format: shape={predictions.shape}")
+            return detections
 
         if not boxes:
             logger.debug(f"No boxes passed confidence threshold {self.config.confidence_threshold}")
@@ -420,8 +449,9 @@ class ObjectDetector:
         # Apply Non-Maximum Suppression (NMS)
         try:
             import cv2
+            nms_boxes = self._to_nms_xywh(boxes)
             indices = cv2.dnn.NMSBoxes(
-                boxes, scores,
+                nms_boxes, scores,
                 score_threshold=self.config.confidence_threshold,
                 nms_threshold=self.config.iou_threshold
             )
@@ -484,6 +514,109 @@ class ObjectDetector:
             logger.info(f"Detection results: {len(detections)} objects - " +
                        ", ".join([f"{d.class_name}({d.confidence:.2f})" for d in detections]))
         return detections
+
+    def _collect_from_xyxy_score_cls(
+        self,
+        predictions: np.ndarray,
+        boxes: List[List[float]],
+        scores: List[float],
+        class_ids: List[int],
+        target_ids: set,
+    ) -> None:
+        """Collect detections from [x1,y1,x2,y2,score,class_id]."""
+        for pred in predictions:
+            x1, y1, x2, y2, confidence, class_id = pred[:6]
+            class_id = int(class_id)
+            confidence = float(confidence)
+
+            if class_id not in target_ids or confidence < self.config.confidence_threshold:
+                continue
+
+            boxes.append(self._normalize_xyxy(x1, y1, x2, y2))
+            scores.append(confidence)
+            class_ids.append(class_id)
+
+    def _collect_from_xyxy_obj_score_cls(
+        self,
+        predictions: np.ndarray,
+        boxes: List[List[float]],
+        scores: List[float],
+        class_ids: List[int],
+        target_ids: set,
+    ) -> None:
+        """Collect detections from [x1,y1,x2,y2,obj,score,class_id]."""
+        for pred in predictions:
+            x1, y1, x2, y2, obj, score, class_id = pred[:7]
+            class_id = int(class_id)
+            confidence = float(obj) * float(score)
+
+            if class_id not in target_ids or confidence < self.config.confidence_threshold:
+                continue
+
+            boxes.append(self._normalize_xyxy(x1, y1, x2, y2))
+            scores.append(confidence)
+            class_ids.append(class_id)
+
+    def _collect_from_xywh_class_scores(
+        self,
+        predictions: np.ndarray,
+        boxes: List[List[float]],
+        scores: List[float],
+        class_ids: List[int],
+        target_ids: set,
+    ) -> None:
+        """Collect detections from YOLOv8-like [xc,yc,w,h,class_scores...]."""
+        for pred in predictions:
+            x_center, y_center, width, height = pred[:4]
+            class_scores = pred[4:]
+            class_id = int(np.argmax(class_scores))
+            confidence = float(class_scores[class_id])
+
+            if class_id not in target_ids:
+                continue
+            if confidence < self.config.confidence_threshold:
+                if confidence > 0.3:
+                    logger.info(
+                        f"Filtered detection: class={class_id}, conf={confidence:.3f} < {self.config.confidence_threshold}"
+                    )
+                continue
+
+            input_h, input_w = self.config.input_size
+            x1 = (x_center - width / 2) / float(input_w)
+            y1 = (y_center - height / 2) / float(input_h)
+            x2 = (x_center + width / 2) / float(input_w)
+            y2 = (y_center + height / 2) / float(input_h)
+            boxes.append([x1, y1, x2, y2])
+            scores.append(confidence)
+            class_ids.append(class_id)
+
+    def _normalize_xyxy(
+        self, x1: float, y1: float, x2: float, y2: float
+    ) -> List[float]:
+        """Normalize xyxy boxes to 0-1 range if they are absolute pixels."""
+        # Heuristic: if any coordinate > 1.5, treat as pixel space.
+        if max(abs(x1), abs(y1), abs(x2), abs(y2)) > 1.5:
+            input_h, input_w = self.config.input_size
+            if input_w <= 0 or input_h <= 0:
+                return [float(x1), float(y1), float(x2), float(y2)]
+            return [
+                float(x1) / float(input_w),
+                float(y1) / float(input_h),
+                float(x2) / float(input_w),
+                float(y2) / float(input_h),
+            ]
+
+        return [float(x1), float(y1), float(x2), float(y2)]
+
+    def _to_nms_xywh(self, boxes: List[List[float]]) -> List[List[float]]:
+        """Convert normalized xyxy boxes to xywh format for cv2.dnn.NMSBoxes."""
+        nms_boxes: List[List[float]] = []
+        for box in boxes:
+            x1, y1, x2, y2 = box
+            w = max(0.0, float(x2) - float(x1))
+            h = max(0.0, float(y2) - float(y1))
+            nms_boxes.append([float(x1), float(y1), w, h])
+        return nms_boxes
 
     def _detect_opencv(self, image: np.ndarray) -> List[DetectionResult]:
         """Fallback detection using OpenCV DNN."""

@@ -395,6 +395,11 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
           }
 
           try {
+            // Double-check decoder state before decode to avoid calling on closed decoder
+            if (!decoderRef.current || decoderRef.current.state === 'closed') {
+              console.warn('Decoder is closed, skipping decode');
+              return;
+            }
             decoderRef.current.decode(new EncodedVideoChunk({
               type: isKey ? 'key' : 'delta',
               timestamp: performance.now(),
