@@ -72,7 +72,6 @@ const DetectionConditionForm = ({
     { value: 'person', label: t('detection.targetPerson') || '人', icon: '👤', color: '#1890ff' },
     { value: 'cat', label: t('detection.targetCat') || '猫', icon: '🐱', color: '#722ed1' },
     { value: 'dog', label: t('detection.targetDog') || '狗', icon: '🐶', color: '#eb2f96' },
-    { value: 'face_recognition', label: t('detection.targetFaceRecognition') || '人脸识别', icon: '🧑‍🦰', color: '#fa8c16' },
   ];
 
   // 逻辑类型选项
@@ -106,7 +105,11 @@ const DetectionConditionForm = ({
 
     if (initialValue) {
       // Backward compatibility: migrate old 'face' target to 'face_recognition'
-      const newTargets = (initialValue.targets || []).map((t) => (t === 'face' ? 'face_recognition' : t));
+      let newTargets = (initialValue.targets || []).map((t) => (t === 'face' ? 'face_recognition' : t));
+      // 在“目标检测”模式下，过滤掉历史数据里的“人脸识别”目标，避免显示/提交异常
+      if (conditionType !== 'face_recognition') {
+        newTargets = newTargets.filter((t) => t !== 'face_recognition');
+      }
       const newLogic = initialValue.logic || 'any';
       const newConfidence = initialValue.confidence_threshold ?? 0.5;
       const newSensitivity = initialValue.sensitivity ?? 5;
@@ -123,7 +126,7 @@ const DetectionConditionForm = ({
       setMinDuration(newMinDuration);
 
       // 如果有人脸识别相关配置
-      if (newTargets.includes('face_recognition')) {
+      if (conditionType === 'face_recognition' && newTargets.includes('face_recognition')) {
         setSelectedFaceTarget(initialValue.face_target || null);
         setMinFaceScore(initialValue.min_face_score ?? 0.1);
         setMaxFaces(initialValue.max_faces ?? 10);
@@ -133,9 +136,9 @@ const DetectionConditionForm = ({
         targets: newTargets,
         logic: newLogic,
         min_count: newMinCount,
-        face_target: initialValue.face_target || null,
-        min_face_score: initialValue.min_face_score ?? 0.1,
-        max_faces: initialValue.max_faces ?? 10,
+        face_target: conditionType === 'face_recognition' ? (initialValue.face_target || null) : undefined,
+        min_face_score: conditionType === 'face_recognition' ? (initialValue.min_face_score ?? 0.1) : undefined,
+        max_faces: conditionType === 'face_recognition' ? (initialValue.max_faces ?? 10) : undefined,
       });
     } else if (conditionType === 'face_recognition') {
       // 如果是人脸识别模式且没有初始值，自动设置 face_recognition 目标
@@ -178,10 +181,13 @@ const DetectionConditionForm = ({
       cooldown_seconds: cooldownSeconds,
       min_count: logicType === 'count' ? minCount : null,
       min_duration_seconds: minDuration,
-      face_target: conditionType === 'face_recognition' ? selectedFaceTarget : null,
-      min_face_score: conditionType === 'face_recognition' ? minFaceScore : null,
-      max_faces: conditionType === 'face_recognition' ? maxFaces : null,
     };
+
+    if (conditionType === 'face_recognition') {
+      condition.face_target = selectedFaceTarget;
+      condition.min_face_score = minFaceScore;
+      condition.max_faces = maxFaces;
+    }
 
     if (onChange) {
       onChange(condition);
