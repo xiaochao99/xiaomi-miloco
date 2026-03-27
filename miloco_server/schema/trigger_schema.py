@@ -34,6 +34,7 @@ class ConditionType(Enum):
     DIRECT = "direct" # Use direct state matching (no LLM, zero token cost)
     HYBRID = "hybrid" # Hybrid: First use direct mode for HA devices, if matched then use LLM to analyze camera
     DETECTION = "detection" # Use object detection (YOLO) for trigger condition
+    FACE_RECOGNITION = "face_recognition" # Use face recognition for trigger condition
 
 
 class Notify(BaseModel):
@@ -93,7 +94,9 @@ class DetectionTargetType(str, Enum):
     PERSON = "person"
     CAT = "cat"
     DOG = "dog"
+    # NOTE: keep FACE for backward compatibility (old rules) but prefer FACE_RECOGNITION.
     FACE = "face"
+    FACE_RECOGNITION = "face_recognition"
 
 
 class DetectionLogicType(str, Enum):
@@ -138,6 +141,21 @@ class DetectionCondition(BaseModel):
         None,
         description="Minimum duration target must be present (seconds)",
         ge=1, le=300
+    )
+    # Face recognition specific fields
+    face_target: Optional[str] = Field(
+        None,
+        description="Target face name for face recognition mode. Use 'unknown' for unknown faces."
+    )
+    min_face_score: float = Field(
+        0.1,
+        description="Minimum face detection confidence score (0.0-1.0), used for face recognition mode",
+        ge=0.0, le=1.0
+    )
+    max_faces: int = Field(
+        10,
+        description="Maximum number of faces to detect, used for face recognition mode",
+        ge=1, le=32
     )
 
 

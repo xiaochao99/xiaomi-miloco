@@ -226,7 +226,7 @@ class FaceRecognitionService:
                 return []
             h, w = img.shape[:2]
             t_detect0 = time.perf_counter()
-            faces, detect_meta = self._detect_with_fallback_scales(
+            faces = self._detect_with_fallback_scales(
                 img, max_faces, min_face_score, with_embedding=with_embedding
             )
             t_detect_ms = (time.perf_counter() - t_detect0) * 1000.0
@@ -237,7 +237,6 @@ class FaceRecognitionService:
                     "embedding_ms": 0.0,
                     "postprocess_ms": 0.0,
                     "total_ms": (time.perf_counter() - t_total0) * 1000.0,
-                    **detect_meta,
                 }
                 return []
 
@@ -294,7 +293,6 @@ class FaceRecognitionService:
                 "embedding_ms": float(embedding_ms),
                 "postprocess_ms": float(t_post_ms),
                 "total_ms": float(t_total_ms),
-                **detect_meta,
             }
             return out
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -333,9 +331,6 @@ class FaceRecognitionService:
         h, w = img.shape[:2]
         attempts = [1.0, 0.75, 1.25]
         best_faces = []
-        scale_timings_ms: List[float] = []
-        ran_scales: List[float] = []
-        early_return_scale: Optional[float] = None
 
         def _has_usable_face(faces: Any) -> bool:
             # InsightFace returns Face objects; we only use lightweight checks here
@@ -386,33 +381,17 @@ class FaceRecognitionService:
                         break
 
             if get_kwargs:
-                t_scale0 = time.perf_counter()
                 faces = self._app.get(probe, **get_kwargs)
-                scale_ms = (time.perf_counter() - t_scale0) * 1000.0
             else:
-                t_scale0 = time.perf_counter()
                 faces = self._app.get(probe)
-                scale_ms = (time.perf_counter() - t_scale0) * 1000.0
-
-            scale_timings_ms.append(float(scale_ms))
-            ran_scales.append(float(scale))
             if faces and scale == 1.0 and _has_usable_face(faces):
                 # Most frames will be detected at scale=1.0; avoid 3x inference cost.
-                early_return_scale = scale
-                return faces, {
-                    "detect_scale_timings_ms": scale_timings_ms,
-                    "detect_ran_scales": ran_scales,
-                    "detect_early_return_scale": early_return_scale,
-                }
+                return faces
             if faces and len(faces) > len(best_faces):
                 best_faces = faces
                 if len(best_faces) >= max_faces:
                     break
-        return best_faces, {
-            "detect_scale_timings_ms": scale_timings_ms,
-            "detect_ran_scales": ran_scales,
-            "detect_early_return_scale": early_return_scale,
-        }
+        return best_faces
 
 
 _service: Optional[FaceRecognitionService] = None

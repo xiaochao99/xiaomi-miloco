@@ -133,7 +133,7 @@ const [form] = Form.useForm();
   const [aiRecommendActions, setAiRecommendActions] = useState([]);
   const [actionDescriptionError, setActionDescriptionError] = useState(false);
 
-  // Condition type: 'llm', 'direct', or 'detection'
+  // Condition type: 'llm', 'direct', 'hybrid', 'detection', or 'face_recognition'
   const [conditionType, setConditionType] = useState('llm');
 
   // Detection condition state
@@ -151,10 +151,13 @@ const [form] = Form.useForm();
     min_duration_seconds: null,
   }), []);
 
-  // 当切换到目标检测模式时，自动初始化默认检测条件
+  // 当切换到目标检测/人脸识别模式时，自动初始化默认检测条件
   useEffect(() => {
-    if (conditionType === 'detection' && !detectionCondition) {
+    if ((conditionType === 'detection' || conditionType === 'face_recognition') && !detectionCondition) {
       const defaultCondition = getDefaultDetectionCondition();
+      if (conditionType === 'face_recognition') {
+        defaultCondition.targets = ['face_recognition'];
+      }
       setDetectionCondition(defaultCondition);
       form.setFieldsValue({ detection_condition: defaultCondition });
       console.log('Initialized default detection condition:', defaultCondition);
@@ -374,7 +377,7 @@ useEffect(() => {
       condition: conditionType === 'direct' ? values.ha_condition : values.condition,
       condition_type: conditionType,
       ha_condition: values.ha_condition,
-      detection_condition: conditionType === 'detection' ? detectionCondition : null,
+      detection_condition: (conditionType === 'detection' || conditionType === 'face_recognition') ? detectionCondition : null,
       automation_actions,
       ai_recommend_execute_type: aiRecommendExecuteType,
       ai_recommend_action_descriptions: aiRecommendActionDescriptions,
@@ -526,7 +529,7 @@ useEffect(() => {
               if (value === 'hybrid' && (!hasHaDevice || !hasCamera)) {
                 message.info(t('smartCenter.hybridMode') + ' ' + t('smartCenter.conditionTypeTip4'));
               }
-              if (value === 'detection' && !hasCamera) {
+              if ((value === 'detection' || value === 'face_recognition') && !hasCamera) {
                 message.info(t('detection.needCamera') || 'Detection mode requires at least one camera');
               }
             }}
@@ -536,6 +539,7 @@ useEffect(() => {
             <Option value="direct">{t('smartCenter.directMode')}</Option>
             <Option value="hybrid">{t('smartCenter.hybridMode')}</Option>
             <Option value="detection">{t('detection.mode') || '目标检测'}</Option>
+            <Option value="face_recognition">{t('smartCenter.faceRecognitionMode') || '人脸识别'}</Option>
           </Select>
         </div>
       </Form.Item>
@@ -609,13 +613,14 @@ useEffect(() => {
       )}
 
       {/* 目标检测模式：检测条件配置 */}
-      {conditionType === 'detection' && (
+      {(conditionType === 'detection' || conditionType === 'face_recognition') && (
         <Form.Item
           className={styles.customFormLabel}
           label={t('detection.conditionConfig') || '检测条件配置'}
         >
           <DetectionConditionForm
             initialValue={detectionCondition}
+            conditionType={conditionType}
             onChange={(value) => {
               setDetectionCondition(value);
               form.setFieldsValue({ detection_condition: value });
@@ -627,7 +632,7 @@ useEffect(() => {
       )}
 
       {/* LLM模式和混合模式：触发条件 (检测模式不需要) */}
-      {conditionType !== 'direct' && conditionType !== 'detection' && (
+      {conditionType !== 'direct' && conditionType !== 'detection' && conditionType !== 'face_recognition' && (
         <Form.Item
           className={styles.customFormLabel}
           label={

@@ -195,6 +195,20 @@ def apply_face_onnx_providers() -> None:
 
         kwargs["providers"] = providers
 
+        # Optionally disable CPU EP fallback to understand whether latency comes
+        # from OpenVINO GPU execution or from CPU fallback for unsupported ops.
+        if mode == "openvino_gpu" and no_cpu_fallback:
+            try:
+                # sess_options key exists in InferenceSession signature.
+                sess_options = kwargs.get("sess_options")
+                if sess_options is None:
+                    sess_options = ort.SessionOptions()
+                # When enabled, ORT will not fallback nodes to CPU EP.
+                sess_options.add_config_entry("session.disable_cpu_ep_fallback", "1")
+                kwargs["sess_options"] = sess_options
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
+
         # Force provider_options to be a list aligned with providers length.
         # This avoids ORT error: providers/provider_options length mismatch.
         if mode == "openvino_gpu":
