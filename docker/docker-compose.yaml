@@ -18,8 +18,6 @@ services:
     # NOTICE: If you want to use your own configuration files or models path, please mount them here.
     #   - ./config/ai_engine_config.yaml:/app/config/ai_engine_config.yaml
     #   - ./config/prompt_config.yaml:/app/config/prompt_config.yaml
-    devices:
-      - /dev/dri:/dev/dri
 
     deploy:
       resources:
@@ -35,6 +33,7 @@ services:
   backend:
     container_name: miloco-backend
     image: ${DOCKER_REPO}xiaomi/miloco-backend:latest
+    privileged: true
     # NOTICE: MUST be host for miot device discovery.
     network_mode: host
     expose:
