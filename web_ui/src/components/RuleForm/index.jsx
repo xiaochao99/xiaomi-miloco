@@ -3,8 +3,8 @@
  * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
  */
 
-import React, { useState, useEffect } from 'react';
-import { Select, Input, Button, Checkbox, Form, Tooltip, Spin, message, Switch } from 'antd';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Select, Input, Button, Checkbox, Form, Tooltip, Spin, message, Switch, Segmented, Space, Modal, InputNumber } from 'antd';
 const { Option } = Select;
 import { QuestionCircleOutlined, ReloadOutlined, UpOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
@@ -72,6 +72,8 @@ const [form] = Form.useForm();
     availableMcpServices,
     haDeviceOptions: globalHaDeviceOptions,
     fetchHaDeviceOptions,
+    fetchHaEntityNameMap,
+    haEntityNameMap,
     haDeviceLoading: globalHaLoading,
     haDeviceFetched: globalHaFetched
   } = useChatStore();
@@ -88,14 +90,23 @@ const [form] = Form.useForm();
   const [selectedActions, setSelectedActions] = useState([]);
   const [sendNotification, setSendNotification] = useState(false);
   const [notificationText, setNotificationText] = useState('');
+  const [enableXiaoAIBroadcast, setEnableXiaoAIBroadcast] = useState(false);
+  const [xiaoaiBroadcastMode, setXiaoaiBroadcastMode] = useState('text');
+  const [xiaoaiBroadcastText, setXiaoaiBroadcastText] = useState('');
 
   const [triggerDeviceOptions, setTriggerDeviceOptions] = useState([]);
+  const [haDeviceEntitiesMap, setHaDeviceEntitiesMap] = useState({});
+  const [wizardStep, setWizardStep] = useState('trigger');
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templateType, setTemplateType] = useState(null); // 'temperature' | 'humidity'
+  const [templateThreshold, setTemplateThreshold] = useState(25);
 
   useEffect(() => {
     if (passedHaDeviceOptions?.length === 0 && !globalHaFetched) {
       fetchHaDeviceOptions();
     }
-  }, [passedHaDeviceOptions, fetchHaDeviceOptions, globalHaFetched]);
+    fetchHaEntityNameMap?.();
+  }, [passedHaDeviceOptions, fetchHaDeviceOptions, globalHaFetched, fetchHaEntityNameMap]);
 
   useEffect(() => {
     const newOptions = [];
@@ -110,13 +121,26 @@ const [form] = Form.useForm();
       });
     }
 
+    const haMap = {};
     const haOptions = passedHaDeviceOptions?.length > 0
-      ? passedHaDeviceOptions.map(item => ({
+      ? passedHaDeviceOptions.map(item => {
+          const did = item.did || item.value;
+          haMap[did] = Array.isArray(item.entities) ? item.entities : [];
+          return {
           label: `${item.name}${item.room_name ? ` (${item.room_name})` : ''}`,
-          value: item.did,
+          value: did,
           _type: 'ha'
-        }))
-      : globalHaDeviceOptions;
+        };
+        })
+      : (globalHaDeviceOptions || []).map(item => {
+          const did = item.did || item.value;
+          haMap[did] = Array.isArray(item.entities) ? item.entities : [];
+          return {
+            ...item,
+            value: did,
+            _type: 'ha',
+          };
+        });
 
     if (haOptions?.length > 0) {
       newOptions.push({
@@ -124,8 +148,103 @@ const [form] = Form.useForm();
         options: haOptions
       });
     }
+    setHaDeviceEntitiesMap(haMap);
     setTriggerDeviceOptions(newOptions);
   }, [cameraOptions, passedHaDeviceOptions, globalHaDeviceOptions, t, mode]);
+
+  const triggerEntityOptions = useMemo(() => {
+    const selectedDevices = form.getFieldValue('trigger_devices') || [];
+    const entities = [];
+    const seen = new Set();
+    selectedDevices.forEach((did) => {
+      const deviceEntities = haDeviceEntitiesMap[did] || [];
+      deviceEntities.forEach((entityId) => {
+        if (!seen.has(entityId)) {
+          seen.add(entityId);
+          const friendly = haEntityNameMap?.[entityId];
+          const label = friendly ? `${friendly}（${entityId}）` : entityId;
+          entities.push({ label, value: entityId });
+        }
+      });
+    });
+    return entities;
+  }, [form, haDeviceEntitiesMap, triggerDeviceOptions, haEntityNameMap]);
+
+  const selectedTriggerEntityId = Form.useWatch('trigger_entity_id', form);
+  const triggerEntityDomain = useMemo(() => {
+    if (!selectedTriggerEntityId || typeof selectedTriggerEntityId !== 'string') {
+      return null;
+    }
+    return selectedTriggerEntityId.split('.')[0] || null;
+  }, [selectedTriggerEntityId]);
+
+  const applyHaConditionTemplate = (expr) => {
+    form.setFieldsValue({ ha_condition: expr });
+  };
+
+  const openNumericTemplate = (type) => {
+    setTemplateType(type);
+    setTemplateThreshold(type === 'humidity' ? 60 : 25);
+    setTemplateModalOpen(true);
+  };
+
+  const confirmNumericTemplate = () => {
+    if (!templateType) {
+      setTemplateModalOpen(false);
+      return;
+    }
+    const field = templateType;
+    applyHaConditionTemplate(`${field} > ${templateThreshold}`);
+    setTemplateModalOpen(false);
+  };
+
+  const renderDirectTemplates = () => {
+    const isBinaryLike = ['switch', 'light', 'binary_sensor', 'fan', 'lock', 'cover'].includes(triggerEntityDomain);
+    const isSensorLike = ['sensor', 'climate', 'weather'].includes(triggerEntityDomain);
+    const showState = !triggerEntityDomain || isBinaryLike || !isSensorLike;
+    const showNumeric = !triggerEntityDomain || isSensorLike;
+
+    return (
+      <Space wrap>
+        {showState && (
+          <>
+            <Button
+              size="small"
+              disabled={isReadonly || loading}
+              onClick={() => applyHaConditionTemplate('state == on')}
+            >
+              {t('smartCenter.templateStateOn') || 'state == on'}
+            </Button>
+            <Button
+              size="small"
+              disabled={isReadonly || loading}
+              onClick={() => applyHaConditionTemplate('state in [on,open]')}
+            >
+              {t('smartCenter.templateStateIn') || 'state in [...]'}
+            </Button>
+          </>
+        )}
+        {showNumeric && (
+          <>
+            <Button
+              size="small"
+              disabled={isReadonly || loading}
+              onClick={() => openNumericTemplate('temperature')}
+            >
+              {t('smartCenter.templateTemperature') || 'temperature > x'}
+            </Button>
+            <Button
+              size="small"
+              disabled={isReadonly || loading}
+              onClick={() => openNumericTemplate('humidity')}
+            >
+              {t('smartCenter.templateHumidity') || 'humidity > x'}
+            </Button>
+          </>
+        )}
+      </Space>
+    );
+  };
 
   const [checkedMcpServices, setCheckedMcpServices] = useState([]);
   const [aiRecommendExecuteType, setAiRecommendExecuteType] = useState('dynamic');
@@ -194,6 +313,7 @@ useEffect(() => {
         name: formData.name,
         condition: formData.condition,
         ha_condition: formData.ha_condition || '',
+        trigger_entity_id: formData.trigger_entity_id || undefined,
         trigger_devices: [...cameras, ...ha_devices],
       });
 
@@ -236,6 +356,16 @@ useEffect(() => {
         setNotificationText(formData.notify.content);
       }
 
+      if (formData.xiaoai_broadcast) {
+        setEnableXiaoAIBroadcast(true);
+        setXiaoaiBroadcastMode(formData.xiaoai_broadcast.mode || 'text');
+        setXiaoaiBroadcastText(formData.xiaoai_broadcast.text || '');
+      } else {
+        setEnableXiaoAIBroadcast(false);
+        setXiaoaiBroadcastMode('text');
+        setXiaoaiBroadcastText('');
+      }
+
       setCheckedMcpServices(formData.mcp_list?.map(mcp => `${mcp?.server_name}#${mcp?.client_id}`) || []);
       setAiRecommendExecuteType(formData.ai_recommend_execute_type || 'static');
       setAiRecommendActionDescriptions(formData.ai_recommend_action_descriptions || []);
@@ -257,6 +387,10 @@ useEffect(() => {
 
 
   const isReadonly = mode === 'readonly';
+  const isTriggerStep = wizardStep === 'trigger';
+  const isConditionStep = wizardStep === 'condition';
+  const isActionStep = wizardStep === 'action';
+  const isAdvancedStep = wizardStep === 'advanced';
 
   const getBtnText = () => {
     if (mode === 'create' || mode === 'queryEdit') {
@@ -315,17 +449,46 @@ useEffect(() => {
 
 
   const getBackendData = async (type = 'submit') => {
-    const values = await form.validateFields();
+    // Use full form snapshot to avoid missing fields in step-by-step UI.
+    const values = form.getFieldsValue(true);
+
+    if (!values?.name || !String(values.name).trim()) {
+      message.error(t('smartCenter.pleaseEnterRuleName'));
+      return false;
+    }
+    if (!Array.isArray(values.trigger_devices) || values.trigger_devices.length === 0) {
+      message.error(t('smartCenter.pleaseSelectTriggerDevices'));
+      return false;
+    }
+    if ((conditionType === 'direct' || conditionType === 'hybrid') && !String(values.ha_condition || '').trim()) {
+      message.error(t('smartCenter.pleaseEnterTriggerCondition'));
+      return false;
+    }
+    if (conditionType === 'direct' && !values.trigger_entity_id) {
+      message.error(t('smartCenter.pleaseSelectTriggerEntity') || '请选择用于判断状态的实体');
+      return false;
+    }
+    if (conditionType !== 'direct' && conditionType !== 'detection' && conditionType !== 'face_recognition'
+      && !String(values.condition || '').trim()) {
+      message.error(t('smartCenter.pleaseEnterTriggerCondition'));
+      return false;
+    }
 
     const hasActions = selectedActions.length > 0;
     const hasNotification = sendNotification && notificationText.trim();
+    const hasXiaoAIBroadcast = enableXiaoAIBroadcast &&
+      (xiaoaiBroadcastMode === 'model_reply' || xiaoaiBroadcastText.trim());
+    if (enableXiaoAIBroadcast && xiaoaiBroadcastMode === 'text' && !xiaoaiBroadcastText.trim()) {
+      message.error(t('smartCenter.pleaseEnterXiaoAIBroadcastText'));
+      return false;
+    }
 
     if (type === 'submit') {
       const hasAiRecommendActions = aiRecommendExecuteType === 'dynamic'
         ? aiRecommendActionDescriptions.length > 0
         : aiRecommendActions.length > 0;
 
-      if (!hasAiRecommendActions && !hasActions && !hasNotification) {
+      if (!hasAiRecommendActions && !hasActions && !hasNotification && !hasXiaoAIBroadcast) {
         message.error(t('common.pleaseSelectAction'));
         return false;
       }
@@ -353,13 +516,25 @@ useEffect(() => {
     const selectedDevices = values.trigger_devices || [];
     const cameras = [];
     const ha_devices = [];
+    const optionTypeByValue = new Map();
+    (triggerDeviceOptions || []).forEach(group => {
+      (group?.options || []).forEach(option => {
+        optionTypeByValue.set(option.value, option._type);
+      });
+    });
 
     // Helper to check if ID is camera or HA
     const isCamera = (id) => cameraOptions.some(c => c.did === id);
     const isHaDevice = (id) => (passedHaDeviceOptions?.some(d => d.did === id) || globalHaDeviceOptions.some(d => d.value === id));
 
     selectedDevices.forEach(id => {
-      if (isCamera(id)) {
+      const optionType = optionTypeByValue.get(id);
+      if (optionType === 'ha') {
+        ha_devices.push(id);
+      } else if (optionType === 'camera') {
+        const camera = cameraOptions.find(c => c.did === id);
+        cameras.push(camera || id);
+      } else if (isCamera(id)) {
         const camera = cameraOptions.find(c => c.did === id);
         cameras.push(camera || id);
       } else if (isHaDevice(id)) {
@@ -371,12 +546,13 @@ useEffect(() => {
     });
 
     const formData = {
-      name: values.name,
+      name: String(values.name || '').trim(),
       cameras,
       ha_devices,
-      condition: conditionType === 'direct' ? values.ha_condition : values.condition,
+      condition: conditionType === 'direct' ? values.ha_condition : (values.condition || ''),
       condition_type: conditionType,
-      ha_condition: values.ha_condition,
+      ha_condition: values.ha_condition || '',
+      trigger_entity_id: values.trigger_entity_id || null,
       detection_condition: (conditionType === 'detection' || conditionType === 'face_recognition') ? detectionCondition : null,
       automation_actions,
       ai_recommend_execute_type: aiRecommendExecuteType,
@@ -385,6 +561,10 @@ useEffect(() => {
       notify: hasNotification ? {
         id: initialRule?.execute_info?.notify?.id || null,
         content: notificationText.trim(),
+      } : null,
+      xiaoai_broadcast: enableXiaoAIBroadcast ? {
+        mode: xiaoaiBroadcastMode,
+        text: xiaoaiBroadcastMode === 'text' ? xiaoaiBroadcastText.trim() : null,
       } : null,
       filter: {
         triggerPeriod,
@@ -429,12 +609,53 @@ useEffect(() => {
     if ('trigger_devices' in changedValues) {
       setAiRecommendActions([]);
       setAiRecommendExecuteType('dynamic');
+      const selectedEntity = form.getFieldValue('trigger_entity_id');
+      if (selectedEntity && !triggerEntityOptions.some(option => option.value === selectedEntity)) {
+        form.setFieldsValue({ trigger_entity_id: undefined });
+      }
     }
   };
 
   const isSubmitDisabled = isReadonly || loading;
   return (
     <Form form={form} layout="vertical" onValuesChange={handleFormValuesChange}>
+      <Modal
+        open={templateModalOpen}
+        title={t('smartCenter.templateSetThreshold') || '设置阈值'}
+        onOk={confirmNumericTemplate}
+        onCancel={() => setTemplateModalOpen(false)}
+        okText={t('common.confirm') || '确定'}
+        cancelText={t('common.cancel') || '取消'}
+        destroyOnClose
+      >
+        <div style={{ marginBottom: 8 }}>
+          {templateType === 'humidity'
+            ? (t('smartCenter.templateHumidityHint') || '生成：humidity > 60')
+            : (t('smartCenter.templateTemperatureHint') || '生成：temperature > 25')}
+        </div>
+        <InputNumber
+          style={{ width: '100%' }}
+          min={-100}
+          max={1000}
+          value={templateThreshold}
+          onChange={(v) => setTemplateThreshold(typeof v === 'number' ? v : templateThreshold)}
+        />
+      </Modal>
+      <Form.Item>
+        <Segmented
+          block
+          value={wizardStep}
+          onChange={setWizardStep}
+          options={[
+            { label: t('smartCenter.stepTrigger') || '1. 触发', value: 'trigger' },
+            { label: t('smartCenter.stepCondition') || '2. 条件', value: 'condition' },
+            { label: t('smartCenter.stepAction') || '3. 动作', value: 'action' },
+            { label: t('smartCenter.stepAdvanced') || '4. 高级', value: 'advanced' },
+          ]}
+        />
+      </Form.Item>
+
+      <div style={{ display: isTriggerStep ? 'block' : 'none' }}>
       <Form.Item
         className={styles.customFormLabel}
         label={t('smartCenter.serviceName')}
@@ -543,6 +764,24 @@ useEffect(() => {
           </Select>
         </div>
       </Form.Item>
+      </div>
+
+      {/* 混合模式：先显示HA设备状态条件（Step 1） */}
+      <div style={{ display: isConditionStep ? 'block' : 'none' }}>
+      {(conditionType === 'direct' || conditionType === 'hybrid') && (
+        <Form.Item
+          className={styles.customFormLabel}
+          label={t('smartCenter.triggerEntity') || '触发实体'}
+          name="trigger_entity_id"
+        >
+          <Select
+            allowClear
+            placeholder={t('smartCenter.pleaseSelectTriggerEntity') || '请选择用于判断状态的实体'}
+            disabled={isReadonly || loading}
+            options={triggerEntityOptions}
+          />
+        </Form.Item>
+      )}
 
       {/* 混合模式：先显示HA设备状态条件（Step 1） */}
       {conditionType === 'hybrid' && (
@@ -571,10 +810,15 @@ useEffect(() => {
           name="ha_condition"
           rules={[{ required: true, message: t('smartCenter.pleaseEnterTriggerCondition') }]}
         >
-          <Input
-            placeholder="例如：state == on"
-            disabled={isReadonly || loading}
-          />
+          <div>
+            <Input
+              placeholder="例如：state == on"
+              disabled={isReadonly || loading}
+            />
+            <div style={{ marginTop: 8 }}>
+              {renderDirectTemplates()}
+            </div>
+          </div>
         </Form.Item>
       )}
 
@@ -605,10 +849,15 @@ useEffect(() => {
           name="ha_condition"
           rules={[{ required: true, message: t('smartCenter.pleaseEnterTriggerCondition') }]}
         >
-          <Input
-            placeholder="例如：state == on"
-            disabled={isReadonly || loading}
-          />
+          <div>
+            <Input
+              placeholder="例如：state == on"
+              disabled={isReadonly || loading}
+            />
+            <div style={{ marginTop: 8 }}>
+              {renderDirectTemplates()}
+            </div>
+          </div>
         </Form.Item>
       )}
 
@@ -679,7 +928,9 @@ useEffect(() => {
           />
         </Form.Item>
       )}
+      </div>
 
+      <div style={{ display: isActionStep ? 'block' : 'none' }}>
       <Form.Item
         label={t('smartCenter.executionAction')}
         required
@@ -836,9 +1087,45 @@ useEffect(() => {
               />
             )}
           </div>
+          <div className={styles.actionItem}>
+            <div className={styles.actionLabel}>
+              <Checkbox
+                checked={enableXiaoAIBroadcast}
+                onChange={(e) => setEnableXiaoAIBroadcast(e.target.checked)}
+                disabled={isSubmitDisabled}
+              >
+                {t('smartCenter.sendXiaoAIBroadcast')}
+              </Checkbox>
+            </div>
+            {enableXiaoAIBroadcast && (
+              <div>
+                <Select
+                  value={xiaoaiBroadcastMode}
+                  onChange={setXiaoaiBroadcastMode}
+                  disabled={isSubmitDisabled}
+                  style={{ width: '100%', marginBottom: 8 }}
+                  options={[
+                    { label: t('smartCenter.xiaoaiBroadcastTextMode'), value: 'text' },
+                    { label: t('smartCenter.xiaoaiBroadcastModelMode'), value: 'model_reply' },
+                  ]}
+                />
+                {xiaoaiBroadcastMode === 'text' && (
+                  <Input.TextArea
+                    placeholder={t('smartCenter.pleaseEnterXiaoAIBroadcastText')}
+                    value={xiaoaiBroadcastText}
+                    onChange={(e) => setXiaoaiBroadcastText(e.target.value)}
+                    disabled={isSubmitDisabled}
+                    rows={3}
+                  />
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </Form.Item>
+      </div>
 
+      <div style={{ display: isAdvancedStep ? 'block' : 'none' }}>
       <div className={styles.advancedOptionsSection}>
         <div
           className={styles.advancedOptionsHeader}
@@ -885,9 +1172,34 @@ useEffect(() => {
           </div>
         )}
       </div>
+      </div>
 
       {!isReadonly && (
         <div className={styles.saveBtnWrap}>
+          <Button
+            onClick={() => {
+              const order = ['trigger', 'condition', 'action', 'advanced'];
+              const idx = order.indexOf(wizardStep);
+              if (idx > 0) {
+                setWizardStep(order[idx - 1]);
+              }
+            }}
+            disabled={isSubmitDisabled || wizardStep === 'trigger'}
+          >
+            {t('common.previous') || '上一步'}
+          </Button>
+          <Button
+            onClick={() => {
+              const order = ['trigger', 'condition', 'action', 'advanced'];
+              const idx = order.indexOf(wizardStep);
+              if (idx < order.length - 1) {
+                setWizardStep(order[idx + 1]);
+              }
+            }}
+            disabled={isSubmitDisabled || wizardStep === 'advanced'}
+          >
+            {t('common.next') || '下一步'}
+          </Button>
           {(mode === 'edit' || mode === 'queryEdit') && onCancel && (
             <Button onClick={() => handleSubmit('cancel')} disabled={isSubmitDisabled}>{t('common.cancel')}</Button>
           )}

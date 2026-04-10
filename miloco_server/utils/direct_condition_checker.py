@@ -197,11 +197,21 @@ class DirectConditionChecker:
             logger.warning("No device states provided for condition: %s", parsed_condition['raw'])
             return False
 
-        # Check all entities - return True if ANY entity satisfies the condition
-        checked_count = 0
-        logger.info("Checking condition '%s' against %d entities", parsed_condition['raw'], len(device_states))
+        # If trigger_entity_id is specified and exists, only check that entity.
+        if trigger_entity_id and trigger_entity_id in device_states:
+            candidate_states = {trigger_entity_id: device_states[trigger_entity_id]}
+            logger.info(
+                "Checking condition '%s' on specified entity only: %s",
+                parsed_condition['raw'], trigger_entity_id
+            )
+        else:
+            candidate_states = device_states
 
-        for entity_id, state_info in device_states.items():
+        # Check candidate entities - return True if ANY entity satisfies the condition
+        checked_count = 0
+        logger.info("Checking condition '%s' against %d entities", parsed_condition['raw'], len(candidate_states))
+
+        for entity_id, state_info in candidate_states.items():
             state_value = state_info.get('state')
             state_attributes = state_info.get('attributes', {})
 

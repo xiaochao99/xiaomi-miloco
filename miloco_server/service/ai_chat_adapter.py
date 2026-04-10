@@ -30,6 +30,7 @@ from miloco_server.schema.chat_history_schema import (
     ChatHistoryStorage,
 )
 from miloco_server.service.manager import get_manager
+from miloco_server.service.xiaoai_broadcast_service import broadcast_chat_reply
 
 logger = logging.getLogger(__name__)
 
@@ -323,6 +324,9 @@ class APIChatAdapter:
                     if timeout_count > 120 and not self._full_response and not finish_message_received:
                         finished = True
                         self._success = False
+
+            if self._success and self._full_response:
+                await broadcast_chat_reply(self._full_response)
 
             yield {
                 "type": "complete",

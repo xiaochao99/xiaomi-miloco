@@ -26,7 +26,7 @@ from miloco_server.proxy.miot_proxy import MiotProxy
 from miloco_server.schema.miot_schema import choose_camera_list, HADeviceInfo
 from miloco_server.schema.trigger_log_schema import TriggerRuleLog
 from miloco_server.schema.trigger_schema import (
-    Action, ExecuteInfoDetail, Notify, TriggerRule, TriggerRuleDetail)
+    Action, ExecuteInfoDetail, Notify, TriggerRule, TriggerRuleDetail, TriggerRuleV2, ConditionType)
 from miloco_server.service.trigger_rule_runner import TriggerRuleRunner
 from miloco_server.service.ha_service import HaService
 from miloco_server.service.trigger_rule_service_detection import DetectionTriggerServiceMixin
@@ -140,6 +140,15 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
                 ids = ", ".join(invalid_ha_dids)
                 raise ValidationException(f"Invalid HA device IDs: {ids}")
 
+            if trigger_rule.trigger_entity_id:
+                valid_entities = set()
+                for did in trigger_rule.ha_devices:
+                    valid_entities.update(ha_devices_grouped.get(did, {}).get("entities", []))
+                if trigger_rule.trigger_entity_id not in valid_entities:
+                    raise ValidationException(
+                        f"Invalid trigger_entity_id '{trigger_rule.trigger_entity_id}' for selected HA devices"
+                    )
+
         # Validate notification for content filtering
         if trigger_rule.execute_info and trigger_rule.execute_info.notify:
             await self._check_notify(trigger_rule.execute_info.notify)
@@ -176,6 +185,22 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
             logger.info(f"[CreateRule] No detection condition for rule {rule_id}")
 
         logger.info("Trigger rule created successfully: %s", rule_id)
+        return rule_id
+
+    async def create_trigger_rule_v2(self, trigger_rule: TriggerRuleV2) -> str:
+        """Create trigger rule using v2 schema/table."""
+        if self._trigger_rule_dao.exists_by_name_v2(trigger_rule.name):
+            raise ConflictException(f"Trigger rule name '{trigger_rule.name}' already exists")
+        await self._validate_trigger_rule_v2(trigger_rule)
+        if trigger_rule.execute_info and trigger_rule.execute_info.notify:
+            await self._check_notify(trigger_rule.execute_info.notify)
+
+        rule_id = self._trigger_rule_dao.create_v2(trigger_rule)
+        if not rule_id:
+            raise BusinessException("Failed to create trigger rule")
+
+        trigger_rule.id = rule_id
+        self._trigger_rule_runner.add_trigger_rule(trigger_rule.to_runtime_rule())
         return rule_id
 
     async def get_trigger_rule(self, rule_id: str) -> TriggerRuleDetail:
@@ -226,6 +251,10 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
         logger.info("Retrieved %d trigger rules", len(trigger_rule_responses))
         return trigger_rule_responses
 
+    async def get_all_trigger_rules_v2(self, enabled_only: bool = False) -> List[TriggerRuleV2]:
+        """Get all v2 trigger rules."""
+        return self._trigger_rule_dao.get_all_v2(enabled_only)
+
     async def update_trigger_rule(self, trigger_rule: TriggerRule) -> bool:
         """
         Update trigger rule
@@ -272,6 +301,15 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
                 ids = ", ".join(invalid_ha_dids)
                 raise ValidationException(f"Invalid HA device IDs: {ids}")
 
+            if trigger_rule.trigger_entity_id:
+                valid_entities = set()
+                for did in trigger_rule.ha_devices:
+                    valid_entities.update(ha_devices_grouped.get(did, {}).get("entities", []))
+                if trigger_rule.trigger_entity_id not in valid_entities:
+                    raise ValidationException(
+                        f"Invalid trigger_entity_id '{trigger_rule.trigger_entity_id}' for selected HA devices"
+                    )
+
         # Validate notification for content filtering
         if trigger_rule.execute_info and trigger_rule.execute_info.notify:
             await self._check_notify(trigger_rule.execute_info.notify)
@@ -309,6 +347,23 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
 
         return success
 
+    async def update_trigger_rule_v2(self, trigger_rule: TriggerRuleV2) -> bool:
+        """Update trigger rule in v2 table."""
+        if not trigger_rule.id:
+            raise ValidationException("Rule ID is required")
+        if not self._trigger_rule_dao.exists_v2(trigger_rule.id):
+            raise ResourceNotFoundException(f"Trigger rule with ID '{trigger_rule.id}' not found")
+        if self._trigger_rule_dao.exists_by_name_v2(trigger_rule.name, trigger_rule.id):
+            raise ConflictException(f"Trigger rule name '{trigger_rule.name}' already exists")
+        await self._validate_trigger_rule_v2(trigger_rule)
+        if trigger_rule.execute_info and trigger_rule.execute_info.notify:
+            await self._check_notify(trigger_rule.execute_info.notify)
+
+        success = self._trigger_rule_dao.update_v2(trigger_rule)
+        if success:
+            self._trigger_rule_runner.add_trigger_rule(trigger_rule.to_runtime_rule())
+        return success
+
     async def delete_trigger_rule(self, rule_id: str) -> bool:
         """
         Delete trigger rule
@@ -339,6 +394,57 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
             logger.error("Failed to delete trigger rule: %s", rule_id)
 
         return success
+
+    async def delete_trigger_rule_v2(self, rule_id: str) -> bool:
+        """Delete trigger rule from v2 table."""
+        if not self._trigger_rule_dao.exists_v2(rule_id):
+            raise ResourceNotFoundException(f"Trigger rule with ID '{rule_id}' not found")
+        success = self._trigger_rule_dao.delete_v2(rule_id)
+        if success:
+            self._trigger_rule_runner.remove_trigger_rule(rule_id)
+        return success
+
+    async def _validate_trigger_rule_v2(self, trigger_rule: TriggerRuleV2) -> None:
+        """Validate v2 trigger rule with condition-aware checks."""
+        condition_type = trigger_rule.trigger.type
+        camera_ids = trigger_rule.targets.camera_ids or []
+        ha_device_ids = trigger_rule.targets.ha_device_ids or []
+
+        valid_cameras = await self._miot_proxy.get_camera_dids()
+        invalid_cameras = [did for did in camera_ids if did not in valid_cameras]
+        if invalid_cameras:
+            raise ValidationException(f"Invalid camera device IDs: {', '.join(invalid_cameras)}")
+
+        ha_devices_grouped = await self._ha_service.get_ha_devices_grouped() if self._ha_service else {}
+        if ha_device_ids:
+            valid_ha_dids = set(ha_devices_grouped.keys())
+            invalid_ha = [did for did in ha_device_ids if did not in valid_ha_dids]
+            if invalid_ha:
+                raise ValidationException(f"Invalid HA device IDs: {', '.join(invalid_ha)}")
+
+        if condition_type == ConditionType.DIRECT:
+            if not ha_device_ids:
+                raise ValidationException("Direct mode requires at least one HA device")
+            if not trigger_rule.targets.trigger_entity_id:
+                raise ValidationException("Direct mode requires trigger_entity_id")
+            if not trigger_rule.trigger.ha_condition:
+                raise ValidationException("Direct mode requires ha_condition")
+
+        if condition_type == ConditionType.HYBRID:
+            if not camera_ids or not ha_device_ids:
+                raise ValidationException("Hybrid mode requires both camera_ids and ha_device_ids")
+            if not trigger_rule.trigger.ha_condition:
+                raise ValidationException("Hybrid mode requires ha_condition")
+            if not (trigger_rule.trigger.camera_condition or trigger_rule.trigger.llm_condition):
+                raise ValidationException("Hybrid mode requires camera condition")
+
+        trigger_entity_id = trigger_rule.targets.trigger_entity_id
+        if trigger_entity_id and ha_device_ids:
+            valid_entities = set()
+            for did in ha_device_ids:
+                valid_entities.update(ha_devices_grouped.get(did, {}).get("entities", []))
+            if trigger_entity_id not in valid_entities:
+                raise ValidationException(f"Invalid trigger_entity_id '{trigger_entity_id}' for selected HA devices")
 
     async def get_trigger_rule_logs(self, limit: int = 10) -> tuple[List[TriggerRuleLog], int]:
         """

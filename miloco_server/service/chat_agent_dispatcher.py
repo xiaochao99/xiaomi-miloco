@@ -17,10 +17,11 @@ from thespian.actors import Actor, ActorAddress, ActorExitRequest
 from miloco_server import actor_system
 from miloco_server.agent.nlp_request_agent import NlpRequestAgent
 from miloco_server.agent.dynamic_execute_agent import ActionDescriptionDynamicExecuteAgent
-from miloco_server.schema.chat_schema import Event, Instruction, InstructionPayload, Internal
+from miloco_server.schema.chat_schema import Event, Instruction, InstructionPayload, Internal, Template, Dialog
 from miloco_server.schema.chat_history_schema import (
     ChatHistoryStorage, ChatHistoryMessages, ChatHistorySession
 )
+from miloco_server.service.xiaoai_broadcast_service import broadcast_chat_reply
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ class ChatAgentDispatcher(Actor):
             "ChatAgentDispatcher init, current chat history: %s", self._chat_history_storage
         )
         self._need_storage_history = False
+        self._full_response = ""
 
     def receiveMessage(self, msg, sender):
         """
@@ -107,6 +109,7 @@ class ChatAgentDispatcher(Actor):
 
         if event.judge_type("Nlp", "Request"):
             logger.info("[%s] create nlp request agent", self.request_id)
+            self._full_response = ""
             self._chat_agent = actor_system.createActor(lambda: NlpRequestAgent(
                 self.request_id, self.myAddress, self._chat_history_messages,
             ))
@@ -116,6 +119,7 @@ class ChatAgentDispatcher(Actor):
 
         elif event.judge_type("Nlp", "ActionDescriptionDynamicExecute"):
             logger.info("[%s] create nlp action description dynamic execute agent", self.request_id)
+            self._full_response = ""
             self._chat_agent = actor_system.createActor(lambda: ActionDescriptionDynamicExecuteAgent(
                 self.request_id, self.myAddress, self._chat_history_messages,
             ))
@@ -139,6 +143,11 @@ class ChatAgentDispatcher(Actor):
         if isinstance(instruction_payload, Internal.Dispatcher):
             self._handle_internal_dispatcher(instruction_payload)
             return
+        if isinstance(instruction_payload, Template.ToastStream):
+            self._full_response += instruction_payload.stream
+        elif isinstance(instruction_payload, Dialog.Finish):
+            if instruction_payload.success and self._full_response:
+                asyncio.create_task(broadcast_chat_reply(self._full_response))
 
         instruction = Instruction.build_instruction(instruction_payload, self.request_id, self.session_id)
 
