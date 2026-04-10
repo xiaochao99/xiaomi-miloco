@@ -32,8 +32,9 @@ from miloco_server.schema.trigger_log_schema import (
     TriggerRuleLog, NotifyResult, ExecuteResult
 )
 from miloco_server.schema.trigger_schema import (
-    Action, TriggerRule, ExecuteType, ConditionType
+    Action, TriggerRule, ExecuteType, ConditionType, XiaoAIBroadcastMode
 )
+from miloco_server.service.xiaoai_broadcast_service import broadcast_text
 from miloco_server.utils.check_img_motion import check_camera_motion
 from miloco_server.utils.direct_condition_checker import direct_condition_checker
 from miloco_server.utils.local_models import ModelPurpose
@@ -243,6 +244,25 @@ class TriggerRuleRunner:
 
                 # If rule cares about any of the parent devices of this entity
                 if any(dev_id in rule.ha_devices for dev_id in parent_device_ids):
+                    # Direct mode with selected entity: use edge-trigger logic to avoid stale dedupe state.
+                    is_direct_mode = (
+                        not rule.cameras and
+                        rule.ha_devices and
+                        hasattr(rule, 'condition_type') and
+                        rule.condition_type == ConditionType.DIRECT
+                    )
+                    if is_direct_mode and getattr(rule, "trigger_entity_id", None):
+                        edge_should_trigger = self._evaluate_direct_entity_edge(
+                            rule_id=rule_id,
+                            rule=rule,
+                            changed_entity_id=entity_id,
+                            old_state=old_state,
+                            new_state=new_state,
+                        )
+                        if edge_should_trigger and trigger_filter.pre_filter(rule):
+                            dirty_rules.add(rule_id)
+                        continue
+
                     if trigger_filter.pre_filter(rule):
                         dirty_rules.add(rule_id)
 
@@ -252,6 +272,45 @@ class TriggerRuleRunner:
 
         # Check active hybrid mode rules: if HA condition no longer met, remove from active set
         self._check_active_hybrid_rules_ha_condition(parent_device_ids)
+
+    def _evaluate_direct_entity_edge(
+        self,
+        rule_id: str,
+        rule: TriggerRule,
+        changed_entity_id: str,
+        old_state: Optional[Dict[str, Any]],
+        new_state: Optional[Dict[str, Any]],
+    ) -> bool:
+        """Evaluate false->true edge for direct mode with a specific entity."""
+        if rule.trigger_entity_id != changed_entity_id:
+            return False
+
+        old_matches = False
+        if old_state:
+            old_matches = direct_condition_checker.evaluate(
+                rule.condition or "",
+                {changed_entity_id: old_state},
+                rule.trigger_entity_id,
+            )
+
+        new_matches = False
+        if new_state:
+            new_matches = direct_condition_checker.evaluate(
+                rule.condition or "",
+                {changed_entity_id: new_state},
+                rule.trigger_entity_id,
+            )
+
+        # Reset dedupe baseline when condition becomes false.
+        if not new_matches:
+            self._last_rule_conclusions[rule_id] = False
+
+        # Only trigger on rising edge.
+        if new_matches and not old_matches:
+            self._last_rule_conclusions[rule_id] = False
+            logger.info("Direct edge trigger accepted for rule %s: false -> true", rule.name)
+            return True
+        return False
 
     def _check_active_hybrid_rules_ha_condition(self, changed_device_ids: List[str]):
         """Check if active hybrid rules' HA condition is still met after device state change."""
@@ -285,7 +344,7 @@ class TriggerRuleRunner:
             # Re-check HA condition
             ha_check_condition = rule.ha_condition if rule.ha_condition else rule.condition
             ha_condition_matched = direct_condition_checker.evaluate(
-                ha_check_condition, rule_device_states, None
+                ha_check_condition, rule_device_states, rule.trigger_entity_id
             )
 
             if not ha_condition_matched:
@@ -889,7 +948,7 @@ class TriggerRuleRunner:
         result = direct_condition_checker.evaluate(
             rule.condition,
             rule_device_states,
-            trigger_entity_id
+            rule.trigger_entity_id or trigger_entity_id
         )
 
         logger.info(
@@ -985,7 +1044,7 @@ class TriggerRuleRunner:
         ha_condition_matched = direct_condition_checker.evaluate(
             ha_check_condition,
             rule_device_states,
-            trigger_entity_id  # Used for reference/logging, but all entities are checked
+            rule.trigger_entity_id or trigger_entity_id  # Prefer configured entity, fallback to trigger source
         )
 
         # Get state for logging (handle case where trigger_entity_id might not be in rule_device_states)
@@ -1190,6 +1249,10 @@ class TriggerRuleRunner:
             logger.info("Send miot notify result: %s, notify: %s", notify_res, rule.execute_info.notify)
             notify_result = NotifyResult(notify=rule.execute_info.notify, result=notify_res)
 
+        # XiaoAI broadcast action
+        if rule.execute_info.xiaoai_broadcast:
+            await self._execute_xiaoai_broadcast(rule)
+
         return ExecuteResult(
             ai_recommend_execute_type=execute_type,
             ai_recommend_action_execute_results=ai_recommend_action_execute_results,
@@ -1197,6 +1260,51 @@ class TriggerRuleRunner:
             automation_action_execute_results=automation_action_execute_results,
             notify_result=notify_result
         )
+
+    async def _execute_xiaoai_broadcast(self, rule: TriggerRule) -> bool:
+        """Execute XiaoAI broadcast action configured in rule."""
+        try:
+            cfg = rule.execute_info.xiaoai_broadcast
+            if not cfg:
+                return False
+
+            if cfg.mode == XiaoAIBroadcastMode.TEXT:
+                text = (cfg.text or "").strip()
+                if not text:
+                    logger.warning("Rule %s XiaoAI broadcast skipped: empty text", rule.name)
+                    return False
+                result = await broadcast_text(text, require_enabled=False)
+                logger.info("Rule %s XiaoAI text broadcast result: %s", rule.name, result)
+                return result
+
+            if cfg.mode == XiaoAIBroadcastMode.MODEL_REPLY:
+                llm_proxy = self._get_planning_llm_proxy() or self._get_vision_understaning_llm_proxy()
+                if not llm_proxy:
+                    logger.warning("Rule %s XiaoAI model_reply skipped: no LLM proxy", rule.name)
+                    return False
+
+                prompt = (
+                    "你是智能家居语音播报助手。"
+                    f"当前触发规则名称：{rule.name}。"
+                    f"规则条件：{rule.condition or ''}。"
+                    "请生成一条适合语音播放的简短中文播报文案，"
+                    "长度控制在50字以内，不要markdown，不要额外解释。"
+                )
+                resp = await llm_proxy.async_call_llm([{"role": "user", "content": prompt}])
+                content = (resp or {}).get("content", "").strip()
+                if not content:
+                    logger.warning("Rule %s XiaoAI model_reply skipped: empty model response", rule.name)
+                    return False
+
+                result = await broadcast_text(content, require_enabled=False)
+                logger.info("Rule %s XiaoAI model_reply broadcast result: %s", rule.name, result)
+                return result
+
+            logger.warning("Rule %s XiaoAI broadcast skipped: unsupported mode %s", rule.name, cfg.mode)
+            return False
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Rule %s XiaoAI broadcast failed: %s", rule.name, exc)
+            return False
 
     async def _execute_dynamic_action(self, execute_id: str, rule: TriggerRule,
                                     camera_motion_dict: dict[str, dict[int,

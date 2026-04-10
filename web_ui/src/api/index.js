@@ -33,6 +33,10 @@ export const updateSmartRule = (ruleId, data) => putApi(`/api/trigger/rule/${rul
 export const deleteSmartRule = (id) => deleteApi(`/api/trigger/rule/${id}`);
 
 export const getSmartRules = () => getApi('/api/trigger/rules');
+export const saveSmartRuleV2 = (data) => postApi('/api/trigger/v2/rule', data);
+export const updateSmartRuleV2 = (ruleId, data) => putApi(`/api/trigger/v2/rule/${ruleId}`, data);
+export const deleteSmartRuleV2 = (id) => deleteApi(`/api/trigger/v2/rule/${id}`);
+export const getSmartRulesV2 = () => getApi('/api/trigger/v2/rules');
 export const executeSceneActions = (data) => postApi('/api/trigger/execute_actions', data);
 export const getRuleTriggerLogs = (limit = 500) => getApi(`/api/trigger/logs?limit=${limit}`);
 

@@ -46,6 +46,10 @@ export const useChatStore = create(
         haDeviceOptions: [],
         haDeviceLoading: false,
         haDeviceFetched: false,
+        // HA entities map for friendly name display
+        haEntityNameMap: {},
+        haEntityLoading: false,
+        haEntityFetched: false,
         // history related state
         historyList: [],
         historyLoading: false,
@@ -249,6 +253,7 @@ export const useChatStore = create(
               const options = Object.entries(devices).map(([id, info]) => ({
                 label: `${info.name}${info.area ? ` (${info.area})` : ''}`,
                 value: id,
+                entities: Array.isArray(info.entities) ? info.entities : [],
                 _type: "ha"
               }));
               set({ haDeviceOptions: options, haDeviceFetched: true });
@@ -260,6 +265,37 @@ export const useChatStore = create(
             set({ haDeviceFetched: true });
           } finally {
             set({ haDeviceLoading: false });
+          }
+        },
+
+        fetchHaEntityNameMap: async (force = false) => {
+          const { haEntityLoading, haEntityFetched } = get();
+          if (!force && (haEntityFetched || haEntityLoading)) {
+            return;
+          }
+          try {
+            set({ haEntityLoading: true });
+            const { getHADeviceList } = await import("@/api");
+            const response = await getHADeviceList();
+            if (response && response.code === 0) {
+              const list = response.data || [];
+              const map = {};
+              list.forEach((item) => {
+                const entityId = item.entity_id || item.did;
+                const name = item.name || item.attributes?.friendly_name;
+                if (entityId) {
+                  map[entityId] = name || entityId;
+                }
+              });
+              set({ haEntityNameMap: map, haEntityFetched: true });
+            } else {
+              set({ haEntityFetched: true });
+            }
+          } catch (error) {
+            console.error("fetch HA entities failed:", error);
+            set({ haEntityFetched: true });
+          } finally {
+            set({ haEntityLoading: false });
           }
         },
 
