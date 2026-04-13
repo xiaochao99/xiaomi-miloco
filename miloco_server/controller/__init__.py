@@ -18,6 +18,7 @@ from .api_token_controller import router as api_token_router
 from .openai_compat_controller import router as openai_compat_router
 from .detection_controller import detection_router
 from .face_recognition_controller import face_recognition_router
+from .xiaomi_bridge_controller import router as xiaomi_bridge_router
 
 __all__ = [
     "web_router",
@@ -32,4 +33,5 @@ __all__ = [
     "openai_compat_router",
     "detection_router",
     "face_recognition_router",
+    "xiaomi_bridge_router",
 ]
