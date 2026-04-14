@@ -38,6 +38,8 @@ services:
     network_mode: host
     expose:
       - ${BACKEND_PORT:-8000}
+    env_file:
+      - ./xiaomi_bridge.env
     environment:
       - BACKEND_HOST=${BACKEND_HOST:-0.0.0.0}
       - BACKEND_PORT=${BACKEND_PORT:-8000}
@@ -48,7 +50,11 @@ services:
     volumes:
       - ./data:/app/miloco_server/.temp
       - ./log/backend:/app/miloco_server/.temp/log
-      - ./models:/models  # Shared with ai_engine for YOLO detection model
+      - ./models:/models
+      # Xiaomi bridge models
+      - ./models/vad:/app/models/vad
+      - ./models/kws:/app/models/kws
+      - ./models/asr:/app/models/asr
     # NOTICE: Mount configuration files, if you want to use your own configuration files, please mount them here.
     #  - ./config/server_config.yaml:/app/config/server_config.yaml
     #  - ./config/prompt_config.yaml:/app/config/prompt_config.yaml
