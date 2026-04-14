@@ -9,7 +9,7 @@ Define chat-related data structures including events and instructions
 import time
 from typing import List, Optional
 from miloco_server.schema.miot_schema import CameraImgPathSeq, CameraInfo, HADeviceInfo
-from miloco_server.schema.trigger_schema import Action, TriggerRule, TriggerRuleDetail
+from miloco_server.schema.trigger_schema import Action, TriggerRuleV2
 from pydantic import BaseModel, Field, ConfigDict
 from thespian.actors import ActorAddress
 
@@ -151,7 +151,7 @@ class Dialog:
 class Confirmation:
     """Confirmation related classes"""
     class SaveRuleConfirm(InstructionPayload):
-        rule: TriggerRuleDetail = Field(..., description="Trigger rule details")
+        rule: TriggerRuleV2 = Field(..., description="Trigger rule details (v2)")
         camera_options: List[CameraInfo] = Field(..., description="Camera option list")
         ha_device_options: Optional[List[HADeviceInfo]] = Field(
             default_factory=list, description="Home Assistant device option list")
@@ -160,7 +160,7 @@ class Confirmation:
 
     class SaveRuleConfirmResult(EventPayload):
         confirmed: bool = Field(..., description="Whether user confirmed")
-        rule: Optional[TriggerRule] = Field(None, description="Trigger rule details")
+        rule: Optional[TriggerRuleV2] = Field(None, description="Trigger rule details (v2)")
 
     class AiGeneratedActions(InstructionPayload):
         actions: list[Action] = Field(..., description="AI generated actions")

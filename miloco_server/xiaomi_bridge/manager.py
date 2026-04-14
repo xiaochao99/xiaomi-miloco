@@ -150,6 +150,8 @@ class BridgeManager:
             speed=self._config.tts.speed,
         )
         await self._tts.initialize()
+        # Set singleton instance for global access
+        TTSService.set_instance(self._tts)
 
         # Initialize audio stream manager
         self._audio_stream_manager = get_audio_stream_manager()
@@ -196,29 +198,38 @@ class BridgeManager:
         @ws_app.websocket("/")
         async def websocket_endpoint(websocket: WebSocket):
             """WebSocket endpoint for Xiaomi speaker audio streaming."""
-            await websocket.accept()
-
-            # Generate client ID
+            # Generate client ID from query params or create new
             import uuid
-            client_id = str(uuid.uuid4())
-
-            logger.info(f"[WS] Xiaomi speaker connected: {client_id}")
-
+            client_id = websocket.query_params.get("client_id", str(uuid.uuid4()))
+            
+            # Get device info from query params
+            device_name = websocket.query_params.get("device_name", "Unknown")
+            
+            # Get IP address and port
+            ip_address = "Unknown"
+            remote_port = "Unknown"
             try:
-                while True:
-                    try:
-                        data = await websocket.receive_bytes()
-                        # Forward audio to audio stream manager
-                        if self._audio_stream_manager:
-                            await self._audio_stream_manager._process_audio(data)
-                    except WebSocketDisconnect:
-                        logger.info(f"[WS] Xiaomi speaker disconnected: {client_id}")
-                        break
-                    except Exception as e:
-                        logger.error(f"[WS] Error receiving audio from {client_id}: {e}")
-                        break
-            finally:
-                logger.info(f"[WS] Client removed: {client_id}")
+                if hasattr(websocket.client, 'host'):
+                    ip_address = websocket.client.host
+                if hasattr(websocket.client, 'port'):
+                    remote_port = websocket.client.port
+            except Exception:
+                pass
+
+            # Get local port
+            local_port = self._config.ws_port
+            
+            logger.info(f"[XiaoAI Bridge WS] Device connected on port {local_port}: client_id={client_id}, device_name={device_name}, ip={ip_address}, remote_port={remote_port}")
+
+            # Register device in audio stream manager
+            if self._audio_stream_manager:
+                await self._audio_stream_manager.handle_connection(websocket, client_id)
+            else:
+                logger.error("Audio stream manager not available")
+                try:
+                    await websocket.close()
+                except Exception:
+                    pass
 
         # Create uvicorn server
         config = uvicorn.Config(
@@ -232,7 +243,15 @@ class BridgeManager:
 
         # Start server in background task
         self._ws_server_task = asyncio.create_task(self._ws_server.serve())
-        logger.info(f"WebSocket server started on ws://{self._config.ws_host}:{self._config.ws_port}")
+        
+        # Wait briefly for server to start
+        await asyncio.sleep(0.5)
+        
+        # Check if server is running
+        if self._ws_server.started:
+            logger.info(f"[XiaoAI Bridge] Standalone WebSocket server started successfully on ws://{self._config.ws_host}:{self._config.ws_port}")
+        else:
+            logger.error(f"[XiaoAI Bridge] Failed to start WebSocket server on port {self._config.ws_port}")
 
     async def start(self):
         """Start the bridge."""

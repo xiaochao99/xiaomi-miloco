@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional, Dict, Set
-from dataclasses import dataclass
-
+import os
+import time
+from typing import Optional, Dict, Set, Any
+from dataclasses import dataclass, field
+import json
+import uuid
 from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
@@ -26,6 +29,38 @@ class AudioStreamConfig:
     chunk_size: int = 320  # 20ms at 16kHz
 
 
+@dataclass
+class ConnectedDevice:
+    """连接的设备信息"""
+    client_id: str
+    websocket: WebSocket
+    connected_at: float  # 连接时间戳
+    device_name: str = "Unknown"  # 设备名称
+    ip_address: str = "Unknown"   # 设备IP地址
+    # open-xiaoai client-rust protocol state
+    protocol: str = "open-xiaoai-client-rust"
+    last_rx_at: float = field(default_factory=time.time)
+    first_rx_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    # Outgoing command channel (text frames)
+    command_queue: "asyncio.Queue[str]" = field(default_factory=asyncio.Queue, repr=False)
+    sender_task: Optional[asyncio.Task] = field(default=None, repr=False)
+    max_queued_commands: int = 50
+    _drop_counter: int = 0
+    # Pending command tracking (debug/capability detection)
+    pending_commands: Dict[str, float] = field(default_factory=dict, repr=False)  # id -> sent_at
+    last_command_result_at: float = 0.0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典用于API返回"""
+        return {
+            "client_id": self.client_id,
+            "device_name": self.device_name,
+            "ip_address": self.ip_address,
+            "connected_at": self.connected_at,
+            "connected_duration": int(time.time() - self.connected_at)
+        }
+
+
 class AudioStreamManager:
     """
     WebSocket音频流管理器
@@ -35,10 +70,13 @@ class AudioStreamManager:
     _instance: Optional[AudioStreamManager] = None
     
     def __init__(self):
-        self._connections: Dict[str, WebSocket] = {}
+        self._devices: Dict[str, ConnectedDevice] = {}  # 改为存储设备对象
         self._audio_handler = None
         self._running = False
         self._config = AudioStreamConfig()
+        # Command channel tuning (open-xiaoai client-rust RPC)
+        self._command_ready_timeout_s = float(os.getenv("MILOCO_XIAOAI_COMMAND_READY_TIMEOUT_S", "0.2"))
+        self._command_result_timeout_s = float(os.getenv("MILOCO_XIAOAI_COMMAND_RESULT_TIMEOUT_S", "5.0"))
     
     @classmethod
     def instance(cls) -> AudioStreamManager:
@@ -61,44 +99,238 @@ class AudioStreamManager:
         self._running = False
         
         # 关闭所有连接
-        for client_id, ws in list(self._connections.items()):
+        for client_id, device in list(self._devices.items()):
             try:
-                await ws.close()
+                await device.websocket.close()
             except Exception:
                 pass
         
-        self._connections.clear()
+        self._devices.clear()
         logger.info("Audio stream manager stopped")
     
     async def handle_connection(self, websocket: WebSocket, client_id: str = "default"):
         """处理WebSocket连接"""
+        # Get URL path to identify which endpoint was connected to
+        url_path = "Unknown"
+        try:
+            if hasattr(websocket, 'url'):
+                url_path = websocket.url.path
+        except Exception:
+            pass
+        
+        logger.info(f"[AudioStream] handle_connection called from path={url_path}, client_id={client_id}")
         await websocket.accept()
         
-        if client_id in self._connections:
+        # 获取客户端IP地址
+        ip_address = "Unknown"
+        try:
+            if hasattr(websocket.client, 'host'):
+                ip_address = websocket.client.host
+            elif hasattr(websocket, 'client') and websocket.client:
+                ip_address = str(websocket.client)[0] if isinstance(websocket.client, tuple) else str(websocket.client)
+        except Exception:
+            pass
+        
+        # 获取设备名称（从查询参数）
+        device_name = websocket.query_params.get("device_name", "Unknown")
+        
+        if client_id in self._devices:
             # 关闭旧连接
             try:
-                await self._connections[client_id].close()
+                await self._devices[client_id].websocket.close()
             except Exception:
                 pass
         
-        self._connections[client_id] = websocket
-        logger.info("Audio stream client connected: %s", client_id)
+        # 创建设备对象
+        device = ConnectedDevice(
+            client_id=client_id,
+            websocket=websocket,
+            connected_at=time.time(),
+            device_name=device_name,
+            ip_address=ip_address
+        )
+        self._devices[client_id] = device
+        logger.info(f"[AudioStream] Client connected: client_id={client_id}, device_name={device_name}, ip_address={ip_address}")
         
         try:
+            # Start a per-device command sender loop (text frames).
+            device.sender_task = asyncio.create_task(self._command_sender_loop(device))
+
             while self._running:
-                # 接收音频数据
                 try:
-                    data = await websocket.receive_bytes()
-                    await self._process_audio(data)
+                    msg = await websocket.receive()
+
+                    # Starlette/FastAPI websocket.receive() returns dict:
+                    # {"type": "websocket.receive", "text": "..."} or {"type": "...", "bytes": b"..."}
+                    if msg is None:
+                        continue
+
+                    if msg.get("type") == "websocket.disconnect":
+                        break
+
+                    if msg.get("text") is not None:
+                        device.last_rx_at = time.time()
+                        device.first_rx_event.set()
+                        await self._handle_text_message(msg.get("text"), device)
+                        continue
+
+                    if msg.get("bytes") is not None:
+                        device.last_rx_at = time.time()
+                        device.first_rx_event.set()
+                        await self._handle_binary_message(msg.get("bytes"), device)
+                        continue
                 except WebSocketDisconnect:
                     break
                 except Exception as e:
                     logger.error("Error receiving audio: %s", e)
                     break
         finally:
-            if client_id in self._connections:
-                del self._connections[client_id]
+            # Stop sender loop
+            if device.sender_task:
+                device.sender_task.cancel()
+                try:
+                    await device.sender_task
+                except Exception:
+                    pass
+            if client_id in self._devices:
+                del self._devices[client_id]
             logger.info("Audio stream client disconnected: %s", client_id)
+
+    async def _command_sender_loop(self, device: ConnectedDevice):
+        """
+        Per-device outgoing command loop.
+
+        Design goal (open-xiaoai-bridge 风格): 连接建立后可以随时 enqueue 命令，
+        等设备开始有任何 rx（或 hello）后再发送，避免“未 ready 即下发导致丢消息”。
+        """
+        while True:
+            cmd = await device.command_queue.get()
+            try:
+                cmd_id = None
+                try:
+                    parsed = json.loads(cmd)
+                    if isinstance(parsed, dict):
+                        # open-xiaoai RPC uses externally tagged enum:
+                        # {"Request":{"id":"...","command":"run_shell","payload":"..."}}
+                        req = parsed.get("Request")
+                        if isinstance(req, dict):
+                            cmd_id = req.get("id")
+                except Exception:
+                    cmd_id = None
+
+                # Wait until we have seen any rx from client (connection fully established).
+                try:
+                    await asyncio.wait_for(device.first_rx_event.wait(), timeout=self._command_ready_timeout_s)
+                except asyncio.TimeoutError:
+                    pass
+
+                await device.websocket.send_text(cmd)
+                logger.info(f"[Command Send] Sent to {device.client_id}: {cmd[:200]}")
+
+                if cmd_id:
+                    device.pending_commands[cmd_id] = time.time()
+                    asyncio.create_task(self._watch_command_result(device, cmd_id))
+            except Exception as e:
+                logger.error(f"[Command Send] Failed to send to {device.client_id}: {e}", exc_info=True)
+                raise
+            finally:
+                device.command_queue.task_done()
+
+    async def _watch_command_result(self, device: ConnectedDevice, cmd_id: str):
+        """等待命令回执（若设备端不实现回执，则输出明确诊断日志）。"""
+        try:
+            await asyncio.sleep(self._command_result_timeout_s)
+            sent_at = device.pending_commands.get(cmd_id)
+            if not sent_at:
+                return
+            logger.warning(
+                "[Command Result] No result/ack from client %s for command id=%s within %.1fs. "
+                "This device may not implement command channel (text frames).",
+                device.client_id,
+                cmd_id,
+                self._command_result_timeout_s,
+            )
+        except Exception:
+            return
+
+    async def _handle_binary_message(self, payload: bytes, device: ConnectedDevice):
+        """
+        open-xiaoai client-rust binary frame is JSON of Stream:
+        {"id": "...", "tag": "record"|"play", "bytes":[..], "data": ...}
+        """
+        if not payload:
+            return
+        try:
+            stream = json.loads(payload.decode("utf-8"))
+        except Exception:
+            # Not a stream frame; ignore to avoid breaking audio pipeline
+            logger.debug("[Protocol] Ignored non-JSON binary frame from %s (len=%d)", device.client_id, len(payload))
+            return
+
+        if not isinstance(stream, dict):
+            return
+
+        tag = stream.get("tag")
+        raw = stream.get("bytes")
+        if not isinstance(tag, str) or not isinstance(raw, list):
+            logger.debug("[Protocol] Ignored malformed Stream from %s (tag=%s)", device.client_id, tag)
+            return
+
+        try:
+            audio_bytes = bytes(raw)
+        except Exception:
+            logger.debug("[Protocol] Ignored Stream with non-bytes list from %s", device.client_id)
+            return
+
+        if tag == "record":
+            await self._process_audio(audio_bytes)
+            return
+
+        # Other tags: "play" is server->client direction; ignore if received.
+        logger.debug("[Protocol] Received stream tag=%s from %s (len=%d)", tag, device.client_id, len(audio_bytes))
+
+    async def _handle_text_message(self, text: str, device: ConnectedDevice):
+        """处理来自客户端的文本消息（open-xiaoai RPC: Request/Response/Event）。"""
+        if not text:
+            return
+        logger.info(f"[Protocol] Received text from {device.client_id}: {text[:400]}")
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            # Some clients might send plain text logs; ignore.
+            logger.debug("[Protocol] Ignored non-JSON text message")
+            return
+
+        if not isinstance(data, dict):
+            return
+
+        # Externally tagged enum: {"Response":{...}} / {"Event":{...}} / {"Request":{...}}
+        if "Response" in data and isinstance(data.get("Response"), dict):
+            resp = data["Response"]
+            resp_id = resp.get("id")
+            if isinstance(resp_id, str) and resp_id in device.pending_commands:
+                device.pending_commands.pop(resp_id, None)
+                device.last_command_result_at = time.time()
+                logger.info(
+                    "[RPC Response] id=%s code=%s msg=%s",
+                    resp_id,
+                    resp.get("code"),
+                    resp.get("msg"),
+                )
+            return
+
+        if "Event" in data and isinstance(data.get("Event"), dict):
+            ev = data["Event"]
+            logger.debug("[RPC Event] event=%s id=%s", ev.get("event"), ev.get("id"))
+            return
+
+        if "Request" in data and isinstance(data.get("Request"), dict):
+            # Client calling server command (not used in our bridge for now)
+            req = data["Request"]
+            logger.info("[RPC Request] from=%s command=%s id=%s", device.client_id, req.get("command"), req.get("id"))
+            return
+
+        logger.debug("[Protocol] Unhandled RPC frame keys=%s", list(data.keys())[:10])
     
     async def _process_audio(self, audio_data: bytes):
         """处理接收到的音频数据"""
@@ -109,16 +341,23 @@ class AudioStreamManager:
                 logger.error("Audio handler error: %s", e)
     
     async def send_audio(self, client_id: str, audio_data: bytes):
-        """向客户端发送音频数据"""
-        if client_id in self._connections:
+        """向客户端发送音频数据（open-xiaoai Stream tag=play）"""
+        if client_id in self._devices:
             try:
-                await self._connections[client_id].send_bytes(audio_data)
+                stream = {
+                    "id": str(uuid.uuid4()),
+                    "tag": "play",
+                    "bytes": list(audio_data),
+                    "data": None,
+                }
+                await self._devices[client_id].websocket.send_bytes(json.dumps(stream, ensure_ascii=False).encode("utf-8"))
+                logger.debug("Audio sent to client: %s", client_id)
             except Exception as e:
                 logger.error("Error sending audio to %s: %s", client_id, e)
     
     async def broadcast_audio(self, audio_data: bytes):
         """向所有客户端广播音频"""
-        for client_id in list(self._connections.keys()):
+        for client_id in list(self._devices.keys()):
             await self.send_audio(client_id, audio_data)
     
     async def send_audio_to_clients(self, audio_data: bytes, client_ids: list[str] = None):
@@ -134,6 +373,55 @@ class AudioStreamManager:
                 await self.send_audio(client_id, audio_data)
         else:
             await self.broadcast_audio(audio_data)
+
+    async def run_shell(self, script: str, client_ids: list[str] | None = None):
+        """通过 open-xiaoai client-rust RPC 调用音箱执行 shell。"""
+        if not script:
+            return
+
+        target_clients = client_ids if client_ids else list(self._devices.keys())
+        if not target_clients:
+            logger.warning("No connected clients to run_shell")
+            return
+
+        logger.info("Sending run_shell to %d client(s): %s...", len(target_clients), script[:120])
+        for client_id in target_clients:
+            request = {
+                "Request": {
+                    "id": str(uuid.uuid4()),
+                    "command": "run_shell",
+                    "payload": script,
+                }
+            }
+            await self._send_rpc_text_to_client(client_id, json.dumps(request, ensure_ascii=False))
+
+    async def _send_rpc_text_to_client(self, client_id: str, message_text: str):
+        """向单个客户端发送 RPC 文本帧（入队，sender loop 负责发送）。"""
+        if client_id not in self._devices:
+            logger.warning("[RPC Send] Client %s not found", client_id)
+            return
+        device = self._devices[client_id]
+        if device.command_queue.qsize() >= device.max_queued_commands:
+            try:
+                _ = device.command_queue.get_nowait()
+                device.command_queue.task_done()
+            except Exception:
+                pass
+            device._drop_counter += 1
+            logger.warning("[RPC Send] Queue full, dropped oldest for %s (dropped=%d)", client_id, device._drop_counter)
+        await device.command_queue.put(message_text)
+        logger.info("[RPC Send] Enqueued for %s (queue=%d)", client_id, device.command_queue.qsize())
+    
+    def get_device_info(self, client_id: str) -> Optional[Dict[str, Any]]:
+        """获取指定设备的信息"""
+        device = self._devices.get(client_id)
+        if device:
+            return device.to_dict()
+        return None
+    
+    def get_all_devices(self) -> list[Dict[str, Any]]:
+        """获取所有连接设备的列表"""
+        return [device.to_dict() for device in self._devices.values()]
     
     @property
     def is_running(self) -> bool:
@@ -141,7 +429,12 @@ class AudioStreamManager:
     
     @property
     def connected_clients(self) -> Set[str]:
-        return set(self._connections.keys())
+        return set(self._devices.keys())
+    
+    @property
+    def device_count(self) -> int:
+        """获取连接设备数量"""
+        return len(self._devices)
 
 
 # 全局单例

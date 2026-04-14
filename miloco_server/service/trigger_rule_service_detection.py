@@ -337,9 +337,9 @@ class DetectionTriggerServiceMixin:
             
             for camera_id in camera_ids:
                 # 检查是否有其他规则在使用这个摄像头的检测
-                other_rules = dao.get_rules_by_camera_with_detection(camera_id, exclude_rule_id)
+                other_rules_v2 = dao.get_rules_by_camera_with_detection_v2(camera_id, exclude_rule_id)
                 
-                if not other_rules:
+                if not other_rules_v2:
                     # 没有其他规则使用，停止检测
                     await detection_service.stop_detection(camera_id)
                     logger.info(f"Stopped detection for camera {camera_id} (no more rules)")

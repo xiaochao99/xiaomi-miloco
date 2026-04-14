@@ -1,21 +1,21 @@
 """
 XiaoAI broadcast service.
 
-When enabled via environment variables, this service forwards Miloco chat replies
-to open-xiaoai-bridge `/api/play/text` for playback on XiaoAI speakers.
+This service broadcasts text to XiaoAI speakers via the integrated Xiaomi Bridge
+(open-xiaoai Rust client over WS/RPC on port 4399).
 """
 
 from __future__ import annotations
 
 import logging
 import os
-
-import httpx
+from typing import Optional, List
 
 logger = logging.getLogger(__name__)
 
 
 def _is_enabled() -> bool:
+    # Keep as a safety switch for auto-broadcast (e.g., chat replies).
     value = str(os.getenv("MILOCO_XIAOAI_BROADCAST_ENABLED", "0")).strip().lower()
     return value in {"1", "true", "yes", "on"}
 
@@ -24,75 +24,92 @@ def _extract_speak_text(response_text: str) -> str:
     if not response_text:
         return ""
 
-    text = response_text
+    from miloco_server.utils.structured_tags import extract_final_answer
 
-    lower_text = response_text.lower()
-    open_tag = "<final_answer>"
-    close_tag = "</final_answer>"
-    start = lower_text.find(open_tag)
-    end = lower_text.find(close_tag)
-    if start != -1 and end != -1 and end > start:
-        content_start = start + len(open_tag)
-        text = response_text[content_start:end].strip()
-
-    return text.strip()
-
-
-async def _broadcast_text(text: str, require_enabled: bool = True) -> bool:
-    if require_enabled and not _is_enabled():
-        return False
-    if not text:
-        return False
-    base_url = os.getenv("MILOCO_XIAOAI_BRIDGE_URL", "http://127.0.0.1:9092").rstrip("/")
-    token = os.getenv("MILOCO_XIAOAI_BRIDGE_TOKEN", "").strip()
-    timeout_seconds = float(os.getenv("MILOCO_XIAOAI_BROADCAST_TIMEOUT", "5"))
-
-    headers: dict[str, str] = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    endpoint = f"{base_url}/api/play/text"
-    payload = {"text": text}
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            resp = await client.post(endpoint, json=payload, headers=headers)
-            if resp.status_code >= 400:
-                logger.warning(
-                    "XiaoAI broadcast failed, status=%s, body=%s",
-                    resp.status_code,
-                    resp.text[:300],
-                )
-                return False
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        logger.warning("XiaoAI broadcast request failed: %s", exc)
-        return False
-
-    logger.info("XiaoAI broadcast success")
-    return True
-
-
-async def broadcast_text(text: str, require_enabled: bool = False) -> bool:
-    """
-    Broadcast plain text to open-xiaoai-bridge.
-
-    When require_enabled=False, this is suitable for rule actions where the action
-    itself controls whether broadcasting should happen.
-    """
-    return await _broadcast_text(text.strip(), require_enabled=require_enabled)
+    final_answer = extract_final_answer(response_text)
+    return (final_answer or response_text).strip()
 
 
 async def broadcast_chat_reply(response_text: str) -> bool:
     """
-    Broadcast chat reply to open-xiaoai-bridge.
+    Broadcast chat reply via the integrated Xiaomi Bridge.
 
-    Environment variables:
+    Controlled by environment variable:
     - MILOCO_XIAOAI_BROADCAST_ENABLED: 1/true to enable
-    - MILOCO_XIAOAI_BRIDGE_URL: bridge base url, default http://127.0.0.1:9092
-    - MILOCO_XIAOAI_BRIDGE_TOKEN: optional bridge token
-    - MILOCO_XIAOAI_BROADCAST_TIMEOUT: request timeout seconds, default 5
     """
+    if not _is_enabled():
+        return False
     speak_text = _extract_speak_text(response_text)
     if not speak_text:
         return False
-    return await _broadcast_text(speak_text, require_enabled=True)
+    return await broadcast_via_bridge(speak_text, client_ids=None)
+
+
+async def broadcast_via_bridge(text: str, client_ids: Optional[List[str]] = None) -> bool:
+    """
+    Broadcast text to Xiaomi speakers via the integrated Xiaomi Bridge.
+    
+    Args:
+        text: The text to speak
+        client_ids: Optional list of specific device IDs to send to. 
+                   If None, broadcasts to all connected devices.
+    
+    Returns:
+        True if successful, False otherwise.
+    """
+    if not text:
+        logger.warning("Empty text to broadcast")
+        return False
+    
+    try:
+        from miloco_server.xiaomi_bridge.tts import TTSService
+        from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
+        from miloco_server.xiaomi_bridge.shell_utils import build_mibrain_tts_script
+        
+        # Get TTS service
+        tts = TTSService.instance()
+        
+        # Check if using Xiaomi native TTS
+        if tts.engine == "xiaoai":
+            manager = get_audio_stream_manager()
+            await manager.run_shell(build_mibrain_tts_script(text), client_ids=client_ids)
+            
+            target = "all devices" if client_ids is None else f"devices {client_ids}"
+            logger.info(f"Broadcast XiaoAI TTS via Xiaomi Bridge to {target}: {text[:50]}...")
+            return True
+        else:
+            # Use external TTS engine (e.g., Doubao)
+            audio_data = await tts.synthesize(text)
+            
+            if not audio_data:
+                logger.error("TTS synthesis failed")
+                return False
+            
+            # Send audio to devices
+            manager = get_audio_stream_manager()
+            await manager.send_audio_to_clients(audio_data, client_ids)
+            
+            target = "all devices" if client_ids is None else f"devices {client_ids}"
+            logger.info(f"Broadcast via Xiaomi Bridge to {target}: {text[:50]}...")
+            return True
+        
+    except Exception as e:
+        logger.error(f"Failed to broadcast via Xiaomi Bridge: {e}")
+        return False
+
+
+async def get_connected_devices() -> List[dict]:
+    """
+    Get list of connected Xiaomi speakers via Xiaomi Bridge.
+    
+    Returns:
+        List of device info dictionaries with client_id, device_name, ip_address, etc.
+    """
+    try:
+        from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
+        
+        manager = get_audio_stream_manager()
+        return manager.get_all_devices()
+    except Exception as e:
+        logger.error(f"Failed to get connected devices: {e}")
+        return []

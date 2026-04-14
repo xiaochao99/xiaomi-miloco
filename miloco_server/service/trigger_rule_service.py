@@ -10,7 +10,7 @@ from typing import List, Optional, Any
 
 from fastapi import WebSocket
 from miot.types import MIoTCameraInfo
-from schema.mcp_schema import MCPClientStatus, choose_mcp_list
+from miloco_server.schema.mcp_schema import MCPClientStatus, choose_mcp_list
 
 from miloco_server import actor_system
 from miloco_server.dao.trigger_dao import TriggerRuleDAO
@@ -26,13 +26,13 @@ from miloco_server.proxy.miot_proxy import MiotProxy
 from miloco_server.schema.miot_schema import choose_camera_list, HADeviceInfo
 from miloco_server.schema.trigger_log_schema import TriggerRuleLog
 from miloco_server.schema.trigger_schema import (
-    Action, ExecuteInfoDetail, Notify, TriggerRule, TriggerRuleDetail, TriggerRuleV2, ConditionType)
+    Action, Notify, TriggerRule, TriggerRuleV2, ConditionType)
 from miloco_server.service.trigger_rule_runner import TriggerRuleRunner
 from miloco_server.service.ha_service import HaService
 from miloco_server.service.trigger_rule_service_detection import DetectionTriggerServiceMixin
 
-from service import trigger_rule_dynamic_executor_cache
-from service.trigger_rule_dynamic_executor import RegisterWebSocket
+from miloco_server.service import trigger_rule_dynamic_executor_cache
+from miloco_server.service.trigger_rule_dynamic_executor import RegisterWebSocket
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +65,10 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
             import asyncio
             await asyncio.sleep(5)
 
-            # 获取所有启用的规则
-            all_rules = self._trigger_rule_dao.get_all(enabled_only=True)
-            logger.info(f"[Startup] Found {len(all_rules)} enabled rules")
+            # 获取所有启用的规则（v2），并转换为运行时 TriggerRule
+            all_rules_v2 = self._trigger_rule_dao.get_all_v2(enabled_only=True)
+            all_rules = [r.to_runtime_rule() for r in all_rules_v2]
+            logger.info(f"[Startup] Found {len(all_rules)} enabled rules (v2)")
 
             detection_rules_started = 0
             cameras_started = set()
@@ -102,91 +103,6 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
         except Exception as e:
             logger.error(f"[Startup] Error initializing detection on startup: {e}", exc_info=True)
 
-    async def create_trigger_rule(self, trigger_rule: TriggerRule) -> str:
-        """
-        Create trigger rule
-
-        Args:
-            trigger_rule: Trigger rule object (without ID, system auto-generates on creation)
-
-        Returns:
-            str: Created rule ID
-
-        Raises:
-            ConflictException: When rule name already exists
-            ValidationException: When camera device ID is invalid
-            BusinessException: When creation fails
-        """
-        # Check if rule name already exists
-        if self._trigger_rule_dao.exists_by_name(trigger_rule.name):
-            raise ConflictException(f"Trigger rule name '{trigger_rule.name}' already exists")
-
-        # Validate if camera device IDs are valid
-        valid_cameras = await self._miot_proxy.get_camera_dids()
-        invalid_dids = [
-            did for did in trigger_rule.cameras if did not in valid_cameras
-        ]
-        if invalid_dids:
-            ids = ", ".join(invalid_dids)
-            raise ValidationException(f"Invalid camera device IDs: {ids}")
-
-        # Validate HA devices if ha_service is available
-        if trigger_rule.ha_devices and self._ha_service:
-            ha_devices_grouped = await self._ha_service.get_ha_devices_grouped()
-            valid_ha_dids = set(ha_devices_grouped.keys())
-            # ha_devices is already a list of device ID strings
-            invalid_ha_dids = [did for did in trigger_rule.ha_devices if did not in valid_ha_dids]
-            if invalid_ha_dids:
-                ids = ", ".join(invalid_ha_dids)
-                raise ValidationException(f"Invalid HA device IDs: {ids}")
-
-            if trigger_rule.trigger_entity_id:
-                valid_entities = set()
-                for did in trigger_rule.ha_devices:
-                    valid_entities.update(ha_devices_grouped.get(did, {}).get("entities", []))
-                if trigger_rule.trigger_entity_id not in valid_entities:
-                    raise ValidationException(
-                        f"Invalid trigger_entity_id '{trigger_rule.trigger_entity_id}' for selected HA devices"
-                    )
-
-        # Validate notification for content filtering
-        if trigger_rule.execute_info and trigger_rule.execute_info.notify:
-            await self._check_notify(trigger_rule.execute_info.notify)
-
-        # Create rule object
-        rule_id = self._trigger_rule_dao.create(trigger_rule)
-
-        if not rule_id:
-            logger.error("Trigger rule creation failed")
-            raise BusinessException("Failed to create trigger rule")
-
-        trigger_rule.id = rule_id
-        self._trigger_rule_runner.add_trigger_rule(trigger_rule)
-
-        logger.info(f"[CreateRule] Rule {rule_id} created, condition_type={trigger_rule.condition_type}, "
-                   f"has_detection_condition={trigger_rule.detection_condition is not None}")
-
-        # Handle detection condition if present
-        if trigger_rule.detection_condition:
-            logger.info(f"[CreateRule] Detection condition found: enabled={trigger_rule.detection_condition.enabled}, "
-                       f"targets={trigger_rule.detection_condition.targets}")
-            if trigger_rule.detection_condition.enabled:
-                logger.info(f"[CreateRule] Calling _handle_detection_condition_on_create for rule {rule_id}")
-                try:
-                    detection_result = await self._handle_detection_condition_on_create(trigger_rule)
-                    logger.info(f"[CreateRule] Detection result for rule {rule_id}: {detection_result}")
-                    if detection_result.get("errors"):
-                        logger.warning(f"[CreateRule] Detection condition errors: {detection_result['errors']}")
-                except Exception as e:
-                    logger.error(f"[CreateRule] Error handling detection condition: {e}", exc_info=True)
-            else:
-                logger.info(f"[CreateRule] Detection condition disabled for rule {rule_id}")
-        else:
-            logger.info(f"[CreateRule] No detection condition for rule {rule_id}")
-
-        logger.info("Trigger rule created successfully: %s", rule_id)
-        return rule_id
-
     async def create_trigger_rule_v2(self, trigger_rule: TriggerRuleV2) -> str:
         """Create trigger rule using v2 schema/table."""
         if self._trigger_rule_dao.exists_by_name_v2(trigger_rule.name):
@@ -200,152 +116,16 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
             raise BusinessException("Failed to create trigger rule")
 
         trigger_rule.id = rule_id
-        self._trigger_rule_runner.add_trigger_rule(trigger_rule.to_runtime_rule())
+        runtime_rule = trigger_rule.to_runtime_rule()
+        self._trigger_rule_runner.add_trigger_rule(runtime_rule)
+
+        if runtime_rule.detection_condition and runtime_rule.detection_condition.enabled:
+            await self._handle_detection_condition_on_create(runtime_rule)
         return rule_id
-
-    async def get_trigger_rule(self, rule_id: str) -> TriggerRuleDetail:
-        """
-        Get trigger rule details
-
-        Args:
-            rule_id: Rule ID (UUID)
-
-        Returns:
-            TriggerRule: Trigger rule object
-
-        Raises:
-            ResourceNotFoundException: When rule does not exist
-        """
-        logger.info("Getting trigger rule details: id=%s", rule_id)
-
-        trigger_rule = self._trigger_rule_dao.get_by_id(rule_id)
-
-        if not trigger_rule:
-            raise ResourceNotFoundException(f"Trigger rule with ID '{rule_id}' not found")
-
-        trigger_rule_response = await self.make_trigger_rule_detail(trigger_rule)
-
-        logger.info("Trigger rule retrieved successfully: %s", rule_id)
-        return trigger_rule_response
-
-    async def get_all_trigger_rules(self, enabled_only: bool = False) -> List[TriggerRuleDetail]:
-        """
-        Get all trigger rules
-
-        Args:
-            enabled_only: Whether to return only enabled rules
-
-        Returns:
-            List[TriggerRuleDetail]: List of trigger rule objects
-        """
-        logger.info("Getting all trigger rules: enabled_only=%s", enabled_only)
-
-        trigger_rules: List[TriggerRule] = self._trigger_rule_dao.get_all(
-            enabled_only)
-
-        if not trigger_rules:
-            return []
-
-        trigger_rule_responses = await self.make_trigger_rule_details(trigger_rules)
-
-        logger.info("Retrieved %d trigger rules", len(trigger_rule_responses))
-        return trigger_rule_responses
 
     async def get_all_trigger_rules_v2(self, enabled_only: bool = False) -> List[TriggerRuleV2]:
         """Get all v2 trigger rules."""
         return self._trigger_rule_dao.get_all_v2(enabled_only)
-
-    async def update_trigger_rule(self, trigger_rule: TriggerRule) -> bool:
-        """
-        Update trigger rule
-
-        Args:
-            trigger_rule: Trigger rule object (with ID)
-
-        Returns:
-            bool: True if update successful, False otherwise
-
-        Raises:
-            ResourceNotFoundException: When rule does not exist
-            ConflictException: When rule name already exists
-            ValidationException: When camera device ID is invalid
-        """
-        logger.info("Updating trigger rule: id=%s", trigger_rule.id)
-        if not trigger_rule.id:
-            raise ValidationException("Rule ID is required")
-
-        # Check if rule exists
-        if not self._trigger_rule_dao.exists(trigger_rule.id):
-            raise ResourceNotFoundException(f"Trigger rule with ID '{trigger_rule.id}' not found")
-
-        # Check if rule name already exists (excluding current rule)
-        if self._trigger_rule_dao.exists_by_name(trigger_rule.name, trigger_rule.id):
-            raise ConflictException(f"Trigger rule name '{trigger_rule.name}' already exists")
-
-        # Validate if camera device IDs are valid
-        valid_cameras = await self._miot_proxy.get_camera_dids()
-        invalid_dids = [
-            did for did in trigger_rule.cameras if did not in valid_cameras
-        ]
-        if invalid_dids:
-            ids = ", ".join(invalid_dids)
-            raise ValidationException(f"Invalid camera device IDs: {ids}")
-
-        # Validate HA devices if ha_service is available
-        if trigger_rule.ha_devices and self._ha_service:
-            ha_devices_grouped = await self._ha_service.get_ha_devices_grouped()
-            valid_ha_dids = set(ha_devices_grouped.keys())
-            # ha_devices is already a list of device ID strings
-            invalid_ha_dids = [did for did in trigger_rule.ha_devices if did not in valid_ha_dids]
-            if invalid_ha_dids:
-                ids = ", ".join(invalid_ha_dids)
-                raise ValidationException(f"Invalid HA device IDs: {ids}")
-
-            if trigger_rule.trigger_entity_id:
-                valid_entities = set()
-                for did in trigger_rule.ha_devices:
-                    valid_entities.update(ha_devices_grouped.get(did, {}).get("entities", []))
-                if trigger_rule.trigger_entity_id not in valid_entities:
-                    raise ValidationException(
-                        f"Invalid trigger_entity_id '{trigger_rule.trigger_entity_id}' for selected HA devices"
-                    )
-
-        # Validate notification for content filtering
-        if trigger_rule.execute_info and trigger_rule.execute_info.notify:
-            await self._check_notify(trigger_rule.execute_info.notify)
-
-        # Get old rule for detection condition comparison
-        old_rule = self._trigger_rule_dao.get_by_id(trigger_rule.id)
-
-        success = self._trigger_rule_dao.update(trigger_rule)
-
-        if success:
-            self._trigger_rule_runner.add_trigger_rule(trigger_rule)
-
-            # Handle detection condition changes
-            try:
-                detection_result = await self._handle_detection_condition_on_update(
-                    trigger_rule, old_rule
-                )
-                if detection_result.get("detection_updated"):
-                    logger.info(
-                        f"Detection condition updated for rule {trigger_rule.id}: "
-                        f"action={detection_result.get('action')}, "
-                        f"cameras={detection_result.get('cameras_affected', [])}"
-                    )
-                if detection_result.get("errors"):
-                    logger.warning(
-                        f"Detection condition errors for rule {trigger_rule.id}: "
-                        f"{detection_result['errors']}"
-                    )
-            except Exception as e:
-                logger.error(f"Error handling detection condition update for rule {trigger_rule.id}: {e}")
-
-            logger.info("Trigger rule updated successfully: %s", trigger_rule.id)
-        else:
-            logger.error("Failed to update trigger rule: %s", trigger_rule.id)
-
-        return success
 
     async def update_trigger_rule_v2(self, trigger_rule: TriggerRuleV2) -> bool:
         """Update trigger rule in v2 table."""
@@ -359,49 +139,36 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
         if trigger_rule.execute_info and trigger_rule.execute_info.notify:
             await self._check_notify(trigger_rule.execute_info.notify)
 
+        # for detection update diff we need old runtime rule
+        old_v2 = self._trigger_rule_dao.get_by_id_v2(trigger_rule.id)
+        old_runtime = old_v2.to_runtime_rule() if old_v2 else None
+
         success = self._trigger_rule_dao.update_v2(trigger_rule)
         if success:
-            self._trigger_rule_runner.add_trigger_rule(trigger_rule.to_runtime_rule())
-        return success
-
-    async def delete_trigger_rule(self, rule_id: str) -> bool:
-        """
-        Delete trigger rule
-
-        Args:
-            rule_id: Rule ID (UUID)
-
-        Returns:
-            bool: True if deletion successful, False otherwise
-
-        Raises:
-            ResourceNotFoundException: When rule does not exist
-            BusinessException: When deletion fails
-        """
-        logger.info("Deleting trigger rule: id=%s", rule_id)
-
-        # Check if rule exists
-        if not self._trigger_rule_dao.exists(rule_id):
-            raise ResourceNotFoundException(f"Trigger rule with ID '{rule_id}' not found")
-
-        # Delete rule
-        success = self._trigger_rule_dao.delete(rule_id)
-
-        if success:
-            self._trigger_rule_runner.remove_trigger_rule(rule_id)
-            logger.info("Trigger rule deleted successfully: %s", rule_id)
-        else:
-            logger.error("Failed to delete trigger rule: %s", rule_id)
-
+            runtime_rule = trigger_rule.to_runtime_rule()
+            self._trigger_rule_runner.add_trigger_rule(runtime_rule)
+            try:
+                await self._handle_detection_condition_on_update(runtime_rule, old_runtime)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.error("Error handling detection condition update for rule %s: %s", trigger_rule.id, e)
         return success
 
     async def delete_trigger_rule_v2(self, rule_id: str) -> bool:
         """Delete trigger rule from v2 table."""
         if not self._trigger_rule_dao.exists_v2(rule_id):
             raise ResourceNotFoundException(f"Trigger rule with ID '{rule_id}' not found")
+
+        old_v2 = self._trigger_rule_dao.get_by_id_v2(rule_id)
+        old_runtime = old_v2.to_runtime_rule() if old_v2 else None
+
         success = self._trigger_rule_dao.delete_v2(rule_id)
         if success:
             self._trigger_rule_runner.remove_trigger_rule(rule_id)
+            if old_runtime:
+                try:
+                    await self._handle_detection_condition_on_delete(old_runtime)
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    logger.error("Error handling detection condition delete for rule %s: %s", rule_id, e)
         return success
 
     async def _validate_trigger_rule_v2(self, trigger_rule: TriggerRuleV2) -> None:
@@ -476,59 +243,6 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
         if not notify_id:
             raise ValidationException("Notification content is inappropriate, please re-enter")
         notify.id = notify_id
-
-
-    async def make_trigger_rule_details(
-            self, trigger_rules: List[TriggerRule]) -> List[TriggerRuleDetail]:
-        """Generate trigger rule response"""
-        camera_info_dict = await self._miot_proxy.get_cameras()
-        ha_devices_grouped = await self._ha_service.get_ha_devices_grouped() if self._ha_service else {}
-        all_mcp_list = await self._mcp_client_manager.get_all_clients_status()
-        return [
-            self._build_trigger_rule_detail(trigger_rule, camera_info_dict, ha_devices_grouped, all_mcp_list)
-            for trigger_rule in trigger_rules
-        ]
-
-
-    async def make_trigger_rule_detail(self, trigger_rule: TriggerRule) -> TriggerRuleDetail:
-        """Generate trigger rule response"""
-        camera_info_dict = await self._miot_proxy.get_cameras()
-        ha_devices_grouped = await self._ha_service.get_ha_devices_grouped() if self._ha_service else {}
-        all_mcp_list = await self._mcp_client_manager.get_all_clients_status()
-        return self._build_trigger_rule_detail(trigger_rule, camera_info_dict, ha_devices_grouped, all_mcp_list)
-
-    def _build_trigger_rule_detail(
-        self,
-        trigger_rule: TriggerRule,
-        camera_info_dict: dict[str, MIoTCameraInfo],
-        ha_devices_grouped: dict[str, dict[str, Any]],
-        all_mcp_list: List[MCPClientStatus],
-    ) -> TriggerRuleDetail:
-        """Generate trigger rule response"""
-        camera_list = choose_camera_list(trigger_rule.cameras, camera_info_dict)
-
-        ha_device_list = []
-        for did in trigger_rule.ha_devices:
-            if did in ha_devices_grouped:
-                info = ha_devices_grouped[did]
-                ha_device_list.append(HADeviceInfo(
-                    did=did,
-                    name=info["name"],
-                    online=True,
-                    model="ha_device",
-                    entity_id=info["entities"][0] if info["entities"] else did,
-                    state="online",
-                    room_name=info["area"]
-                ))
-
-        choosed_mcp_list = choose_mcp_list(trigger_rule.execute_info.mcp_list, all_mcp_list)
-        execute_info = ExecuteInfoDetail.from_execute_info(
-            trigger_rule.execute_info, choosed_mcp_list)
-        return TriggerRuleDetail.from_trigger_rule(
-            trigger_rule=trigger_rule,
-            cameras=camera_list,
-            ha_devices=ha_device_list,
-            execute_info=execute_info)
 
     async def send_dynamic_execute_log(self, log_id: str, websocket: WebSocket) -> None:
         """Send dynamic execute log"""
