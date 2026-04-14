@@ -19,7 +19,7 @@ class VADConfig:
     threshold: float = 0.10  # 0-1, lower = more sensitive
     min_speech_duration_ms: int = 250
     min_silence_duration_ms: int = 500
-    model_path: str = ""  # path to silero_vad.onnx
+    model_path: str = "models/vad/silero_vad.onnx"  # path to silero_vad.onnx
 
 
 @dataclass
@@ -29,7 +29,7 @@ class KWSConfig:
     keywords_score: float = 2.0
     keywords_threshold: float = 0.2
     min_silence_duration: int = 480  # ms
-    model_dir: str = ""  # path to sherpa-onnx-kws model dir
+    model_dir: str = "models/kws"  # path to sherpa-onnx-kws model dir
 
 
 @dataclass
@@ -37,7 +37,7 @@ class ASRConfig:
     """ASR (Automatic Speech Recognition) configuration."""
     model: str = "sense_voice"  # "sense_voice" / "paraformer" / "fire_red_asr"
     int8: bool = True
-    model_dir: str = ""  # explicit model directory
+    model_dir: str = "models/asr"  # explicit model directory
     replacements: Dict[str, str] = field(default_factory=dict)
     num_threads: int = 2
 

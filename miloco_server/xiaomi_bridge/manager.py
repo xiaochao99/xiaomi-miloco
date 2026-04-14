@@ -16,11 +16,15 @@ import asyncio
 import logging
 from typing import Optional, Callable, Awaitable
 
+import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
 from miloco_server.xiaomi_bridge.config import BridgeConfig
 from miloco_server.xiaomi_bridge.conversation import MilocoConversationController, ConversationState
 from miloco_server.xiaomi_bridge.vad import VADManager
 from miloco_server.xiaomi_bridge.kws import KWSManager
 from miloco_server.xiaomi_bridge.asr import ASRManager
+from miloco_server.xiaomi_bridge.tts import TTSService
 from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager, AudioStreamManager
 
 logger = logging.getLogger(__name__)
@@ -44,13 +48,15 @@ class BridgeManager:
         self._vad: Optional[VADManager] = None
         self._kws: Optional[KWSManager] = None
         self._asr: Optional[ASRManager] = None
+        self._tts: Optional[TTSService] = None
 
         # Controllers
         self._conversation_controller = MilocoConversationController.instance()
         self._audio_stream_manager: Optional[AudioStreamManager] = None
 
-        # TTS
-        self._tts_speaker_id: Optional[str] = None
+        # WebSocket server
+        self._ws_server: Optional[uvicorn.Server] = None
+        self._ws_server_task: Optional[asyncio.Task] = None
 
         # Callbacks
         self._process_text_callback: Optional[Callable[[str], Awaitable[str]]] = None
@@ -81,6 +87,10 @@ class BridgeManager:
     @property
     def asr(self) -> Optional[ASRManager]:
         return self._asr
+
+    @property
+    def tts(self) -> Optional[TTSService]:
+        return self._tts
 
     @property
     def audio_stream_manager(self) -> Optional[AudioStreamManager]:
@@ -129,6 +139,18 @@ class BridgeManager:
         )
         self._asr.initialize()
 
+        # Initialize TTS
+        self._tts = TTSService(
+            engine=self._config.tts.engine,
+            app_id=self._config.tts.app_id,
+            access_key=self._config.tts.access_key,
+            default_speaker=self._config.tts.default_speaker,
+            audio_format=self._config.tts.audio_format,
+            stream=self._config.tts.stream,
+            speed=self._config.tts.speed,
+        )
+        await self._tts.initialize()
+
         # Initialize audio stream manager
         self._audio_stream_manager = get_audio_stream_manager()
         await self._audio_stream_manager.start()
@@ -150,6 +172,10 @@ class BridgeManager:
         )
 
         self._initialized = True
+
+        # Start WebSocket server on port 4399
+        await self._start_ws_server()
+
         logger.info(
             "Xiaomi bridge initialized (tts=%s, wakeup=%s, asr=%s, ws_port=%d)",
             self._config.tts.engine,
@@ -157,6 +183,56 @@ class BridgeManager:
             self._config.asr.model,
             self._config.ws_port,
         )
+
+    async def _start_ws_server(self):
+        """Start the standalone WebSocket server for Xiaomi speaker connection."""
+        if self._ws_server is not None:
+            logger.warning("WebSocket server already running")
+            return
+
+        # Create FastAPI app for WebSocket
+        ws_app = FastAPI()
+
+        @ws_app.websocket("/")
+        async def websocket_endpoint(websocket: WebSocket):
+            """WebSocket endpoint for Xiaomi speaker audio streaming."""
+            await websocket.accept()
+
+            # Generate client ID
+            import uuid
+            client_id = str(uuid.uuid4())
+
+            logger.info(f"[WS] Xiaomi speaker connected: {client_id}")
+
+            try:
+                while True:
+                    try:
+                        data = await websocket.receive_bytes()
+                        # Forward audio to audio stream manager
+                        if self._audio_stream_manager:
+                            await self._audio_stream_manager._process_audio(data)
+                    except WebSocketDisconnect:
+                        logger.info(f"[WS] Xiaomi speaker disconnected: {client_id}")
+                        break
+                    except Exception as e:
+                        logger.error(f"[WS] Error receiving audio from {client_id}: {e}")
+                        break
+            finally:
+                logger.info(f"[WS] Client removed: {client_id}")
+
+        # Create uvicorn server
+        config = uvicorn.Config(
+            ws_app,
+            host=self._config.ws_host,
+            port=self._config.ws_port,
+            log_level="info",
+            access_log=False,
+        )
+        self._ws_server = uvicorn.Server(config)
+
+        # Start server in background task
+        self._ws_server_task = asyncio.create_task(self._ws_server.serve())
+        logger.info(f"WebSocket server started on ws://{self._config.ws_host}:{self._config.ws_port}")
 
     async def start(self):
         """Start the bridge."""
@@ -169,6 +245,15 @@ class BridgeManager:
     async def stop(self):
         """Stop the bridge."""
         await self._conversation_controller.stop()
+
+        # Stop WebSocket server
+        if self._ws_server:
+            await self._ws_server.shutdown()
+            if self._ws_server_task:
+                await self._ws_server_task
+            self._ws_server = None
+            self._ws_server_task = None
+            logger.info("WebSocket server stopped")
 
         if self._audio_stream_manager:
             await self._audio_stream_manager.stop()
@@ -221,75 +306,16 @@ class BridgeManager:
         if not text:
             return
 
-        tts_config = self._config.tts
-
-        if tts_config.engine == "xiaoai":
-            # Xiaoai native TTS - would call speaker API
-            logger.info("Playing via Xiaoai TTS: %s", text[:50])
-            return
-
-        # Doubao TTS
-        if not tts_config.app_id or not tts_config.access_key:
-            logger.warning("Doubao TTS not configured, logging text only")
-            logger.info("TTS text: %s", text[:100])
+        if not self._tts or not self._tts.is_initialized:
+            logger.warning("TTS service not available")
+            logger.info("TTS text (not played): %s", text[:100])
             return
 
         try:
-            speaker_id = self._tts_speaker_id or tts_config.default_speaker
-
-            if tts_config.stream:
-                # Stream TTS playback
-                await self._stream_tts(text, speaker_id, tts_config)
-            else:
-                # Non-streaming TTS
-                await self._batch_tts(text, speaker_id, tts_config)
-
+            await self._tts.speak(text)
+            logger.info("TTS played: %s", text[:50])
         except Exception as e:
             logger.error("TTS playback failed: %s", e)
-
-    async def _stream_tts(self, text: str, speaker_id: str, config):
-        """Stream TTS audio for real-time playback."""
-        try:
-            import httpx
-            import base64
-
-            url = "https://openspeech.bytedance.com/api/v1/tts"
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer;{config.access_key}",
-            }
-            payload = {
-                "app": {"appid": config.app_id, "token": config.access_key, "cluster": "volcano_tts"},
-                "user": {"uid": "miloco_server"},
-                "audio": {
-                    "voice_type": speaker_id,
-                    "encoding": config.audio_format,
-                    "speed_ratio": config.speed,
-                    "volume_ratio": 1.0,
-                    "sample_rate": 24000,
-                },
-                "request": {"text": text, "operation": "query"},
-            }
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(url, json=payload, headers=headers)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("code") == 0 and data.get("data"):
-                        audio_data = base64.b64decode(data["data"])
-                        logger.info("TTS synthesized %d bytes", len(audio_data))
-                        # Send to speaker via audio stream
-                        if self._audio_stream_manager:
-                            await self._audio_stream_manager.broadcast_audio(audio_data)
-                else:
-                    logger.error("TTS HTTP error: %d", response.status_code)
-
-        except Exception as e:
-            logger.error("Stream TTS failed: %s", e)
-
-    async def _batch_tts(self, text: str, speaker_id: str, config):
-        """Batch TTS synthesis and playback."""
-        await self._stream_tts(text, speaker_id, config)
 
     async def speak(self, text: str) -> bool:
         """
@@ -303,7 +329,8 @@ class BridgeManager:
 
     def set_tts_speaker(self, speaker_id: str):
         """Set TTS speaker ID for voice switching."""
-        self._tts_speaker_id = speaker_id
+        # This is now handled by TTSService
+        logger.warning("set_tts_speaker is deprecated, use TTSService directly")
 
     async def send_audio_to_speaker(self, client_id: str, audio_data: bytes):
         """Send audio to a specific speaker client."""

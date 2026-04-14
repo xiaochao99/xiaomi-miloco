@@ -121,6 +121,20 @@ class AudioStreamManager:
         for client_id in list(self._connections.keys()):
             await self.send_audio(client_id, audio_data)
     
+    async def send_audio_to_clients(self, audio_data: bytes, client_ids: list[str] = None):
+        """
+        向指定客户端发送音频数据
+        
+        Args:
+            audio_data: 音频数据
+            client_ids: 客户端ID列表，为空则发送给所有客户端
+        """
+        if client_ids:
+            for client_id in client_ids:
+                await self.send_audio(client_id, audio_data)
+        else:
+            await self.broadcast_audio(audio_data)
+    
     @property
     def is_running(self) -> bool:
         return self._running
