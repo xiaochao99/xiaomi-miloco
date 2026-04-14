@@ -33,15 +33,20 @@ export const useRuleFormData = (rule) => {
       };
     }
 
+    // Support both V1 and V2 rule formats
+    // V1 format: direct fields (condition_type, ha_condition, trigger_entity_id)
+    // V2 format: nested in trigger/targets (trigger.type, trigger.ha_condition, targets.trigger_entity_id)
+    const isV2 = rule.trigger !== undefined && rule.targets !== undefined;
+    
     const formData = {
       name: rule.name || '',
-      cameras: rule.cameras || [],
-      ha_devices: rule.ha_devices || [],
-      condition: rule.condition || '',
-      condition_type: rule.condition_type || 'llm',
-      ha_condition: rule.ha_condition || '',
-      trigger_entity_id: rule.trigger_entity_id || null,
-      detection_condition: rule.detection_condition || null,
+      cameras: isV2 ? (rule.targets?.camera_ids || []) : (rule.cameras || []),
+      ha_devices: isV2 ? (rule.targets?.ha_device_ids || []) : (rule.ha_devices || []),
+      condition: isV2 ? (rule.trigger?.llm_condition || rule.trigger?.camera_condition || '') : (rule.condition || ''),
+      condition_type: isV2 ? (rule.trigger?.type || 'llm') : (rule.condition_type || 'llm'),
+      ha_condition: isV2 ? (rule.trigger?.ha_condition || '') : (rule.ha_condition || ''),
+      trigger_entity_id: isV2 ? (rule.targets?.trigger_entity_id || null) : (rule.trigger_entity_id || null),
+      detection_condition: isV2 ? (rule.trigger?.detection_condition || null) : (rule.detection_condition || null),
       ai_recommend_execute_type: rule.execute_info?.ai_recommend_execute_type || 'static',
       ai_recommend_action_descriptions: rule.execute_info?.ai_recommend_action_descriptions || [],
       ai_recommend_actions: rule.execute_info?.ai_recommend_actions || [],

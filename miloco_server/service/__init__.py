@@ -5,7 +5,9 @@
 service package
 """
 from cachetools import TTLCache
-from service.trigger_rule_dynamic_executor import TriggerRuleDynamicExecutor
+from typing import Any
 
 
-trigger_rule_dynamic_executor_cache: TTLCache[str, TriggerRuleDynamicExecutor] = TTLCache(maxsize=100, ttl=600)
+# Cache of dynamic executor actor addresses/handles.
+# NOTE: Keep this module import-light to avoid pulling heavy dependencies at import time.
+trigger_rule_dynamic_executor_cache: TTLCache[str, Any] = TTLCache(maxsize=100, ttl=600)

@@ -17,7 +17,6 @@ import logging
 import time
 import uuid
 from typing import AsyncGenerator, List, Optional
-import re
 
 from thespian.actors import Actor, ActorExitRequest
 
@@ -43,23 +42,21 @@ def parse_ai_response(response_text: str) -> dict:
     - <reflect>...</reflect> => thinking
     - <final_answer>...</final_answer> => final_answer
     """
-    import re
+    from miloco_server.utils.structured_tags import extract_reflect_blocks, extract_final_answer
 
     if not response_text:
         return {"thinking": None, "final_answer": None, "has_structured_format": False}
 
     result = {"thinking": None, "final_answer": None, "has_structured_format": False}
 
-    reflect_pattern = r"<reflect>(.*?)</reflect>"
-    reflect_matches = re.findall(reflect_pattern, response_text, re.DOTALL | re.IGNORECASE)
+    reflect_matches = extract_reflect_blocks(response_text)
     if reflect_matches:
         result["thinking"] = "\n\n".join(match.strip() for match in reflect_matches if match.strip())
         result["has_structured_format"] = True
 
-    final_answer_pattern = r"<final_answer>(.*?)</final_answer>"
-    final_answer_match = re.search(final_answer_pattern, response_text, re.DOTALL | re.IGNORECASE)
-    if final_answer_match:
-        result["final_answer"] = final_answer_match.group(1).strip()
+    final_answer = extract_final_answer(response_text)
+    if final_answer:
+        result["final_answer"] = final_answer
         result["has_structured_format"] = True
 
     return result

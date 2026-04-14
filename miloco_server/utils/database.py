@@ -57,13 +57,11 @@ class SQLiteConnector:
                         self._create_kv_table(conn)
                         tables_created.append("kv")
 
-                    if "trigger_rule" not in existing_tables:
-                        logger.info(
-                            "Trigger rule table not found, creating...")
-                        self._create_trigger_rule_table(conn)
-                        tables_created.append("trigger_rule")
-                    else:
-                        self._ensure_trigger_rule_columns(conn)
+                    # v1 trigger_rule table has been removed. If it still exists in an old DB, drop it.
+                    if "trigger_rule" in existing_tables:
+                        logger.warning("Found legacy v1 table 'trigger_rule', dropping it...")
+                        self._drop_trigger_rule_table(conn)
+                        tables_created.append("trigger_rule(dropped)")
 
                     if "trigger_rule_v2" not in existing_tables:
                         logger.info("Trigger rule v2 table not found, creating...")
@@ -121,7 +119,6 @@ class SQLiteConnector:
     def _create_tables(self, conn: sqlite3.Connection) -> None:
         """Create database table structure"""
         self._create_kv_table(conn)
-        self._create_trigger_rule_table(conn)
         self._create_trigger_rule_v2_table(conn)
         self._create_trigger_rule_log_table(conn)
         self._create_model_vendor_table(conn)
@@ -149,85 +146,14 @@ class SQLiteConnector:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_kv_key ON kv(key)")
         logger.info("KV table created successfully")
 
-    def _create_trigger_rule_table(self, conn: sqlite3.Connection) -> None:
-        """Create trigger rule table"""
+    def _drop_trigger_rule_table(self, conn: sqlite3.Connection) -> None:
+        """Drop legacy v1 trigger_rule table and its indexes."""
         cursor = conn.cursor()
-
-        # Create trigger rule table for storing trigger rules
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS trigger_rule (
-                id TEXT PRIMARY KEY,  -- Use UUID as primary key, no longer auto-increment
-                name TEXT NOT NULL,
-                enabled BOOLEAN DEFAULT 1,
-                camera_dids TEXT NOT NULL,  -- JSON format storage for camera device ID list
-                ha_devices TEXT,            -- JSON format storage for Home Assistant device ID list
-                condition TEXT,             -- Trigger condition (nullable for detection mode)
-                trigger_entity_id TEXT,     -- Optional specific HA entity ID for direct/hybrid matching
-                execute_info TEXT,          -- JSON format storage for ExecuteInfo object
-                filter TEXT,                 -- JSON format storage for TriggerFilter object
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # Create indexes for trigger rule table to improve query performance
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_trigger_rule_name ON trigger_rule(name)"
-        )
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_trigger_rule_enabled ON trigger_rule(enabled)"
-        )
-
-        logger.info("Trigger rule table created successfully")
-
-    def _ensure_trigger_rule_columns(self, conn: sqlite3.Connection) -> None:
-        """Ensure trigger rule table has all required columns"""
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(trigger_rule)")
-        columns_info = cursor.fetchall()
-        columns = {row[1] for row in columns_info}
-
-        # Check if condition column has NOT NULL constraint (3rd column is notnull)
-        condition_not_null = False
-        for col in columns_info:
-            if col[1] == "condition" and col[3] == 1:  # col[3] is notnull flag
-                condition_not_null = True
-                break
-
-        if condition_not_null:
-            logger.info("Migrating condition column to allow NULL values")
-            self._migrate_condition_to_nullable(conn)
-            # Re-fetch columns after migration
-            cursor.execute("PRAGMA table_info(trigger_rule)")
-            columns_info = cursor.fetchall()
-            columns = {row[1] for row in columns_info}
-
-        if "ha_devices" not in columns:
-            logger.info("Adding ha_devices column to trigger_rule table")
-            cursor.execute("ALTER TABLE trigger_rule ADD COLUMN ha_devices TEXT")
-
-        if "condition_type" not in columns:
-            logger.info("Adding condition_type column to trigger_rule table")
-            cursor.execute("ALTER TABLE trigger_rule ADD COLUMN condition_type TEXT DEFAULT 'llm'")
-
-        if "ha_condition" not in columns:
-            logger.info("Adding ha_condition column to trigger_rule table")
-            cursor.execute("ALTER TABLE trigger_rule ADD COLUMN ha_condition TEXT")
-
-        if "trigger_entity_id" not in columns:
-            logger.info("Adding trigger_entity_id column to trigger_rule table")
-            cursor.execute("ALTER TABLE trigger_rule ADD COLUMN trigger_entity_id TEXT")
-
-        if "detection_condition" not in columns:
-            logger.info("Adding detection_condition column to trigger_rule table")
-            cursor.execute("ALTER TABLE trigger_rule ADD COLUMN detection_condition TEXT")
-
-        # Migrate old camera_condition to ha_condition if exists
-        if "camera_condition" in columns and "ha_condition" not in columns:
-            logger.info("Migrating camera_condition to ha_condition")
-            cursor.execute("ALTER TABLE trigger_rule RENAME COLUMN camera_condition TO ha_condition")
-
-        conn.commit()
+        # Indexes will be dropped automatically with table, but be explicit in case of odd DB states.
+        cursor.execute("DROP INDEX IF EXISTS idx_trigger_rule_name")
+        cursor.execute("DROP INDEX IF EXISTS idx_trigger_rule_enabled")
+        cursor.execute("DROP TABLE IF EXISTS trigger_rule")
+        logger.info("Legacy v1 table 'trigger_rule' dropped successfully")
 
     def _create_trigger_rule_v2_table(self, conn: sqlite3.Connection) -> None:
         """Create trigger rule v2 table."""
@@ -246,161 +172,6 @@ class SQLiteConnector:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_trigger_rule_v2_name ON trigger_rule_v2(name)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_trigger_rule_v2_enabled ON trigger_rule_v2(enabled)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_trigger_rule_v2_condition_type ON trigger_rule_v2(condition_type)")
-
-    def _migrate_condition_to_nullable(self, conn: sqlite3.Connection) -> None:
-        """
-        Migrate condition column from NOT NULL to nullable.
-        SQLite doesn't support ALTER TABLE to change column constraints,
-        so we need to recreate the table.
-        """
-        cursor = conn.cursor()
-
-        # Check if columns exist in old table
-        cursor.execute("PRAGMA table_info(trigger_rule)")
-        columns_info = cursor.fetchall()
-        column_names = {row[1] for row in columns_info}
-        has_detection_condition = "detection_condition" in column_names
-        has_condition_type = "condition_type" in column_names
-        has_ha_condition = "ha_condition" in column_names
-        has_trigger_entity_id = "trigger_entity_id" in column_names
-
-        # Start transaction
-        cursor.execute("BEGIN TRANSACTION")
-
-        try:
-            # Rename old table
-            cursor.execute("ALTER TABLE trigger_rule RENAME TO trigger_rule_old")
-
-            # Create new table with nullable condition
-            if has_detection_condition:
-                cursor.execute("""
-                    CREATE TABLE trigger_rule (
-                        id TEXT PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        enabled BOOLEAN DEFAULT 1,
-                        camera_dids TEXT NOT NULL,
-                        ha_devices TEXT,
-                        condition TEXT,
-                        condition_type TEXT DEFAULT 'llm',
-                        ha_condition TEXT,
-                        trigger_entity_id TEXT,
-                        detection_condition TEXT,
-                        execute_info TEXT,
-                        filter TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-            else:
-                cursor.execute("""
-                    CREATE TABLE trigger_rule (
-                        id TEXT PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        enabled BOOLEAN DEFAULT 1,
-                        camera_dids TEXT NOT NULL,
-                        ha_devices TEXT,
-                        condition TEXT,
-                        condition_type TEXT DEFAULT 'llm',
-                        ha_condition TEXT,
-                        trigger_entity_id TEXT,
-                        execute_info TEXT,
-                        filter TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-
-            # Copy data from old table
-            trigger_entity_selector = "trigger_entity_id" if has_trigger_entity_id else "NULL"
-            if has_detection_condition and has_condition_type:
-                if has_ha_condition:
-                    cursor.execute(f"""
-                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, ha_condition, trigger_entity_id, detection_condition, execute_info, filter, created_at, updated_at)
-                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, ha_condition, {trigger_entity_selector},
-                               detection_condition, execute_info, filter, created_at, updated_at
-                        FROM trigger_rule_old
-                    """)
-                else:
-                    cursor.execute(f"""
-                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, ha_condition, trigger_entity_id, detection_condition, execute_info, filter, created_at, updated_at)
-                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, NULL, {trigger_entity_selector},
-                               detection_condition, execute_info, filter, created_at, updated_at
-                        FROM trigger_rule_old
-                    """)
-            elif has_detection_condition:
-                # Old table doesn't have condition_type column
-                if has_ha_condition:
-                    cursor.execute(f"""
-                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, ha_condition, trigger_entity_id, detection_condition, execute_info, filter, created_at, updated_at)
-                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                               'llm', ha_condition, {trigger_entity_selector},
-                               detection_condition, execute_info, filter, created_at, updated_at
-                        FROM trigger_rule_old
-                    """)
-                else:
-                    cursor.execute(f"""
-                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, ha_condition, trigger_entity_id, detection_condition, execute_info, filter, created_at, updated_at)
-                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                               'llm', NULL, {trigger_entity_selector},
-                               detection_condition, execute_info, filter, created_at, updated_at
-                        FROM trigger_rule_old
-                    """)
-            elif has_condition_type:
-                if has_ha_condition:
-                    cursor.execute(f"""
-                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, ha_condition, trigger_entity_id, execute_info, filter, created_at, updated_at)
-                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, ha_condition, {trigger_entity_selector}, execute_info, filter, created_at, updated_at
-                        FROM trigger_rule_old
-                    """)
-                else:
-                    cursor.execute(f"""
-                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, ha_condition, trigger_entity_id, execute_info, filter, created_at, updated_at)
-                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, NULL, {trigger_entity_selector}, execute_info, filter, created_at, updated_at
-                        FROM trigger_rule_old
-                    """)
-            else:
-                # Old table doesn't have condition_type or detection_condition columns
-                if has_ha_condition:
-                    cursor.execute(f"""
-                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, ha_condition, trigger_entity_id, execute_info, filter, created_at, updated_at)
-                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                               'llm', ha_condition, {trigger_entity_selector}, execute_info, filter, created_at, updated_at
-                        FROM trigger_rule_old
-                    """)
-                else:
-                    cursor.execute(f"""
-                        INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition,
-                               condition_type, ha_condition, trigger_entity_id, execute_info, filter, created_at, updated_at)
-                        SELECT id, name, enabled, camera_dids, ha_devices, condition,
-                               'llm', NULL, {trigger_entity_selector}, execute_info, filter, created_at, updated_at
-                        FROM trigger_rule_old
-                    """)
-
-            # Drop old table
-            cursor.execute("DROP TABLE trigger_rule_old")
-
-            # Recreate indexes
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_trigger_rule_name ON trigger_rule(name)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_trigger_rule_enabled ON trigger_rule(enabled)")
-
-            cursor.execute("COMMIT")
-            logger.info("Successfully migrated condition column to nullable")
-
-        except Exception as e:
-            cursor.execute("ROLLBACK")
-            logger.error("Failed to migrate condition column: %s", e)
-            raise
 
     def _create_model_vendor_table(self, conn: sqlite3.Connection) -> None:
         """Create model vendor table"""

@@ -98,3 +98,8 @@ export const enrollFace = (data) => postApi('/api/face/library/enroll', data, 60
 export const listFaceProfiles = () => getApi('/api/face/library/list');
 export const deleteFaceProfile = (profileId) => deleteApi(`/api/face/library/${profileId}`);
 export const searchFaces = (data) => postApi('/api/face/search', data, 60000);
+
+// Xiaomi Bridge API
+export const getXiaomiBridgeDevices = () => getApi('/api/xiaomi-bridge/devices');
+export const getXiaomiBridgeDevice = (clientId) => getApi(`/api/xiaomi-bridge/devices/${clientId}`);
+export const sendXiaomiBridgeSpeak = (data) => postApi('/api/xiaomi-bridge/speak', data);

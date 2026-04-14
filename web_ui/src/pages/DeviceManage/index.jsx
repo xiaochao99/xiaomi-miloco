@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Tabs, Spin, Empty } from 'antd';
 import { Header, Icon } from '@/components';
-import { DeviceList, HADeviceList, RTSPCameraList, RTSPCameraModal } from './components';
+import { DeviceList, HADeviceList, RTSPCameraList, RTSPCameraModal, XiaoAIDeviceList } from './components';
 import { useDevices } from './hooks/useDevices';
 import { useHADevices } from './hooks/useHADevices';
 import { useRTSPCameras } from './hooks/useRTSPCameras';
@@ -98,6 +98,11 @@ const DeviceManage = () => {
           onToggleEnable={toggleCameraEnable}
         />
       )
+    },
+    {
+      key: 'xiaoai',
+      label: t('deviceManage.xiaoaiDevices'),
+      children: <XiaoAIDeviceList />
     }
   ];
 

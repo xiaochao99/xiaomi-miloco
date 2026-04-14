@@ -8,7 +8,7 @@ import { Select, Input, Button, Checkbox, Form, Tooltip, Spin, message, Switch, 
 const { Option } = Select;
 import { QuestionCircleOutlined, ReloadOutlined, UpOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { refreshHaAutomation } from '@/api';
+import { refreshHaAutomation, getXiaomiBridgeDevices } from '@/api';
 import TimeSelector from '@/components/TimeSelector';
 import DetectionConditionForm from '@/components/DetectionConditionForm';
 import {
@@ -93,6 +93,9 @@ const [form] = Form.useForm();
   const [enableXiaoAIBroadcast, setEnableXiaoAIBroadcast] = useState(false);
   const [xiaoaiBroadcastMode, setXiaoaiBroadcastMode] = useState('text');
   const [xiaoaiBroadcastText, setXiaoaiBroadcastText] = useState('');
+  const [xiaoaiDevices, setXiaoaiDevices] = useState([]);
+  const [selectedXiaoaiDevices, setSelectedXiaoaiDevices] = useState([]);
+  const [xiaoaiDevicesLoading, setXiaoaiDevicesLoading] = useState(false);
 
   const [triggerDeviceOptions, setTriggerDeviceOptions] = useState([]);
   const [haDeviceEntitiesMap, setHaDeviceEntitiesMap] = useState({});
@@ -107,6 +110,24 @@ const [form] = Form.useForm();
     }
     fetchHaEntityNameMap?.();
   }, [passedHaDeviceOptions, fetchHaDeviceOptions, globalHaFetched, fetchHaEntityNameMap]);
+
+  const fetchXiaoaiDevices = async () => {
+    setXiaoaiDevicesLoading(true);
+    try {
+      const response = await getXiaomiBridgeDevices();
+      if (response?.code === 0) {
+        setXiaoaiDevices(response.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch XiaoAI devices:', error);
+    } finally {
+      setXiaoaiDevicesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchXiaoaiDevices();
+  }, []);
 
   useEffect(() => {
     const newOptions = [];
@@ -360,10 +381,12 @@ useEffect(() => {
         setEnableXiaoAIBroadcast(true);
         setXiaoaiBroadcastMode(formData.xiaoai_broadcast.mode || 'text');
         setXiaoaiBroadcastText(formData.xiaoai_broadcast.text || '');
+        setSelectedXiaoaiDevices(formData.xiaoai_broadcast.device_ids || []);
       } else {
         setEnableXiaoAIBroadcast(false);
         setXiaoaiBroadcastMode('text');
         setXiaoaiBroadcastText('');
+        setSelectedXiaoaiDevices([]);
       }
 
       setCheckedMcpServices(formData.mcp_list?.map(mcp => `${mcp?.server_name}#${mcp?.client_id}`) || []);
@@ -565,6 +588,7 @@ useEffect(() => {
       xiaoai_broadcast: enableXiaoAIBroadcast ? {
         mode: xiaoaiBroadcastMode,
         text: xiaoaiBroadcastMode === 'text' ? xiaoaiBroadcastText.trim() : null,
+        device_ids: selectedXiaoaiDevices.length > 0 ? selectedXiaoaiDevices : null,
       } : null,
       filter: {
         triggerPeriod,
@@ -1109,6 +1133,28 @@ useEffect(() => {
                     { label: t('smartCenter.xiaoaiBroadcastModelMode'), value: 'model_reply' },
                   ]}
                 />
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: '13px', color: 'var(--text-color-4)', marginBottom: 4 }}>
+                    {t('smartCenter.selectXiaoAIDevices') || '选择播放设备'}
+                    <span style={{ color: '#999', marginLeft: 4 }}>
+                      ({t('smartCenter.emptyForAll') || '空为全部'})
+                    </span>
+                  </div>
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder={t('smartCenter.pleaseSelectXiaoAIDevices') || '请选择小爱音箱设备'}
+                    value={selectedXiaoaiDevices}
+                    onChange={setSelectedXiaoaiDevices}
+                    disabled={isSubmitDisabled}
+                    style={{ width: '100%' }}
+                    options={xiaoaiDevices.map(device => ({
+                      label: device.device_name || device.client_id?.slice(0, 8) + '...',
+                      value: device.client_id,
+                    }))}
+                    loading={xiaoaiDevicesLoading}
+                  />
+                </div>
                 {xiaoaiBroadcastMode === 'text' && (
                   <Input.TextArea
                     placeholder={t('smartCenter.pleaseEnterXiaoAIBroadcastText')}

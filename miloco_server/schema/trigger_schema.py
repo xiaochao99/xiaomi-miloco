@@ -57,6 +57,9 @@ class XiaoAIBroadcast(BaseModel):
     text: Optional[str] = Field(
         None, description="Text to play when mode=text"
     )
+    device_ids: Optional[List[str]] = Field(
+        None, description="List of device IDs to broadcast to. If None, broadcasts to all connected devices."
+    )
 
 
 class ExecuteInfo(BaseModel):

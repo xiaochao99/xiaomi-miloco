@@ -13,7 +13,7 @@ import asyncio
 import logging
 import uuid
 
-from schema.mcp_schema import CallToolResult
+from miloco_server.schema.mcp_schema import CallToolResult
 from thespian.actors import ActorExitRequest
 
 from miloco_server import actor_system
@@ -34,7 +34,7 @@ from miloco_server.schema.trigger_log_schema import (
 from miloco_server.schema.trigger_schema import (
     Action, TriggerRule, ExecuteType, ConditionType, XiaoAIBroadcastMode
 )
-from miloco_server.service.xiaoai_broadcast_service import broadcast_text
+from miloco_server.service.xiaoai_broadcast_service import broadcast_via_bridge
 from miloco_server.utils.check_img_motion import check_camera_motion
 from miloco_server.utils.direct_condition_checker import direct_condition_checker
 from miloco_server.utils.local_models import ModelPurpose
@@ -42,8 +42,8 @@ from miloco_server.utils.normal_util import extract_json_from_content
 from miloco_server.utils.prompt_helper import TriggerRuleConditionPromptBuilder
 from miloco_server.utils.trigger_filter import trigger_filter
 from miloco_server.detection.trigger_integration import get_detection_trigger_integration
-from service import trigger_rule_dynamic_executor_cache
-from service.trigger_rule_dynamic_executor import START, TriggerRuleDynamicExecutor
+from miloco_server.service import trigger_rule_dynamic_executor_cache
+from miloco_server.service.trigger_rule_dynamic_executor import START, TriggerRuleDynamicExecutor
 
 logger = logging.getLogger(name=__name__)
 
@@ -285,10 +285,13 @@ class TriggerRuleRunner:
         if rule.trigger_entity_id != changed_entity_id:
             return False
 
+        # Use ha_condition for direct mode, fallback to condition for backward compatibility
+        ha_check_condition = rule.ha_condition if rule.ha_condition else rule.condition
+
         old_matches = False
         if old_state:
             old_matches = direct_condition_checker.evaluate(
-                rule.condition or "",
+                ha_check_condition or "",
                 {changed_entity_id: old_state},
                 rule.trigger_entity_id,
             )
@@ -296,7 +299,7 @@ class TriggerRuleRunner:
         new_matches = False
         if new_state:
             new_matches = direct_condition_checker.evaluate(
-                rule.condition or "",
+                ha_check_condition or "",
                 {changed_entity_id: new_state},
                 rule.trigger_entity_id,
             )
@@ -1268,12 +1271,18 @@ class TriggerRuleRunner:
             if not cfg:
                 return False
 
+            # Get target device IDs (if specified)
+            device_ids = cfg.device_ids if hasattr(cfg, 'device_ids') else None
+
             if cfg.mode == XiaoAIBroadcastMode.TEXT:
                 text = (cfg.text or "").strip()
                 if not text:
                     logger.warning("Rule %s XiaoAI broadcast skipped: empty text", rule.name)
                     return False
-                result = await broadcast_text(text, require_enabled=False)
+
+                # Prefer integrated Xiaomi Bridge (open-xiaoai client-rust RPC). If device_ids is None, broadcast to all.
+                result = await broadcast_via_bridge(text, device_ids)
+
                 logger.info("Rule %s XiaoAI text broadcast result: %s", rule.name, result)
                 return result
 
@@ -1296,7 +1305,9 @@ class TriggerRuleRunner:
                     logger.warning("Rule %s XiaoAI model_reply skipped: empty model response", rule.name)
                     return False
 
-                result = await broadcast_text(content, require_enabled=False)
+                # Prefer integrated Xiaomi Bridge (open-xiaoai client-rust RPC).
+                result = await broadcast_via_bridge(content, device_ids)
+
                 logger.info("Rule %s XiaoAI model_reply broadcast result: %s", rule.name, result)
                 return result
 

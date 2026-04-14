@@ -480,6 +480,7 @@ export default {
   deviceManage: {
     fetchDeviceListFailed: 'Failed to get device list',
     refreshDeviceListFailed: 'Failed to refresh device list',
+    fetchFailed: 'Failed to fetch data',
     noDevice: 'No devices',
     noHADevice: 'No HA devices',
     miotDevices: 'Mi Home Devices',
