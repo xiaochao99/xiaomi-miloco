@@ -378,6 +378,7 @@ export default {
     cameraConditionExample2: '房间里是否有人在移动？',
     cameraConditionExample3: '沙发上是否有宠物？',
     examples: '示例：',
+    onlyOneHaDeviceAllowed: '仅支持选择一个 HA 设备作为生效设备',
   },
   executionManage: {
     miHomeAutomationExecution: '米家自动化',

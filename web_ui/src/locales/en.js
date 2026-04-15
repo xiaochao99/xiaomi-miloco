@@ -374,6 +374,7 @@ export default {
     cameraConditionExample2: 'Is there a person moving in the room?',
     cameraConditionExample3: 'Is there a pet on the sofa?',
     examples: 'Examples:',
+    onlyOneHaDeviceAllowed: 'Only one HA device is allowed as the trigger device',
   },
   executionManage: {
     miHomeAutomationExecution: 'Xiaomi Home Automation',
