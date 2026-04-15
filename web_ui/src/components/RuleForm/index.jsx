@@ -4,11 +4,11 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Select, Input, Button, Checkbox, Form, Tooltip, Spin, message, Switch, Segmented, Space, Modal, InputNumber } from 'antd';
+import { Select, Input, Button, Checkbox, Form, Tooltip, Spin, message, Switch, Segmented, InputNumber } from 'antd';
 const { Option } = Select;
 import { QuestionCircleOutlined, ReloadOutlined, UpOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { refreshHaAutomation, getXiaomiBridgeDevices } from '@/api';
+import { refreshHaAutomation, getXiaomiBridgeDevices, getHADeviceList, getHAEntityStateOptions } from '@/api';
 import TimeSelector from '@/components/TimeSelector';
 import DetectionConditionForm from '@/components/DetectionConditionForm';
 import {
@@ -99,10 +99,9 @@ const [form] = Form.useForm();
 
   const [triggerDeviceOptions, setTriggerDeviceOptions] = useState([]);
   const [haDeviceEntitiesMap, setHaDeviceEntitiesMap] = useState({});
+  const [haEntityStateMetaMap, setHaEntityStateMetaMap] = useState({});
+  const [entityStateOptionsMap, setEntityStateOptionsMap] = useState({});
   const [wizardStep, setWizardStep] = useState('trigger');
-  const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [templateType, setTemplateType] = useState(null); // 'temperature' | 'humidity'
-  const [templateThreshold, setTemplateThreshold] = useState(25);
 
   useEffect(() => {
     if (passedHaDeviceOptions?.length === 0 && !globalHaFetched) {
@@ -127,6 +126,32 @@ const [form] = Form.useForm();
 
   useEffect(() => {
     fetchXiaoaiDevices();
+  }, []);
+
+  useEffect(() => {
+    const fetchHaEntityStateMeta = async () => {
+      try {
+        const resp = await getHADeviceList();
+        if (resp?.code !== 0 || !Array.isArray(resp?.data)) {
+          return;
+        }
+        const nextMap = {};
+        resp.data.forEach((item) => {
+          const entityId = item?.entity_id || item?.did;
+          if (!entityId) {
+            return;
+          }
+          nextMap[entityId] = {
+            state: item?.state,
+            attributes: item?.attributes || {},
+          };
+        });
+        setHaEntityStateMetaMap(nextMap);
+      } catch (err) {
+        console.error('Failed to fetch HA entity state meta:', err);
+      }
+    };
+    fetchHaEntityStateMeta();
   }, []);
 
   useEffect(() => {
@@ -173,13 +198,28 @@ const [form] = Form.useForm();
     setTriggerDeviceOptions(newOptions);
   }, [cameraOptions, passedHaDeviceOptions, globalHaDeviceOptions, t, mode]);
 
+  const triggerDeviceTypeMap = useMemo(() => {
+    const map = new Map();
+    (triggerDeviceOptions || []).forEach((group) => {
+      (group?.options || []).forEach((option) => {
+        map.set(option.value, option._type);
+      });
+    });
+    return map;
+  }, [triggerDeviceOptions]);
+
   const triggerEntityOptions = useMemo(() => {
+    const allowedDomains = new Set(['switch', 'light', 'sensor', 'binary_sensor']);
     const selectedDevices = form.getFieldValue('trigger_devices') || [];
     const entities = [];
     const seen = new Set();
     selectedDevices.forEach((did) => {
       const deviceEntities = haDeviceEntitiesMap[did] || [];
       deviceEntities.forEach((entityId) => {
+        const domain = typeof entityId === 'string' ? entityId.split('.')[0] : '';
+        if (!allowedDomains.has(domain)) {
+          return;
+        }
         if (!seen.has(entityId)) {
           seen.add(entityId);
           const friendly = haEntityNameMap?.[entityId];
@@ -198,73 +238,121 @@ const [form] = Form.useForm();
     }
     return selectedTriggerEntityId.split('.')[0] || null;
   }, [selectedTriggerEntityId]);
+  const isNumericTriggerEntity = triggerEntityDomain === 'sensor';
+  const [numericOperator, setNumericOperator] = useState('>');
+  const [numericThreshold, setNumericThreshold] = useState(null);
 
-  const applyHaConditionTemplate = (expr) => {
-    form.setFieldsValue({ ha_condition: expr });
+  useEffect(() => {
+    const fetchEntityStateOptions = async () => {
+      if (!selectedTriggerEntityId) {
+        return;
+      }
+      if (entityStateOptionsMap[selectedTriggerEntityId]) {
+        return;
+      }
+      try {
+        const resp = await getHAEntityStateOptions(selectedTriggerEntityId);
+        if (resp?.code === 0 && resp?.data?.options) {
+          const options = Array.isArray(resp.data.options) ? resp.data.options : [];
+          setEntityStateOptionsMap((prev) => ({
+            ...prev,
+            [selectedTriggerEntityId]: options,
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch entity state options:', err);
+      }
+    };
+    fetchEntityStateOptions();
+  }, [selectedTriggerEntityId, entityStateOptionsMap]);
+
+  const selectableStateValues = useMemo(() => {
+    if (selectedTriggerEntityId && entityStateOptionsMap[selectedTriggerEntityId]) {
+      return entityStateOptionsMap[selectedTriggerEntityId]
+        .map((item) => (typeof item === 'string' ? item : item?.value))
+        .filter(Boolean);
+    }
+
+    const targetEntities = selectedTriggerEntityId
+      ? [selectedTriggerEntityId]
+      : triggerEntityOptions.map((opt) => opt.value);
+
+    const values = new Set();
+    const attributeListKeys = [
+      'options',
+      'hvac_modes',
+      'preset_modes',
+      'fan_modes',
+      'swing_modes',
+      'source_list',
+      'effect_list',
+    ];
+
+    targetEntities.forEach((entityId) => {
+      const meta = haEntityStateMetaMap?.[entityId];
+      if (!meta) {
+        return;
+      }
+
+      const currentState = meta.state;
+      if (currentState !== undefined && currentState !== null && String(currentState).trim()) {
+        values.add(String(currentState).trim());
+      }
+
+      const attrs = meta.attributes || {};
+      attributeListKeys.forEach((key) => {
+        const arr = attrs[key];
+        if (Array.isArray(arr)) {
+          arr.forEach((v) => {
+            if (v !== undefined && v !== null && String(v).trim()) {
+              values.add(String(v).trim());
+            }
+          });
+        }
+      });
+    });
+
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
+  }, [selectedTriggerEntityId, triggerEntityOptions, haEntityStateMetaMap, entityStateOptionsMap]);
+
+  const buildStateCondition = (stateValue) => {
+    const safeValue = String(stateValue).replace(/"/g, '\\"');
+    return `state == "${safeValue}"`;
   };
+  const haConditionOptions = useMemo(
+    () => selectableStateValues.map((stateValue) => ({
+      label: stateValue,
+      value: buildStateCondition(stateValue),
+    })),
+    [selectableStateValues]
+  );
 
-  const openNumericTemplate = (type) => {
-    setTemplateType(type);
-    setTemplateThreshold(type === 'humidity' ? 60 : 25);
-    setTemplateModalOpen(true);
-  };
-
-  const confirmNumericTemplate = () => {
-    if (!templateType) {
-      setTemplateModalOpen(false);
+  useEffect(() => {
+    if (!isNumericTriggerEntity) {
       return;
     }
-    const field = templateType;
-    applyHaConditionTemplate(`${field} > ${templateThreshold}`);
-    setTemplateModalOpen(false);
-  };
+    const raw = form.getFieldValue('ha_condition');
+    if (!raw || typeof raw !== 'string') {
+      return;
+    }
+    const matched = raw.match(/^\s*state\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/);
+    if (!matched) {
+      return;
+    }
+    const op = matched[1];
+    const num = Number(matched[2]);
+    if (!Number.isNaN(num)) {
+      setNumericOperator(op);
+      setNumericThreshold(num);
+    }
+  }, [isNumericTriggerEntity, form, selectedTriggerEntityId]);
 
-  const renderDirectTemplates = () => {
-    const isBinaryLike = ['switch', 'light', 'binary_sensor', 'fan', 'lock', 'cover'].includes(triggerEntityDomain);
-    const isSensorLike = ['sensor', 'climate', 'weather'].includes(triggerEntityDomain);
-    const showState = !triggerEntityDomain || isBinaryLike || !isSensorLike;
-    const showNumeric = !triggerEntityDomain || isSensorLike;
-
-    return (
-      <Space wrap>
-        {showState && (
-          <>
-            <Button
-              size="small"
-              disabled={isReadonly || loading}
-              onClick={() => applyHaConditionTemplate('state == on')}
-            >
-              {t('smartCenter.templateStateOn') || 'state == on'}
-            </Button>
-            <Button
-              size="small"
-              disabled={isReadonly || loading}
-              onClick={() => applyHaConditionTemplate('state in [on,open]')}
-            >
-              {t('smartCenter.templateStateIn') || 'state in [...]'}
-            </Button>
-          </>
-        )}
-        {showNumeric && (
-          <>
-            <Button
-              size="small"
-              disabled={isReadonly || loading}
-              onClick={() => openNumericTemplate('temperature')}
-            >
-              {t('smartCenter.templateTemperature') || 'temperature > x'}
-            </Button>
-            <Button
-              size="small"
-              disabled={isReadonly || loading}
-              onClick={() => openNumericTemplate('humidity')}
-            >
-              {t('smartCenter.templateHumidity') || 'humidity > x'}
-            </Button>
-          </>
-        )}
-      </Space>
-    );
+  const handleNumericConditionChange = (nextOperator, nextThreshold) => {
+    if (nextThreshold === null || nextThreshold === undefined || Number.isNaN(nextThreshold)) {
+      form.setFieldsValue({ ha_condition: '' });
+      return;
+    }
+    form.setFieldsValue({ ha_condition: `state ${nextOperator} ${nextThreshold}` });
   };
 
   const [checkedMcpServices, setCheckedMcpServices] = useState([]);
@@ -491,6 +579,12 @@ useEffect(() => {
       message.error(t('smartCenter.pleaseSelectTriggerEntity') || '请选择用于判断状态的实体');
       return false;
     }
+    const selectedDeviceIds = values.trigger_devices || [];
+    const selectedHaCount = selectedDeviceIds.filter((id) => triggerDeviceTypeMap.get(id) === 'ha').length;
+    if (selectedHaCount > 1) {
+      message.error(t('smartCenter.onlyOneHaDeviceAllowed') || '仅支持选择一个 HA 设备作为生效设备');
+      return false;
+    }
     if (conditionType !== 'direct' && conditionType !== 'detection' && conditionType !== 'face_recognition'
       && !String(values.condition || '').trim()) {
       message.error(t('smartCenter.pleaseEnterTriggerCondition'));
@@ -568,6 +662,11 @@ useEffect(() => {
       }
     });
 
+    if (conditionType === 'direct' && cameras.length > 0) {
+      message.error(t('smartCenter.directModeCameraNotSupported') || 'Direct 模式不支持摄像头，请仅选择 HA 设备');
+      return false;
+    }
+
     const formData = {
       name: String(values.name || '').trim(),
       cameras,
@@ -631,6 +730,16 @@ useEffect(() => {
 
   const handleFormValuesChange = (changedValues) => {
     if ('trigger_devices' in changedValues) {
+      const selectedIds = changedValues.trigger_devices || [];
+      const selectedHaIds = selectedIds.filter((id) => triggerDeviceTypeMap.get(id) === 'ha');
+      if (selectedHaIds.length > 1) {
+        const keptHaId = selectedHaIds[selectedHaIds.length - 1];
+        const nonHaIds = selectedIds.filter((id) => triggerDeviceTypeMap.get(id) !== 'ha');
+        form.setFieldsValue({ trigger_devices: [...nonHaIds, keptHaId] });
+        message.warning(t('smartCenter.onlyOneHaDeviceAllowed') || '仅支持选择一个 HA 设备作为生效设备');
+        return;
+      }
+
       setAiRecommendActions([]);
       setAiRecommendExecuteType('dynamic');
       const selectedEntity = form.getFieldValue('trigger_entity_id');
@@ -643,28 +752,6 @@ useEffect(() => {
   const isSubmitDisabled = isReadonly || loading;
   return (
     <Form form={form} layout="vertical" onValuesChange={handleFormValuesChange}>
-      <Modal
-        open={templateModalOpen}
-        title={t('smartCenter.templateSetThreshold') || '设置阈值'}
-        onOk={confirmNumericTemplate}
-        onCancel={() => setTemplateModalOpen(false)}
-        okText={t('common.confirm') || '确定'}
-        cancelText={t('common.cancel') || '取消'}
-        destroyOnClose
-      >
-        <div style={{ marginBottom: 8 }}>
-          {templateType === 'humidity'
-            ? (t('smartCenter.templateHumidityHint') || '生成：humidity > 60')
-            : (t('smartCenter.templateTemperatureHint') || '生成：temperature > 25')}
-        </div>
-        <InputNumber
-          style={{ width: '100%' }}
-          min={-100}
-          max={1000}
-          value={templateThreshold}
-          onChange={(v) => setTemplateThreshold(typeof v === 'number' ? v : templateThreshold)}
-        />
-      </Modal>
       <Form.Item>
         <Segmented
           block
@@ -834,15 +921,47 @@ useEffect(() => {
           name="ha_condition"
           rules={[{ required: true, message: t('smartCenter.pleaseEnterTriggerCondition') }]}
         >
-          <div>
-            <Input
-              placeholder="例如：state == on"
-              disabled={isReadonly || loading}
-            />
-            <div style={{ marginTop: 8 }}>
-              {renderDirectTemplates()}
+          {isNumericTriggerEntity ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Select
+                style={{ width: 120 }}
+                value={numericOperator}
+                disabled={isReadonly || loading || !selectedTriggerEntityId}
+                options={[
+                  { label: '>', value: '>' },
+                  { label: '>=', value: '>=' },
+                  { label: '<', value: '<' },
+                  { label: '<=', value: '<=' },
+                  { label: '==', value: '==' },
+                  { label: '!=', value: '!=' },
+                ]}
+                onChange={(op) => {
+                  setNumericOperator(op);
+                  handleNumericConditionChange(op, numericThreshold);
+                }}
+              />
+              <InputNumber
+                style={{ flex: 1 }}
+                placeholder="请输入数值"
+                value={numericThreshold}
+                disabled={isReadonly || loading || !selectedTriggerEntityId}
+                onChange={(val) => {
+                  const nextVal = typeof val === 'number' ? val : null;
+                  setNumericThreshold(nextVal);
+                  handleNumericConditionChange(numericOperator, nextVal);
+                }}
+              />
             </div>
-          </div>
+          ) : (
+            <Select
+              allowClear
+              showSearch
+              placeholder={t('smartCenter.selectEntityState') || '请选择设备状态'}
+              disabled={isReadonly || loading || !selectedTriggerEntityId}
+              options={haConditionOptions}
+              optionFilterProp="label"
+            />
+          )}
         </Form.Item>
       )}
 
@@ -873,15 +992,47 @@ useEffect(() => {
           name="ha_condition"
           rules={[{ required: true, message: t('smartCenter.pleaseEnterTriggerCondition') }]}
         >
-          <div>
-            <Input
-              placeholder="例如：state == on"
-              disabled={isReadonly || loading}
-            />
-            <div style={{ marginTop: 8 }}>
-              {renderDirectTemplates()}
+          {isNumericTriggerEntity ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Select
+                style={{ width: 120 }}
+                value={numericOperator}
+                disabled={isReadonly || loading || !selectedTriggerEntityId}
+                options={[
+                  { label: '>', value: '>' },
+                  { label: '>=', value: '>=' },
+                  { label: '<', value: '<' },
+                  { label: '<=', value: '<=' },
+                  { label: '==', value: '==' },
+                  { label: '!=', value: '!=' },
+                ]}
+                onChange={(op) => {
+                  setNumericOperator(op);
+                  handleNumericConditionChange(op, numericThreshold);
+                }}
+              />
+              <InputNumber
+                style={{ flex: 1 }}
+                placeholder="请输入阈值"
+                value={numericThreshold}
+                disabled={isReadonly || loading || !selectedTriggerEntityId}
+                onChange={(val) => {
+                  const nextVal = typeof val === 'number' ? val : null;
+                  setNumericThreshold(nextVal);
+                  handleNumericConditionChange(numericOperator, nextVal);
+                }}
+              />
             </div>
-          </div>
+          ) : (
+            <Select
+              allowClear
+              showSearch
+              placeholder={t('smartCenter.selectEntityState') || '请选择设备状态'}
+              disabled={isReadonly || loading || !selectedTriggerEntityId}
+              options={haConditionOptions}
+              optionFilterProp="label"
+            />
+          )}
         </Form.Item>
       )}
 

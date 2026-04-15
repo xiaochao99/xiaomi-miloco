@@ -292,7 +292,7 @@ async def tts(request: TTSRequest, _current_user: str = Depends(_verify_xiaomi_b
         engine = tts.engine
         logger.info(f"[TTS] Using engine: {engine}")
 
-        ok = await tts.speak(request.text, request.speaker_id)
+        ok = await tts.speak(request.text, request.speaker_id, client_ids=request.client_ids)
         if not ok:
             return {"code": -1, "message": f"{engine} TTS speak failed"}
 

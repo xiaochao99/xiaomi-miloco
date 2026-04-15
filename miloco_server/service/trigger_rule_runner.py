@@ -931,33 +931,40 @@ class TriggerRuleRunner:
         logger.info("Device states: %s", {k: v.get("state") for k, v in rule_device_states.items()})
         logger.info("=" * 60)
 
-        # Find the trigger entity
+        # Direct mode should not depend on having a "_is_trigger_source" marker.
+        # Prefer explicit trigger_entity_id if configured; otherwise evaluate against all entities.
         trigger_entity_id = None
-        for entity_id, state_info in rule_device_states.items():
-            if state_info.get("_is_trigger_source", False):
-                trigger_entity_id = entity_id
-                break
 
-        if not trigger_entity_id:
-            logger.warning("No trigger source found for rule %s", rule.name)
-            return [TriggerConditionResult(
-                camera_info=None,
-                channel=0,
-                result=False,
-                images=None
-            )]
+        # 1) Prefer configured trigger entity (direct/hybrid form field)
+        if getattr(rule, "trigger_entity_id", None) and rule.trigger_entity_id in rule_device_states:
+            trigger_entity_id = rule.trigger_entity_id
+        else:
+            # 2) Fall back to the entity that triggered this check (if any)
+            for entity_id, state_info in rule_device_states.items():
+                if state_info.get("_is_trigger_source", False):
+                    trigger_entity_id = entity_id
+                    break
 
-        # Use direct condition checker (synchronous, no await needed)
+        # Use ha_condition for direct mode, fallback to condition for backward compatibility
+        ha_check_condition = rule.ha_condition if rule.ha_condition else rule.condition
+        if not ha_check_condition:
+            logger.warning("Direct mode rule %s has empty condition, skipping", rule.name)
+            return [TriggerConditionResult(camera_info=None, channel=0, result=False, images=None)]
+
+        # Use direct condition checker (synchronous)
         result = direct_condition_checker.evaluate(
-            rule.condition,
+            ha_check_condition,
             rule_device_states,
-            rule.trigger_entity_id or trigger_entity_id
+            trigger_entity_id,
         )
 
         logger.info(
-            "Direct condition check result for rule %s: %s (condition: %s, state: %s)",
-            rule.name, result, rule.condition,
-            rule_device_states.get(trigger_entity_id, {}).get("state", "unknown")
+            "Direct condition check result for rule %s: %s (condition: %s, entity: %s, state: %s)",
+            rule.name,
+            result,
+            ha_check_condition,
+            trigger_entity_id,
+            rule_device_states.get(trigger_entity_id, {}).get("state", "unknown") if trigger_entity_id else "n/a",
         )
 
         # Return single result (no camera context for direct mode)

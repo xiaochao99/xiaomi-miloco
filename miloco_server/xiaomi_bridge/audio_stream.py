@@ -16,6 +16,7 @@ from typing import Optional, Dict, Set, Any
 from dataclasses import dataclass, field
 import json
 import uuid
+import time as _time
 from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,10 @@ class ConnectedDevice:
     last_command_result_at: float = 0.0
     playback_started: bool = False
     recording_started: bool = False
+    # Play stream channel (server -> device): single queue + single sender loop
+    play_queue: "asyncio.Queue[tuple[int, bytes]]" = field(default_factory=asyncio.Queue, repr=False)
+    play_sender_task: Optional[asyncio.Task] = field(default=None, repr=False)
+    play_session_id: int = 0
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典用于API返回"""
@@ -89,6 +94,12 @@ class AudioStreamManager:
         # 设备信息缓存（持久化存储）
         self._device_info_cache: Dict[str, Dict[str, Any]] = {}
         self._load_device_info()
+        # Playback pacing (single-channel) tuning
+        self._play_sample_rate = int(os.getenv("MILOCO_XIAOAI_PLAY_SAMPLE_RATE", "24000"))
+        self._play_bytes_per_sample = int(os.getenv("MILOCO_XIAOAI_PLAY_BYTES_PER_SAMPLE", "2"))
+        self._play_max_ahead_ms = int(os.getenv("MILOCO_XIAOAI_PLAY_MAX_AHEAD_MS", "1500"))
+        self._play_pacing_enabled = os.getenv("MILOCO_XIAOAI_PLAY_PACING", "1").strip().lower() in ("1", "true", "yes", "on")
+        self._play_direct_send = os.getenv("MILOCO_XIAOAI_PLAY_DIRECT_SEND", "0").strip().lower() in ("1", "true", "yes", "on")
     
     def _load_device_info(self):
         """从本地存储加载设备信息"""
@@ -247,6 +258,8 @@ class AudioStreamManager:
         try:
             # Start a per-device command sender loop (text frames).
             device.sender_task = asyncio.create_task(self._command_sender_loop(device))
+            # Start a per-device play sender loop (binary frames).
+            device.play_sender_task = asyncio.create_task(self._play_sender_loop(device))
             # Match open-xiaoai-bridge startup behavior: initialize recording pipeline.
             await self._ensure_recording_started(device)
 
@@ -284,6 +297,12 @@ class AudioStreamManager:
                 device.sender_task.cancel()
                 try:
                     await device.sender_task
+                except Exception:
+                    pass
+            if device.play_sender_task:
+                device.play_sender_task.cancel()
+                try:
+                    await device.play_sender_task
                 except Exception:
                     pass
             if client_id in self._devices:
@@ -435,22 +454,105 @@ class AudioStreamManager:
                 logger.error("Audio handler error: %s", e)
     
     async def send_audio(self, client_id: str, audio_data: bytes):
-        """向客户端发送音频数据（open-xiaoai Stream tag=play）"""
+        """向客户端发送音频数据（open-xiaoai Stream tag=play）。
+
+        为了降低 underrun（设备端断粮），默认走“单通道队列 + sender loop”：
+        - 调用方只负责 enqueue
+        - sender loop 负责按节奏发送
+        """
         if client_id in self._devices:
             try:
                 device = self._devices[client_id]
+                # Ensure play sender loop is alive (it may crash on websocket/network errors).
+                if device.play_sender_task is None or device.play_sender_task.done():
+                    try:
+                        if device.play_sender_task:
+                            _ = device.play_sender_task.exception()
+                    except Exception:
+                        pass
+                    logger.warning(
+                        "[Play Sender] play_sender_task not running for %s, restarting...",
+                        device.client_id,
+                    )
+                    device.play_sender_task = asyncio.create_task(self._play_sender_loop(device))
                 # Ensure device playback pipeline is ready before first play stream.
-                await self._ensure_playback_started(device)
-                stream = {
-                    "id": str(uuid.uuid4()),
-                    "tag": "play",
-                    "bytes": list(audio_data),
-                    "data": None,
-                }
-                await device.websocket.send_bytes(json.dumps(stream, ensure_ascii=False).encode("utf-8"))
-                logger.debug("Audio sent to client: %s", client_id)
+                if self._play_direct_send:
+                    await self._ensure_playback_started(device)
+                    await self._send_play_frame(device, audio_data)
+                    return
+
+                # Enqueue to single-channel sender loop
+                await device.play_queue.put((device.play_session_id, audio_data))
             except Exception as e:
                 logger.error("Error sending audio to %s: %s", client_id, e)
+
+    async def _send_play_frame(self, device: ConnectedDevice, audio_data: bytes):
+        stream = {
+            "id": str(uuid.uuid4()),
+            "tag": "play",
+            "bytes": list(audio_data),
+            "data": None,
+        }
+        await device.websocket.send_bytes(
+            json.dumps(stream, ensure_ascii=False).encode("utf-8")
+        )
+
+    async def _play_sender_loop(self, device: ConnectedDevice):
+        """
+        Single-channel play sender loop.
+
+        - Only one coroutine sends binary play frames per device.
+        - Optional pacing keeps device buffer ahead bounded (MAX_AHEAD).
+        - Drops stale packets automatically when play_session_id changes.
+        """
+        bytes_per_sec = max(1, self._play_sample_rate * self._play_bytes_per_sample)
+        sent_bytes = 0
+        playback_start = None  # monotonic seconds when first packet sent
+
+        while True:
+            session_id, payload = await device.play_queue.get()
+            try:
+                # Drop stale packets from previous session.
+                if session_id != device.play_session_id:
+                    logger.debug(
+                        "[Play Sender] Drop stale audio for %s: queued_session=%s current_session=%s",
+                        device.client_id,
+                        session_id,
+                        device.play_session_id,
+                    )
+                    continue
+
+                # Ensure playback is ready (start_play) right before first send.
+                await self._ensure_playback_started(device)
+
+                if playback_start is None or sent_bytes == 0:
+                    playback_start = _time.monotonic()
+
+                await self._send_play_frame(device, payload)
+                sent_bytes += len(payload)
+
+                if self._play_pacing_enabled and playback_start is not None:
+                    # Throttle if device is too far ahead of real-time playback.
+                    sent_duration_ms = sent_bytes * 1000 / bytes_per_sec
+                    elapsed_ms = (_time.monotonic() - playback_start) * 1000
+                    ahead_ms = max(0.0, sent_duration_ms - elapsed_ms)
+                    if ahead_ms > self._play_max_ahead_ms:
+                        wait_ms = int(ahead_ms - self._play_max_ahead_ms)
+                        while wait_ms > 0 and session_id == device.play_session_id:
+                            step = min(wait_ms, 50)
+                            await asyncio.sleep(step / 1000.0)
+                            wait_ms -= step
+            except Exception as exc:
+                logger.error(
+                    "[Play Sender] Fatal error for %s: %s",
+                    device.client_id,
+                    exc,
+                    exc_info=True,
+                )
+                # Reraise so the task is marked done; send_audio() will restart it.
+                raise
+            finally:
+                device.play_queue.task_done()
 
     async def _ensure_playback_started(self, device: ConnectedDevice):
         """Send start_play command once per connection before first play stream."""
@@ -460,8 +562,8 @@ class AudioStreamManager:
         channels = int(os.getenv("MILOCO_XIAOAI_PLAY_CHANNELS", "1"))
         bits_per_sample = int(os.getenv("MILOCO_XIAOAI_PLAY_BITS_PER_SAMPLE", "16"))
         # Use a larger playback ring buffer to reduce aplay underrun on jittery streams.
-        period_size = int(os.getenv("MILOCO_XIAOAI_PLAY_PERIOD_SIZE", "2400"))
-        buffer_size = int(os.getenv("MILOCO_XIAOAI_PLAY_BUFFER_SIZE", "24000"))
+        period_size = int(os.getenv("MILOCO_XIAOAI_PLAY_PERIOD_SIZE", "1200"))
+        buffer_size = int(os.getenv("MILOCO_XIAOAI_PLAY_BUFFER_SIZE", "4800"))
         payload = {
             "bits_per_sample": bits_per_sample,
             "buffer_size": buffer_size,
@@ -472,6 +574,38 @@ class AudioStreamManager:
         }
         await self._send_rpc_direct(device, "start_play", payload)
         device.playback_started = True
+
+    async def restart_playback(self, client_ids: Optional[list[str]] = None, force_reinit: bool = True):
+        """
+        Ensure remote playback pipeline is ready.
+
+        Default behavior aligns with open-xiaoai-bridge:
+        - Do NOT stop playback every time
+        - Only ensure start_play has been issued for this connection
+
+        Optional force stop via env:
+        - MILOCO_XIAOAI_FORCE_STOP_BEFORE_PLAY=1 -> stop_play -> start_play
+        """
+        targets = client_ids if client_ids else list(self._devices.keys())
+        force_stop_before_play = os.getenv("MILOCO_XIAOAI_FORCE_STOP_BEFORE_PLAY", "0").strip().lower() in ("1", "true", "yes", "on")
+        for client_id in targets:
+            device = self._devices.get(client_id)
+            if not device:
+                continue
+            if force_reinit:
+                # open-xiaoai-bridge style: each TTS session re-ensures start_play.
+                device.playback_started = False
+                # Bump session id to drop queued audio from previous sessions.
+                device.play_session_id += 1
+                # Reset pacing counters by draining queue lazily (sender loop will drop stale).
+            if force_stop_before_play:
+                try:
+                    await self._send_rpc_direct(device, "stop_play", None)
+                except Exception:
+                    # Best effort stop; continue to re-init playback.
+                    logger.debug("[AudioStream] stop_play failed for %s", client_id, exc_info=True)
+                device.playback_started = False
+            await self._ensure_playback_started(device)
 
     async def _ensure_recording_started(self, device: ConnectedDevice):
         """Send start_recording command once per connection."""
