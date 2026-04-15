@@ -65,6 +65,80 @@ class HaService:
         "mdi:weather-partly-cloudy": "cloud",
     }
 
+    _HA_DOMAIN_DEFAULT_STATES = {
+        "light": ["on", "off"],
+        "switch": ["on", "off"],
+        "fan": ["on", "off"],
+        "input_boolean": ["on", "off"],
+        "binary_sensor": ["on", "off"],
+        "cover": ["open", "closed", "opening", "closing"],
+        "lock": ["locked", "unlocked"],
+        "alarm_control_panel": ["armed_home", "armed_away", "disarmed"],
+    }
+
+    @staticmethod
+    def _iter_state_like_values(value: Any):
+        """Yield scalar state-like values from mixed trigger payload fields."""
+        if value is None:
+            return
+        if isinstance(value, (str, int, float, bool)):
+            yield value
+            return
+        if isinstance(value, list):
+            for item in value:
+                yield from HaService._iter_state_like_values(item)
+            return
+        if isinstance(value, dict):
+            # Common structure in HA: {"state": "..."} / {"value": "..."}
+            for key in ("state", "value"):
+                if key in value:
+                    yield from HaService._iter_state_like_values(value.get(key))
+
+    @staticmethod
+    def _collect_automation_trigger_states(
+        automations: Dict[str, Any],
+        entity_id: str,
+    ) -> List[tuple[str, str]]:
+        """
+        Extract candidate states from HA automation trigger definitions for one entity.
+
+        Returns:
+            List[(state_value, source)] where source includes automation id.
+        """
+        results: List[tuple[str, str]] = []
+        for automation_id, automation in (automations or {}).items():
+            try:
+                payload = automation.model_dump() if hasattr(automation, "model_dump") else automation
+                if not isinstance(payload, dict):
+                    continue
+
+                triggers = payload.get("trigger")
+                if not isinstance(triggers, list):
+                    continue
+
+                for trig in triggers:
+                    if not isinstance(trig, dict):
+                        continue
+
+                    # Match entity
+                    trig_entity = trig.get("entity_id")
+                    if isinstance(trig_entity, list):
+                        if entity_id not in trig_entity:
+                            continue
+                    elif trig_entity != entity_id:
+                        continue
+
+                    # Common state-like fields in trigger definitions
+                    for key in ("to", "from", "state", "not_to", "not_from", "above", "below"):
+                        for raw in HaService._iter_state_like_values(trig.get(key)):
+                            value_str = str(raw).strip()
+                            if value_str:
+                                results.append((value_str, f"automation_trigger:{automation_id}:{key}"))
+            except Exception:  # pylint: disable=broad-except
+                continue
+
+        return results
+
     def __init__(
         self,
         ha_proxy: HAProxy,
@@ -354,3 +428,64 @@ class HaService:
         except Exception as e:  # pylint: disable=broad-except
             logger.error("Failed to control Home Assistant device: %s", e)
             raise HaServiceException(f"Failed to control Home Assistant device: {str(e)}") from e
+
+    async def get_entity_state_options(self, entity_id: str) -> Dict[str, Any]:
+        """Get selectable state options for a specific HA entity."""
+        if not entity_id or "." not in entity_id:
+            raise ValidationException("Invalid entity_id")
+
+        states = await self._ha_proxy.get_states()
+        if states is None:
+            raise HaServiceException("Failed to fetch Home Assistant states")
+
+        target = states.get(entity_id)
+        if not target:
+            raise ValidationException(f"Entity not found: {entity_id}")
+
+        domain = entity_id.split(".", 1)[0]
+        options: Dict[str, str] = {}
+
+        def add_option(value: Any, source: str):
+            if value is None:
+                return
+            value_str = str(value).strip()
+            if not value_str:
+                return
+            if value_str not in options:
+                options[value_str] = source
+
+        # Source 1: current state
+        add_option(target.state, "current_state")
+
+        # Source 2: attribute-enumerated states
+        attributes = target.attributes or {}
+        attr_keys = [
+            "options",
+            "hvac_modes",
+            "preset_modes",
+            "fan_modes",
+            "swing_modes",
+            "source_list",
+            "effect_list",
+        ]
+        for key in attr_keys:
+            values = attributes.get(key)
+            if isinstance(values, list):
+                for v in values:
+                    add_option(v, f"attribute:{key}")
+
+        # Source 3: domain defaults
+        for v in self._HA_DOMAIN_DEFAULT_STATES.get(domain, []):
+            add_option(v, f"domain:{domain}")
+
+        # Source 4: HA automation trigger conditions
+        automations = await self._ha_proxy.get_automations()
+        for value, source in self._collect_automation_trigger_states(automations or {}, entity_id):
+            add_option(value, source)
+
+        return {
+            "entity_id": entity_id,
+            "current_state": target.state,
+            "domain": domain,
+            "options": [{"value": k, "source": src} for k, src in sorted(options.items())],
+        }

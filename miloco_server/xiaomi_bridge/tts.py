@@ -16,6 +16,7 @@ import base64
 import json
 import logging
 import os
+import time
 from typing import Optional, AsyncIterator, Any
 
 import httpx
@@ -60,6 +61,7 @@ class TTSService:
         self._speed = speed
         self._initialized = False
         self._client = None
+        self._playback_session = 0
 
     @classmethod
     def instance(cls):
@@ -463,7 +465,12 @@ class TTSService:
         logger.warning("MiMo non-stream response has no audio payload: %s", str(response_data)[:500])
         return b""
 
-    async def speak(self, text: str, speaker: str = None) -> bool:
+    async def speak(
+        self,
+        text: str,
+        speaker: str = None,
+        client_ids: Optional[list[str]] = None,
+    ) -> bool:
         """
         Synthesize and play text via audio stream.
         
@@ -476,7 +483,7 @@ class TTSService:
         """
         if self._engine == "xiaoai":
             # For xiaoai engine, send text directly via WebSocket using native TTS
-            return await self._speak_xiaoai(text)
+            return await self._speak_xiaoai(text, client_ids=client_ids)
 
         # Align with open-xiaoai-bridge style: prefer stream playback when enabled.
         # If upstream stream mode is not supported, gracefully fallback to non-stream.
@@ -495,7 +502,9 @@ class TTSService:
 
         from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
         stream_manager = get_audio_stream_manager()
-        await stream_manager.send_audio_to_clients(audio_data)
+        token = self._begin_playback_session()
+        await stream_manager.restart_playback(client_ids=client_ids, force_reinit=True)
+        await self._send_pcm_with_throttle(stream_manager, audio_data, client_ids, token)
         return True
 
     async def speak_stream(self, text: str, speaker: str = None, client_ids: Optional[list[str]] = None) -> bool:
@@ -514,16 +523,23 @@ class TTSService:
         try:
             from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
             stream_manager = get_audio_stream_manager()
+            token = self._begin_playback_session()
             sent_any = False
             buffer = bytearray()
-            start_buffer_ms = int(os.getenv("MILOCO_TTS_STREAM_START_BUFFER_MS", "600"))
-            chunk_ms = int(os.getenv("MILOCO_TTS_STREAM_CHUNK_MS", "200"))
+            start_buffer_ms = int(os.getenv("MILOCO_TTS_STREAM_START_BUFFER_MS", "240"))
+            chunk_ms = int(os.getenv("MILOCO_TTS_STREAM_CHUNK_MS", "60"))
             bytes_per_sec = self._STREAM_SAMPLE_RATE * self._STREAM_BYTES_PER_SAMPLE
             startup_bytes = max(1, bytes_per_sec * start_buffer_ms // 1000)
             chunk_bytes = max(1, bytes_per_sec * chunk_ms // 1000)
             started = False
+            playback_initialized = False
+            sent_bytes = 0
+            playback_start = time.monotonic()
 
             async for chunk in self.synthesize_stream(text, speaker):
+                if not self._is_playback_session_active(token):
+                    logger.debug("Stream TTS aborted by newer playback session")
+                    return sent_any
                 if not chunk:
                     continue
                 buffer.extend(chunk)
@@ -535,22 +551,91 @@ class TTSService:
 
                 # Emit fixed-size chunks to smooth device-side playback cadence.
                 while len(buffer) >= chunk_bytes:
+                    if not playback_initialized:
+                        # Delay start_play until we have enough buffered audio to send immediately.
+                        await stream_manager.restart_playback(client_ids, force_reinit=True)
+                        playback_initialized = True
+                        playback_start = time.monotonic()
                     packet = bytes(buffer[:chunk_bytes])
                     del buffer[:chunk_bytes]
                     await stream_manager.send_audio_to_clients(packet, client_ids)
                     sent_any = True
+                    sent_bytes += len(packet)
+                    await self._throttle_if_needed(sent_bytes, playback_start, token)
 
             # Flush remaining buffered bytes.
             if buffer:
+                if not playback_initialized:
+                    await stream_manager.restart_playback(client_ids, force_reinit=True)
+                    playback_initialized = True
+                    playback_start = time.monotonic()
                 await stream_manager.send_audio_to_clients(bytes(buffer), client_ids)
                 sent_any = True
+                sent_bytes += len(buffer)
+                await self._throttle_if_needed(sent_bytes, playback_start, token)
 
             return sent_any
         except Exception as e:
             logger.error("Stream TTS speak failed: %s", e, exc_info=True)
             return False
 
-    async def _speak_xiaoai(self, text: str) -> bool:
+    def _begin_playback_session(self) -> int:
+        """Begin a new playback session; invalidates previous session."""
+        self._playback_session += 1
+        return self._playback_session
+
+    def _is_playback_session_active(self, token: int) -> bool:
+        return token == self._playback_session
+
+    async def _throttle_if_needed(self, sent_bytes: int, playback_start: float, token: int):
+        """
+        Keep audio sent ahead-of-time bounded, similar to open-xiaoai-bridge MAX_AHEAD_MS.
+        """
+        max_ahead_ms = int(os.getenv("MILOCO_TTS_STREAM_MAX_AHEAD_MS", "1500"))
+        sent_duration_ms = sent_bytes * 1000 / (self._STREAM_SAMPLE_RATE * self._STREAM_BYTES_PER_SAMPLE)
+        elapsed_ms = (time.monotonic() - playback_start) * 1000
+        ahead_ms = max(0.0, sent_duration_ms - elapsed_ms)
+        if ahead_ms <= max_ahead_ms:
+            return
+        wait_ms = int(ahead_ms - max_ahead_ms)
+        while wait_ms > 0 and self._is_playback_session_active(token):
+            step = min(wait_ms, 50)
+            await asyncio.sleep(step / 1000.0)
+            wait_ms -= step
+
+    async def _send_pcm_with_throttle(
+        self,
+        stream_manager,
+        pcm_data: bytes,
+        client_ids: Optional[list[str]],
+        token: int,
+    ):
+        """
+        Send full PCM bytes in paced chunks to avoid remote aplay underrun/overrun jitter.
+        """
+        if not pcm_data:
+            return
+        chunk_ms = int(os.getenv("MILOCO_TTS_STREAM_CHUNK_MS", "60"))
+        chunk_bytes = max(
+            1,
+            (self._STREAM_SAMPLE_RATE * self._STREAM_BYTES_PER_SAMPLE * chunk_ms) // 1000,
+        )
+        sent_bytes = 0
+        playback_start = time.monotonic()
+        offset = 0
+        total = len(pcm_data)
+        while offset < total:
+            if not self._is_playback_session_active(token):
+                logger.debug("PCM playback aborted by newer playback session")
+                return
+            end = min(offset + chunk_bytes, total)
+            packet = pcm_data[offset:end]
+            await stream_manager.send_audio_to_clients(packet, client_ids)
+            sent_bytes += len(packet)
+            await self._throttle_if_needed(sent_bytes, playback_start, token)
+            offset = end
+
+    async def _speak_xiaoai(self, text: str, client_ids: Optional[list[str]] = None) -> bool:
         """
         Speak text using Xiaomi native TTS.
         Sends run_shell command to trigger TTS on the speaker via WebSocket.
@@ -567,7 +652,7 @@ class TTSService:
             stream_manager = get_audio_stream_manager()
 
             # Send via open-xiaoai client-rust RPC
-            await stream_manager.run_shell(build_mibrain_tts_script(text))
+            await stream_manager.run_shell(build_mibrain_tts_script(text), client_ids=client_ids)
             logger.info("Sent TTS text to Xiaomi speaker: %s", text[:50])
             return True
             

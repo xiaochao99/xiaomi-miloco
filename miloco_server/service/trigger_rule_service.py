@@ -192,6 +192,8 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
         if condition_type == ConditionType.DIRECT:
             if not ha_device_ids:
                 raise ValidationException("Direct mode requires at least one HA device")
+            if camera_ids:
+                raise ValidationException("Direct mode does not support camera_ids")
             if not trigger_rule.targets.trigger_entity_id:
                 raise ValidationException("Direct mode requires trigger_entity_id")
             if not trigger_rule.trigger.ha_condition:
@@ -204,6 +206,14 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
                 raise ValidationException("Hybrid mode requires ha_condition")
             if not (trigger_rule.trigger.camera_condition or trigger_rule.trigger.llm_condition):
                 raise ValidationException("Hybrid mode requires camera condition")
+
+        if condition_type in (ConditionType.DETECTION, ConditionType.FACE_RECOGNITION):
+            if not camera_ids:
+                raise ValidationException("Detection mode requires at least one camera")
+
+            is_valid, error_msg = self.validate_detection_condition(trigger_rule.trigger.detection_condition)
+            if not is_valid:
+                raise ValidationException(error_msg or "Invalid detection condition")
 
         trigger_entity_id = trigger_rule.targets.trigger_entity_id
         if trigger_entity_id and ha_device_ids:

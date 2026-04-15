@@ -30,7 +30,7 @@ def _extract_speak_text(response_text: str) -> str:
     return (final_answer or response_text).strip()
 
 
-async def broadcast_chat_reply(response_text: str) -> bool:
+async def broadcast_chat_reply(response_text: str, client_ids: Optional[List[str]] = None) -> bool:
     """
     Broadcast chat reply via the integrated Xiaomi Bridge.
 
@@ -42,7 +42,7 @@ async def broadcast_chat_reply(response_text: str) -> bool:
     speak_text = _extract_speak_text(response_text)
     if not speak_text:
         return False
-    return await broadcast_via_bridge(speak_text, client_ids=None)
+    return await broadcast_via_bridge(speak_text, client_ids=client_ids)
 
 
 async def broadcast_via_bridge(text: str, client_ids: Optional[List[str]] = None) -> bool:
@@ -63,14 +63,19 @@ async def broadcast_via_bridge(text: str, client_ids: Optional[List[str]] = None
     
     try:
         from miloco_server.xiaomi_bridge.tts import TTSService
-        from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
         from miloco_server.xiaomi_bridge.shell_utils import build_mibrain_tts_script
         
         # Get TTS service
         tts = TTSService.instance()
+        if not tts.is_initialized:
+            ok = await tts.initialize()
+            if not ok:
+                logger.error("TTS service not configured")
+                return False
         
         # Check if using Xiaomi native TTS
         if tts.engine == "xiaoai":
+            from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
             manager = get_audio_stream_manager()
             await manager.run_shell(build_mibrain_tts_script(text), client_ids=client_ids)
             
@@ -78,17 +83,13 @@ async def broadcast_via_bridge(text: str, client_ids: Optional[List[str]] = None
             logger.info(f"Broadcast XiaoAI TTS via Xiaomi Bridge to {target}: {text[:50]}...")
             return True
         else:
-            # Use external TTS engine (e.g., Doubao)
-            audio_data = await tts.synthesize(text)
-            
-            if not audio_data:
-                logger.error("TTS synthesis failed")
+            # Use external TTS engine (e.g., Doubao/MiMo) via the unified playback path.
+            # This ensures the same buffering/session/pacing logic as /xiaomi-bridge/tts.
+            ok = await tts.speak(text, speaker=None, client_ids=client_ids)
+            if not ok:
+                logger.error("TTS speak failed (engine=%s)", tts.engine)
                 return False
-            
-            # Send audio to devices
-            manager = get_audio_stream_manager()
-            await manager.send_audio_to_clients(audio_data, client_ids)
-            
+
             target = "all devices" if client_ids is None else f"devices {client_ids}"
             logger.info(f"Broadcast via Xiaomi Bridge to {target}: {text[:50]}...")
             return True
