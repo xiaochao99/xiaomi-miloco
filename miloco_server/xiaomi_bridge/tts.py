@@ -12,10 +12,11 @@ Reference: open-xiaoai-bridge/core/services/tts/doubao.py
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
-from typing import Optional, AsyncIterator
+from typing import Optional, AsyncIterator, Any
 
 import httpx
 
@@ -23,9 +24,15 @@ logger = logging.getLogger(__name__)
 
 
 class TTSService:
+    _DOUBAO_TTS_URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+    # Align with open-xiaoai-bridge playback buffering strategy:
+    # 24kHz mono int16 => 48000 bytes/s
+    _STREAM_SAMPLE_RATE = 24000
+    _STREAM_BYTES_PER_SAMPLE = 2
+
     """
     TTS service for Xiaomi bridge.
-    Supports Doubao (火山引擎) TTS and Xiaomi native TTS.
+    Supports Doubao (火山引擎) TTS, Xiaomi native TTS, and MiMo TTS.
     """
 
     _instance = None
@@ -35,14 +42,18 @@ class TTSService:
         engine: str = "doubao",
         app_id: str = "",
         access_key: str = "",
-        default_speaker: str = "zh_female_vv_uranus_bigtts",
+        api_key: str = "",
+        api_base_url: str = "https://api.xiaomimimo.com",
+        default_speaker: str = "mimo_default",
         audio_format: str = "pcm",
-        stream: bool = True,
+        stream: bool = False,
         speed: float = 1.0,
     ):
         self._engine = engine
         self._app_id = app_id
         self._access_key = access_key
+        self._api_key = api_key  # For MiMo API
+        self._api_base_url = api_base_url  # For MiMo API
         self._default_speaker = default_speaker
         self._audio_format = audio_format
         self._stream = stream
@@ -81,6 +92,16 @@ class TTSService:
             logger.info("TTS service initialized: %s (native)", self._engine)
             return True
         
+        elif self._engine == "mimo":
+            if not self._api_key:
+                logger.warning("MiMo TTS API key not configured")
+                return False
+            
+            self._client = httpx.AsyncClient(timeout=30)
+            self._initialized = True
+            logger.info("TTS service initialized: %s", self._engine)
+            return True
+        
         logger.warning("Unsupported TTS engine: %s", self._engine)
         return False
 
@@ -103,6 +124,9 @@ class TTSService:
             if self._engine == "doubao":
                 return await self._synthesize_doubao(text, speaker)
             
+            elif self._engine == "mimo":
+                return await self._synthesize_mimo(text, speaker)
+            
             elif self._engine == "xiaoai":
                 # For xiaoai engine, return the text wrapped in a special format
                 # This will be handled by the speak method
@@ -116,7 +140,7 @@ class TTSService:
         """
         Stream-synthesize text to audio chunks.
 
-        For Doubao engine this yields PCM chunks as they arrive from the upstream API.
+        For Doubao/MiMo engine this yields PCM chunks as they arrive from the upstream API.
         For xiaoai engine this yields nothing (native TTS is command-based).
         """
         if not self._initialized:
@@ -129,53 +153,315 @@ class TTSService:
                     yield chunk
             return
 
+        if self._engine == "mimo":
+            async for chunk in self._synthesize_mimo_stream(text, speaker):
+                if chunk:
+                    yield chunk
+            return
+
         # xiaoai: no audio stream available from server side
         return
 
     async def _synthesize_doubao(self, text: str, speaker: str = None) -> bytes:
-        """Synthesize using Doubao TTS API."""
-        url = "https://openspeech.bytedance.net/api/text2speech"
-        
-        params = {
-            "text": text,
-            "speaker": speaker or self._default_speaker,
-            "audio_format": self._audio_format,
-            "speed": self._speed,
-            "app_id": self._app_id,
-            "access_key": self._access_key,
-        }
-
-        async with self._client.stream("GET", url, params=params) as response:
-            if response.status_code != 200:
-                logger.error("Doubao TTS API error: %d", response.status_code)
-                return b""
-            
-            audio_data = b""
-            async for chunk in response.aiter_bytes(chunk_size=4096):
-                audio_data += chunk
-            
-            return audio_data
+        """Synthesize using Doubao unidirectional streaming API and return merged bytes."""
+        audio_data = bytearray()
+        async for chunk in self._synthesize_doubao_stream(text, speaker):
+            audio_data.extend(chunk)
+        return bytes(audio_data)
 
     async def _synthesize_doubao_stream(self, text: str, speaker: str = None) -> AsyncIterator[bytes]:
-        """Stream audio chunks from Doubao TTS API."""
-        url = "https://openspeech.bytedance.net/api/text2speech"
-        params = {
-            "text": text,
-            "speaker": speaker or self._default_speaker,
-            "audio_format": self._audio_format,
-            "speed": self._speed,
-            "app_id": self._app_id,
-            "access_key": self._access_key,
+        """Stream audio chunks from Doubao TTS API (line-delimited JSON with base64 data)."""
+        if not self._client:
+            logger.error("Doubao TTS client not initialized")
+            return
+
+        payload = self._build_doubao_payload(
+            text=text,
+            speaker=speaker or self._default_speaker,
+        )
+        headers = {
+            "X-Api-App-Id": self._app_id,
+            "X-Api-Access-Key": self._access_key,
+            "X-Api-Resource-Id": self._detect_doubao_resource_id(payload["req_params"]["speaker"]),
+            "Content-Type": "application/json",
+            "Connection": "keep-alive",
         }
 
-        async with self._client.stream("GET", url, params=params) as response:
+        async with self._client.stream(
+            "POST",
+            self._DOUBAO_TTS_URL,
+            headers=headers,
+            json=payload,
+        ) as response:
             if response.status_code != 200:
-                logger.error("Doubao TTS API error: %d", response.status_code)
+                body = await response.aread()
+                logger.error("Doubao TTS API error: %d body=%s", response.status_code, body[:300])
                 return
 
-            async for chunk in response.aiter_bytes(chunk_size=4096):
-                if chunk:
-                    yield chunk
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                parsed = self._parse_doubao_line(line)
+                if parsed is None:
+                    break
+                if parsed:
+                    yield parsed
+
+    def _detect_doubao_resource_id(self, speaker: str) -> str:
+        """Infer doubao resource_id from speaker prefix."""
+        if speaker.startswith("S_"):
+            return "seed-icl-2.0"
+        if speaker.startswith("ICL_") or speaker.startswith("icl_"):
+            return "seed-icl-1.0"
+        if speaker.startswith("DiT_") or speaker.startswith("saturn_"):
+            return "seed-icl-2.0"
+        # Keep compatibility with open-xiaoai-bridge defaults.
+        if "_uranus_" in speaker:
+            return "seed-tts-2.0"
+        return "seed-tts-1.0"
+
+    def _build_doubao_payload(self, text: str, speaker: str) -> dict[str, Any]:
+        fmt = self._audio_format if self._audio_format != "auto" else "pcm"
+        additions = {
+            "explicit_language": "zh",
+            "disable_markdown_filter": True,
+        }
+        req_params: dict[str, Any] = {
+            "text": text,
+            "speaker": speaker,
+            "audio_params": {
+                "format": fmt,
+                "sample_rate": 24000,
+                "enable_timestamp": False,
+                "speed": self._speed,
+            },
+            "additions": json.dumps(additions, ensure_ascii=False),
+        }
+        if self._detect_doubao_resource_id(speaker) == "seed-tts-1.0":
+            req_params["model"] = "seed-tts-1.1"
+        return {
+            "user": {"uid": "xiaomi-miloco"},
+            "req_params": req_params,
+        }
+
+    def _parse_doubao_line(self, line: str) -> Optional[bytes]:
+        """Parse one Doubao streaming response line."""
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            logger.debug("Doubao TTS ignored non-JSON line")
+            return b""
+
+        code = data.get("code", 0)
+        if code == 0:
+            b64_data = data.get("data") or ""
+            if not b64_data:
+                return b""
+            try:
+                return base64.b64decode(b64_data)
+            except Exception:
+                logger.debug("Doubao TTS base64 decode failed", exc_info=True)
+                return b""
+
+        # 20000000 indicates end-of-stream in Doubao unidirectional API.
+        if code == 20000000:
+            return None
+
+        logger.error("Doubao TTS returned error code=%s message=%s", code, data.get("message"))
+        return None
+
+    async def _synthesize_mimo(self, text: str, speaker: str = None) -> bytes:
+        """Synthesize using MiMo TTS API."""
+        voice = speaker or self._default_speaker
+        headers = self._build_mimo_headers()
+
+        # 兼容两种非流式请求体，避免某些网关返回 200 但不含 audio 字段。
+        payload_candidates = [
+            self._build_mimo_payload_legacy(text, voice, stream=False),
+            self._build_mimo_payload_openai_style(text, voice, stream=False),
+        ]
+        for payload in payload_candidates:
+            audio_data = await self._request_mimo_non_stream(payload, headers)
+            if audio_data:
+                return audio_data
+
+        logger.error("MiMo TTS returned empty audio data")
+        return b""
+
+    async def _synthesize_mimo_stream(self, text: str, speaker: str = None) -> AsyncIterator[bytes]:
+        """Stream audio chunks from MiMo TTS API."""
+        url = f"{self._api_base_url}/v1/chat/completions"
+        voice = speaker or self._default_speaker
+
+        headers = self._build_mimo_headers()
+
+        if not self._client:
+            logger.error("MiMo TTS client not initialized")
+            return
+
+        max_retries = 3
+        retry_delay = 1.0
+
+        # 兼容两种请求体：旧格式 + OpenAI audio 风格格式
+        payload_candidates = [
+            self._build_mimo_payload_legacy(text, voice, stream=True),
+            self._build_mimo_payload_openai_style(text, voice, stream=True),
+        ]
+
+        for payload in payload_candidates:
+            for attempt in range(max_retries):
+                async with self._client.stream("POST", url, json=payload, headers=headers) as response:
+                    if response.status_code == 200:
+                        got_any = False
+                        # 成功获取响应，开始处理流式数据
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                line = line[5:]  # Remove "data: " prefix
+                            if line.strip() == "[DONE]":
+                                break
+                            if not line.strip():
+                                continue
+                            try:
+                                chunk_data = json.loads(line)
+                            except Exception:
+                                logger.debug("MiMo stream parse skipped non-JSON line")
+                                continue
+
+                            audio_chunks = self._extract_mimo_audio_chunks(chunk_data)
+                            for audio_chunk in audio_chunks:
+                                got_any = True
+                                yield audio_chunk
+
+                        if got_any:
+                            return  # 成功完成
+                        logger.warning("MiMo stream response has no audio chunks, trying fallback payload")
+                        break
+
+                    if response.status_code == 429:
+                        logger.warning(
+                            "MiMo TTS stream rate limited (attempt %d/%d), retrying in %.1fs",
+                            attempt + 1,
+                            max_retries,
+                            retry_delay,
+                        )
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+
+                    body = await response.aread()
+                    logger.error(
+                        "MiMo TTS stream API error: %d body=%s",
+                        response.status_code,
+                        body[:500],
+                    )
+                    break
+
+        logger.error("MiMo TTS stream failed after %d retries", max_retries)
+
+    def _normalize_mimo_audio_format(self) -> str:
+        """Normalize local config audio format to MiMo supported format string."""
+        fmt = (self._audio_format or "").lower().strip()
+        if fmt in ("pcm16", "pcm", "s16le"):
+            return "pcm16"
+        if fmt in ("mp3", "wav"):
+            return fmt
+        return "pcm16"
+
+    def _build_mimo_headers(self) -> dict[str, str]:
+        return {
+            "api-key": self._api_key,
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _build_mimo_payload_legacy(self, text: str, voice: str, stream: bool) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": "mimo-v2-tts",
+            "messages": [
+                {"role": "user", "content": text},
+                {"role": "assistant", "content": text},
+            ],
+            "audio": {
+                "format": self._normalize_mimo_audio_format(),
+                "voice": voice,
+            },
+        }
+        if stream:
+            payload["stream"] = True
+        return payload
+
+    def _build_mimo_payload_openai_style(self, text: str, voice: str, stream: bool) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": "mimo-v2-tts",
+            "messages": [
+                {"role": "user", "content": text},
+            ],
+            "modalities": ["audio"],
+            "audio": {
+                "format": self._normalize_mimo_audio_format(),
+                "voice": voice,
+            },
+        }
+        if stream:
+            payload["stream"] = True
+        return payload
+
+    def _extract_mimo_audio_chunks(self, obj: Any) -> list[bytes]:
+        """
+        从 MiMo/OpenAI 兼容返回里提取所有可用音频块。
+        兼容路径：
+        - choices[0].message.audio.data
+        - choices[0].delta.audio.data
+        - output_audio.data
+        """
+        b64_values: list[str] = []
+
+        if isinstance(obj, dict):
+            choices = obj.get("choices")
+            if isinstance(choices, list):
+                for choice in choices:
+                    if not isinstance(choice, dict):
+                        continue
+                    for key in ("message", "delta"):
+                        node = choice.get(key)
+                        if isinstance(node, dict):
+                            audio = node.get("audio")
+                            if isinstance(audio, dict):
+                                data = audio.get("data")
+                                if isinstance(data, str) and data:
+                                    b64_values.append(data)
+            output_audio = obj.get("output_audio")
+            if isinstance(output_audio, dict):
+                data = output_audio.get("data")
+                if isinstance(data, str) and data:
+                    b64_values.append(data)
+
+        chunks: list[bytes] = []
+        for b64_item in b64_values:
+            try:
+                chunks.append(base64.b64decode(b64_item))
+            except Exception:
+                logger.debug("MiMo audio base64 decode failed", exc_info=True)
+        return chunks
+
+    async def _request_mimo_non_stream(self, payload: dict[str, Any], headers: dict[str, str]) -> bytes:
+        if not self._client:
+            return b""
+        url = f"{self._api_base_url}/v1/chat/completions"
+        response = await self._client.post(url, json=payload, headers=headers)
+        if response.status_code != 200:
+            logger.error(
+                "MiMo TTS API error: %d body=%s",
+                response.status_code,
+                response.text[:500],
+            )
+            return b""
+        response_data = response.json()
+        chunks = self._extract_mimo_audio_chunks(response_data)
+        if chunks:
+            return b"".join(chunks)
+        logger.warning("MiMo non-stream response has no audio payload: %s", str(response_data)[:500])
+        return b""
 
     async def speak(self, text: str, speaker: str = None) -> bool:
         """
@@ -189,18 +475,27 @@ class TTSService:
             True if successful, False otherwise
         """
         if self._engine == "xiaoai":
-            # For xiaoai engine, send text directly via WebSocket
+            # For xiaoai engine, send text directly via WebSocket using native TTS
             return await self._speak_xiaoai(text)
-        
+
+        # Align with open-xiaoai-bridge style: prefer stream playback when enabled.
+        # If upstream stream mode is not supported, gracefully fallback to non-stream.
+        if self._stream:
+            streamed_ok = await self.speak_stream(text, speaker)
+            if streamed_ok:
+                return True
+            logger.warning(
+                "Stream TTS failed for engine=%s, fallback to non-stream synthesis",
+                self._engine,
+            )
+
         audio_data = await self.synthesize(text, speaker)
         if not audio_data:
             return False
 
-        # Send audio to connected speaker via WebSocket
         from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
         stream_manager = get_audio_stream_manager()
         await stream_manager.send_audio_to_clients(audio_data)
-        
         return True
 
     async def speak_stream(self, text: str, speaker: str = None, client_ids: Optional[list[str]] = None) -> bool:
@@ -220,9 +515,36 @@ class TTSService:
             from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
             stream_manager = get_audio_stream_manager()
             sent_any = False
+            buffer = bytearray()
+            start_buffer_ms = int(os.getenv("MILOCO_TTS_STREAM_START_BUFFER_MS", "600"))
+            chunk_ms = int(os.getenv("MILOCO_TTS_STREAM_CHUNK_MS", "200"))
+            bytes_per_sec = self._STREAM_SAMPLE_RATE * self._STREAM_BYTES_PER_SAMPLE
+            startup_bytes = max(1, bytes_per_sec * start_buffer_ms // 1000)
+            chunk_bytes = max(1, bytes_per_sec * chunk_ms // 1000)
+            started = False
+
             async for chunk in self.synthesize_stream(text, speaker):
+                if not chunk:
+                    continue
+                buffer.extend(chunk)
+
+                # Before starting playback, wait until enough audio is buffered.
+                if not started and len(buffer) < startup_bytes:
+                    continue
+                started = True
+
+                # Emit fixed-size chunks to smooth device-side playback cadence.
+                while len(buffer) >= chunk_bytes:
+                    packet = bytes(buffer[:chunk_bytes])
+                    del buffer[:chunk_bytes]
+                    await stream_manager.send_audio_to_clients(packet, client_ids)
+                    sent_any = True
+
+            # Flush remaining buffered bytes.
+            if buffer:
+                await stream_manager.send_audio_to_clients(bytes(buffer), client_ids)
                 sent_any = True
-                await stream_manager.send_audio_to_clients(chunk, client_ids)
+
             return sent_any
         except Exception as e:
             logger.error("Stream TTS speak failed: %s", e, exc_info=True)

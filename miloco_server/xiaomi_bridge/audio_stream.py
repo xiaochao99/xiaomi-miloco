@@ -56,6 +56,8 @@ class ConnectedDevice:
     # Pending command tracking (debug/capability detection)
     pending_commands: Dict[str, float] = field(default_factory=dict, repr=False)  # id -> sent_at
     last_command_result_at: float = 0.0
+    playback_started: bool = False
+    recording_started: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典用于API返回"""
@@ -245,6 +247,8 @@ class AudioStreamManager:
         try:
             # Start a per-device command sender loop (text frames).
             device.sender_task = asyncio.create_task(self._command_sender_loop(device))
+            # Match open-xiaoai-bridge startup behavior: initialize recording pipeline.
+            await self._ensure_recording_started(device)
 
             while self._running:
                 try:
@@ -434,16 +438,79 @@ class AudioStreamManager:
         """向客户端发送音频数据（open-xiaoai Stream tag=play）"""
         if client_id in self._devices:
             try:
+                device = self._devices[client_id]
+                # Ensure device playback pipeline is ready before first play stream.
+                await self._ensure_playback_started(device)
                 stream = {
                     "id": str(uuid.uuid4()),
                     "tag": "play",
                     "bytes": list(audio_data),
                     "data": None,
                 }
-                await self._devices[client_id].websocket.send_bytes(json.dumps(stream, ensure_ascii=False).encode("utf-8"))
+                await device.websocket.send_bytes(json.dumps(stream, ensure_ascii=False).encode("utf-8"))
                 logger.debug("Audio sent to client: %s", client_id)
             except Exception as e:
                 logger.error("Error sending audio to %s: %s", client_id, e)
+
+    async def _ensure_playback_started(self, device: ConnectedDevice):
+        """Send start_play command once per connection before first play stream."""
+        if device.playback_started:
+            return
+        sample_rate = int(os.getenv("MILOCO_XIAOAI_PLAY_SAMPLE_RATE", "24000"))
+        channels = int(os.getenv("MILOCO_XIAOAI_PLAY_CHANNELS", "1"))
+        bits_per_sample = int(os.getenv("MILOCO_XIAOAI_PLAY_BITS_PER_SAMPLE", "16"))
+        # Use a larger playback ring buffer to reduce aplay underrun on jittery streams.
+        period_size = int(os.getenv("MILOCO_XIAOAI_PLAY_PERIOD_SIZE", "2400"))
+        buffer_size = int(os.getenv("MILOCO_XIAOAI_PLAY_BUFFER_SIZE", "24000"))
+        payload = {
+            "bits_per_sample": bits_per_sample,
+            "buffer_size": buffer_size,
+            "channels": channels,
+            "pcm": "noop",
+            "period_size": period_size,
+            "sample_rate": sample_rate,
+        }
+        await self._send_rpc_direct(device, "start_play", payload)
+        device.playback_started = True
+
+    async def _ensure_recording_started(self, device: ConnectedDevice):
+        """Send start_recording command once per connection."""
+        if device.recording_started:
+            return
+        payload = {
+            "bits_per_sample": 16,
+            "buffer_size": 1440,
+            "channels": 1,
+            "pcm": "noop",
+            "period_size": 360,
+            "sample_rate": 16000,
+        }
+        await self._send_rpc_direct(device, "start_recording", payload)
+        device.recording_started = True
+
+    async def _send_rpc_direct(self, device: ConnectedDevice, command: str, payload: Dict[str, Any] | None = None):
+        """Send one RPC request directly to websocket, preserving startup ordering."""
+        req_id = str(uuid.uuid4())
+        message = {
+            "Request": {
+                "id": req_id,
+                "command": command,
+                "payload": payload,
+            }
+        }
+        try:
+            # Wait until client has produced any rx frame (or timeout) before sending startup command.
+            try:
+                await asyncio.wait_for(device.first_rx_event.wait(), timeout=self._command_ready_timeout_s)
+            except asyncio.TimeoutError:
+                pass
+            await device.websocket.send_text(json.dumps(message, ensure_ascii=False))
+            device.pending_commands[req_id] = time.time()
+            asyncio.create_task(self._watch_command_result(device, req_id))
+            logger.info("[RPC Direct] Sent %s to %s", command, device.client_id)
+        except Exception as e:
+            logger.warning("[RPC Direct] Failed to send %s to %s: %s", command, device.client_id, e)
+            raise
     
     async def broadcast_audio(self, audio_data: bytes):
         """向所有客户端广播音频"""
