@@ -102,4 +102,4 @@ export const searchFaces = (data) => postApi('/api/face/search', data, 60000);
 // Xiaomi Bridge API
 export const getXiaomiBridgeDevices = () => getApi('/api/xiaomi-bridge/devices');
 export const getXiaomiBridgeDevice = (clientId) => getApi(`/api/xiaomi-bridge/devices/${clientId}`);
-export const sendXiaomiBridgeSpeak = (data) => postApi('/api/xiaomi-bridge/speak', data);
+export const updateXiaomiBridgeDevice = (clientId, data) => putApi(`/api/xiaomi-bridge/devices/${clientId}`, data);

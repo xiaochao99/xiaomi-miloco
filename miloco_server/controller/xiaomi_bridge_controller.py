@@ -56,6 +56,33 @@ async def get_device_info(client_id: str):
     return {"code": 0, "data": device, "message": "success"}
 
 
+class DeviceUpdateRequest(BaseModel):
+    """设备更新请求模型."""
+    device_name: Optional[str] = None
+
+
+@router.put("/devices/{client_id}")
+async def update_device_info(client_id: str, request: DeviceUpdateRequest):
+    """Update device information (e.g., custom device name)."""
+    manager = get_audio_stream_manager()
+    
+    if request.device_name is not None:
+        # Update device name in memory
+        device = manager._devices.get(client_id)
+        if not device:
+            return {"code": -1, "data": None, "message": "Device not found"}
+        
+        old_name = device.device_name
+        device.device_name = request.device_name.strip()
+        
+        # Persist to storage
+        await manager.save_device_info(client_id, {"device_name": device.device_name})
+        
+        logger.info(f"[XiaoAI Bridge] Updated device name: {client_id} - {old_name} -> {device.device_name}")
+    
+    return {"code": 0, "data": manager.get_device_info(client_id), "message": "success"}
+
+
 @router.post("/play/text")
 async def play_text(request: TextRequest):
     """

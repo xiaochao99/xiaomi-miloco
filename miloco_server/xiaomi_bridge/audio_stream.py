@@ -20,6 +20,13 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
 
+# 设备信息存储路径
+DEVICE_STORAGE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "xiaomi_bridge_devices.json"
+)
+
 
 @dataclass
 class AudioStreamConfig:
@@ -77,6 +84,63 @@ class AudioStreamManager:
         # Command channel tuning (open-xiaoai client-rust RPC)
         self._command_ready_timeout_s = float(os.getenv("MILOCO_XIAOAI_COMMAND_READY_TIMEOUT_S", "0.2"))
         self._command_result_timeout_s = float(os.getenv("MILOCO_XIAOAI_COMMAND_RESULT_TIMEOUT_S", "5.0"))
+        # 设备信息缓存（持久化存储）
+        self._device_info_cache: Dict[str, Dict[str, Any]] = {}
+        self._load_device_info()
+    
+    def _load_device_info(self):
+        """从本地存储加载设备信息"""
+        try:
+            if os.path.exists(DEVICE_STORAGE_PATH):
+                with open(DEVICE_STORAGE_PATH, "r", encoding="utf-8") as f:
+                    self._device_info_cache = json.load(f)
+                logger.info(f"[AudioStream] Loaded {len(self._device_info_cache)} device records from storage")
+            else:
+                # 确保目录存在
+                os.makedirs(os.path.dirname(DEVICE_STORAGE_PATH), exist_ok=True)
+        except Exception as e:
+            logger.error(f"[AudioStream] Failed to load device info: {e}")
+            self._device_info_cache = {}
+    
+    async def save_device_info(self, client_id: str, info: Dict[str, Any]):
+        """保存设备信息到本地存储"""
+        try:
+            if client_id not in self._device_info_cache:
+                self._device_info_cache[client_id] = {}
+            self._device_info_cache[client_id].update(info)
+            
+            with open(DEVICE_STORAGE_PATH, "w", encoding="utf-8") as f:
+                json.dump(self._device_info_cache, f, ensure_ascii=False, indent=2)
+            
+            logger.debug(f"[AudioStream] Saved device info for {client_id}")
+        except Exception as e:
+            logger.error(f"[AudioStream] Failed to save device info: {e}")
+    
+    def get_cached_device_info(self, client_id: str) -> Optional[Dict[str, Any]]:
+        """获取缓存的设备信息"""
+        return self._device_info_cache.get(client_id)
+    
+    def get_stable_device_id(self, ip_address: str, device_name: str) -> str:
+        """
+        根据IP地址和设备名称生成稳定的设备ID
+        确保设备重启后ID保持稳定
+        """
+        # 先尝试查找已有记录
+        for stored_id, info in self._device_info_cache.items():
+            stored_ip = info.get("ip_address")
+            stored_name = info.get("device_name")
+            if stored_ip == ip_address or (stored_name and stored_name == device_name):
+                return stored_id
+        
+        # 如果没有记录，使用IP地址生成稳定ID
+        if ip_address and ip_address != "Unknown":
+            # 使用IP地址的哈希作为设备ID
+            import hashlib
+            hash_value = hashlib.md5(ip_address.encode()).hexdigest()
+            return hash_value
+        
+        # 回退到UUID
+        return str(uuid.uuid4())
     
     @classmethod
     def instance(cls) -> AudioStreamManager:
@@ -134,6 +198,25 @@ class AudioStreamManager:
         # 获取设备名称（从查询参数）
         device_name = websocket.query_params.get("device_name", "Unknown")
         
+        # 使用稳定的设备ID（基于IP地址和设备名称）
+        stable_client_id = self.get_stable_device_id(ip_address, device_name)
+        
+        # 如果客户端没有提供client_id或者提供的是临时ID，使用稳定ID
+        if client_id == "default" or client_id.startswith("default-") or len(client_id) == 36:
+            # 可能是新连接或临时UUID
+            client_id = stable_client_id
+        else:
+            # 使用客户端提供的ID，但仍检查是否有缓存信息
+            cached_info = self.get_cached_device_info(client_id)
+            if cached_info:
+                # 更新缓存中的IP地址
+                await self.save_device_info(client_id, {"ip_address": ip_address})
+        
+        # 检查是否有缓存的设备名称
+        cached_info = self.get_cached_device_info(client_id)
+        if cached_info and cached_info.get("device_name"):
+            device_name = cached_info["device_name"]
+        
         if client_id in self._devices:
             # 关闭旧连接
             try:
@@ -150,6 +233,13 @@ class AudioStreamManager:
             ip_address=ip_address
         )
         self._devices[client_id] = device
+        
+        # 保存/更新设备信息到缓存
+        await self.save_device_info(client_id, {
+            "device_name": device_name,
+            "ip_address": ip_address
+        })
+        
         logger.info(f"[AudioStream] Client connected: client_id={client_id}, device_name={device_name}, ip_address={ip_address}")
         
         try:

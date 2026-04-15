@@ -21,7 +21,7 @@ from miloco_server.schema.chat_schema import Event, Instruction, InstructionPayl
 from miloco_server.schema.chat_history_schema import (
     ChatHistoryStorage, ChatHistoryMessages, ChatHistorySession
 )
-from miloco_server.service.xiaoai_broadcast_service import broadcast_chat_reply
+from miloco_server.service.xiaoai_broadcast_service import broadcast_chat_reply, broadcast_via_bridge
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,23 @@ class ChatAgentDispatcher(Actor):
             self._full_response += instruction_payload.stream
         elif isinstance(instruction_payload, Dialog.Finish):
             if instruction_payload.success and self._full_response:
-                asyncio.create_task(broadcast_chat_reply(self._full_response))
+                # Per-request override: allow UI to request XiaoAI playback even if env toggle is off.
+                try:
+                    chat_data = self._chat_companion.get_chat_data(self.request_id)
+                    if chat_data and chat_data.xiaoai_play:
+                        from miloco_server.utils.structured_tags import extract_final_answer
+
+                        speak_text = (extract_final_answer(self._full_response) or self._full_response).strip()
+                        if speak_text:
+                            device_ids = chat_data.xiaoai_client_ids
+                            # None / [] => broadcast to all connected devices
+                            asyncio.create_task(
+                                broadcast_via_bridge(speak_text, client_ids=(device_ids or None))
+                            )
+                    else:
+                        asyncio.create_task(broadcast_chat_reply(self._full_response))
+                except Exception:
+                    asyncio.create_task(broadcast_chat_reply(self._full_response))
 
         instruction = Instruction.build_instruction(instruction_payload, self.request_id, self.session_id)
 

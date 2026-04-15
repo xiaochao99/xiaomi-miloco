@@ -111,6 +111,14 @@ class Nlp:
         query: str = Field(..., description="Request content")
         mcp_list: Optional[List[str]] = Field(default_factory=list, description="List of MCP IDs to call")
         camera_ids: Optional[List[str]] = Field(None, description="Camera ID list")
+        xiaoai_play: Optional[bool] = Field(
+            default=False,
+            description="Whether to play the AI reply on XiaoAI speakers",
+        )
+        xiaoai_client_ids: Optional[List[str]] = Field(
+            default=None,
+            description="Optional list of XiaoAI speaker client_id to play on; empty/None means all connected devices",
+        )
 
     class ActionDescriptionDynamicExecute(EventPayload):
         action_descriptions: List[str] = Field(..., description="Action descriptions")

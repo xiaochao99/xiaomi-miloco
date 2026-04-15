@@ -49,8 +49,7 @@ const BottomControlButtons = () => {
   const autoSelect = onlineCameraList.length === 0 && selectedCameraIds.length === 0;
 
   return (
-    <Flex justify="space-between" style={{ flex: 0 }} align="center" className={styles.sendFooter}>
-      <Flex align="center" gap={8}>
+    <Flex align="center" gap={8}>
         <div className={styles.buttonContainer}>
           <Tooltip title={t('instant.chat.cameraSelectTooltip')}>
             <Button
@@ -117,7 +116,6 @@ const BottomControlButtons = () => {
             }}
           />
         </div>
-      </Flex>
     </Flex>
   );
 };
