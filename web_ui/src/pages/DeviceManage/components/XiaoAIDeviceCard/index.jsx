@@ -3,17 +3,53 @@
  * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Input, Button, Tooltip } from 'antd';
+import { EditOutlined, CheckOutlined, XOutlined } from '@ant-design/icons';
+import { updateXiaomiBridgeDevice } from '@/api';
 import styles from './index.module.less';
 
-const XiaoAIDeviceCard = ({ device }) => {
+const XiaoAIDeviceCard = ({ device, onUpdate }) => {
   const { t } = useTranslation();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(device.device_name || '');
+  const [saving, setSaving] = useState(false);
 
   const formatDuration = (seconds) => {
     if (seconds < 60) return `${seconds}秒`;
     if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟`;
     return `${Math.floor(seconds / 3600)}小时${Math.floor((seconds % 3600) / 60)}分钟`;
+  };
+
+  const handleSave = async () => {
+    if (!editName.trim()) {
+      setEditName(device.device_name || '');
+      setIsEditing(false);
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      const response = await updateXiaomiBridgeDevice(device.client_id, { device_name: editName.trim() });
+      if (response?.code === 0) {
+        if (onUpdate) {
+          onUpdate(device.client_id, editName.trim());
+        }
+        setIsEditing(false);
+      } else {
+        console.error('Failed to update device name:', response?.message);
+      }
+    } catch (error) {
+      console.error('Failed to update device name:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditName(device.device_name || '');
+    setIsEditing(false);
   };
 
   return (
@@ -28,9 +64,45 @@ const XiaoAIDeviceCard = ({ device }) => {
         </div>
       </div>
       <div className={styles.content}>
-        <div className={styles.name}>
-          {device.device_name || '未知设备'}
-          <span className={styles.onlineBadge}>{t('deviceManage.online')}</span>
+        <div className={styles.nameRow}>
+          {isEditing ? (
+            <div className={styles.editContainer}>
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className={styles.editInput}
+                autoFocus
+                onPressEnter={handleSave}
+              />
+              <Button
+                type="primary"
+                size="small"
+                icon={<CheckOutlined />}
+                onClick={handleSave}
+                loading={saving}
+                className={styles.saveBtn}
+              />
+              <Button
+                size="small"
+                icon={<XOutlined />}
+                onClick={handleCancel}
+                className={styles.cancelBtn}
+              />
+            </div>
+          ) : (
+            <div className={styles.name}>
+              <span>{device.device_name || '未知设备'}</span>
+              <span className={styles.onlineBadge}>{t('deviceManage.online')}</span>
+              <Tooltip title={t('deviceManage.editDeviceName')}>
+                <button
+                  className={styles.editButton}
+                  onClick={() => setIsEditing(true)}
+                >
+                  <EditOutlined size={14} />
+                </button>
+              </Tooltip>
+            </div>
+          )}
         </div>
         <div className={styles.info}>
           <div className={styles.infoItem}>

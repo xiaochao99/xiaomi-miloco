@@ -421,7 +421,7 @@ export const useChatStore = create(
         setSocketStatus: (status) => set({ socketStatus: status }),
         setIsSocketActive: (active) => set({ isSocketActive: active }),
 
-        globalSendMessage: async (messageText, customMcpList = null, callbacks = {}) => {
+        globalSendMessage: async (messageText, customMcpList = null, callbacks = {}, extraPayload = {}) => {
           const {
             input, isAnswering, selectedCameraIds, mcpList,
             setIsScrollToBottom, setCurrentAnswer, setAnswerMessages, startNewRound, setMcpList
@@ -461,6 +461,7 @@ export const useChatStore = create(
             query: inputText,
             camera_ids: selectedCameraIds,
             mcp_list: finalMcpList,
+            ...(extraPayload && typeof extraPayload === 'object' ? extraPayload : {}),
           };
 
           // execute send before callback
