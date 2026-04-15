@@ -9,16 +9,69 @@ API endpoints for Xiaomi speaker bridge functionality.
 from __future__ import annotations
 
 import logging
+import os
 from typing import List, Optional, Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, File, UploadFile
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, File, UploadFile, Request, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from miloco_server.middleware import verify_token, verify_websocket_token
 from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/xiaomi-bridge", tags=["Xiaomi Bridge"])
+
+
+def _is_xiaomi_bridge_api_auth_enabled() -> bool:
+    """Whether Xiaomi Bridge API auth is enabled (default: enabled)."""
+    raw = os.getenv("MILOCO_XIAOMI_BRIDGE_API_AUTH", "1").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _get_xiaomi_bridge_public_endpoints() -> set[str]:
+    """
+    Configurable anonymous whitelist.
+    Example: MILOCO_XIAOMI_BRIDGE_PUBLIC_ENDPOINTS="health,status,ws/play_stream"
+    """
+    raw = os.getenv("MILOCO_XIAOMI_BRIDGE_PUBLIC_ENDPOINTS", "health,status")
+    endpoints = {
+        item.strip().strip("/").lower()
+        for item in raw.split(",")
+        if item.strip()
+    }
+    return endpoints
+
+
+def _to_endpoint_key(path: str) -> str:
+    """Convert full path to router-local key, e.g. '/api/xiaomi-bridge/health' -> 'health'."""
+    if not path:
+        return ""
+    normalized = path.strip().lower()
+    for prefix in ("/api/xiaomi-bridge/", "/xiaomi-bridge/"):
+        if normalized.startswith(prefix):
+            return normalized[len(prefix):].strip("/")
+    return normalized.strip("/")
+
+
+async def _verify_xiaomi_bridge_http_access(request: Request) -> str:
+    """HTTP access gate for Xiaomi Bridge endpoints."""
+    if not _is_xiaomi_bridge_api_auth_enabled():
+        return "anonymous"
+    endpoint_key = _to_endpoint_key(request.url.path)
+    if endpoint_key in _get_xiaomi_bridge_public_endpoints():
+        return "anonymous"
+    return verify_token(request)
+
+
+def _verify_xiaomi_bridge_websocket_access(websocket: WebSocket) -> str:
+    """WebSocket access gate for Xiaomi Bridge endpoints."""
+    if not _is_xiaomi_bridge_api_auth_enabled():
+        return "anonymous"
+    endpoint_key = _to_endpoint_key(websocket.url.path)
+    if endpoint_key in _get_xiaomi_bridge_public_endpoints():
+        return "anonymous"
+    return verify_websocket_token(websocket)
 
 
 class TextRequest(BaseModel):
@@ -36,7 +89,7 @@ class ConnectedDevice(BaseModel):
 
 
 @router.get("/devices")
-async def get_connected_devices():
+async def get_connected_devices(_current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
     """Get list of connected Xiaomi speakers."""
     manager = get_audio_stream_manager()
     devices = manager.get_all_devices()
@@ -47,7 +100,7 @@ async def get_connected_devices():
 
 
 @router.get("/devices/{client_id}")
-async def get_device_info(client_id: str):
+async def get_device_info(client_id: str, _current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
     """Get detailed information about a specific device."""
     manager = get_audio_stream_manager()
     device = manager.get_device_info(client_id)
@@ -62,7 +115,11 @@ class DeviceUpdateRequest(BaseModel):
 
 
 @router.put("/devices/{client_id}")
-async def update_device_info(client_id: str, request: DeviceUpdateRequest):
+async def update_device_info(
+    client_id: str,
+    request: DeviceUpdateRequest,
+    _current_user: str = Depends(_verify_xiaomi_bridge_http_access),
+):
     """Update device information (e.g., custom device name)."""
     manager = get_audio_stream_manager()
     
@@ -84,7 +141,7 @@ async def update_device_info(client_id: str, request: DeviceUpdateRequest):
 
 
 @router.post("/play/text")
-async def play_text(request: TextRequest):
+async def play_text(request: TextRequest, _current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
     """
     Play text on connected Xiaomi speakers.
     Compatible with open-xiaoai-bridge API.
@@ -114,13 +171,13 @@ async def play_text(request: TextRequest):
 
 
 @router.get("/health")
-async def health_check():
+async def health_check(_current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
     """健康检查 - 兼容 open-xiaoai-bridge API"""
     return {"code": 0, "message": "ok"}
 
 
 @router.get("/status")
-async def get_status():
+async def get_status(_current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
     """获取播放状态 - 兼容 open-xiaoai-bridge API"""
     manager = get_audio_stream_manager()
     devices = manager.get_all_devices()
@@ -134,7 +191,7 @@ async def get_status():
 
 
 @router.post("/interrupt")
-async def interrupt_playback():
+async def interrupt_playback(_current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
     """打断当前播放 - 兼容 open-xiaoai-bridge API"""
     try:
         manager = get_audio_stream_manager()
@@ -148,7 +205,7 @@ async def interrupt_playback():
 
 
 @router.post("/wakeup")
-async def wakeup_speaker():
+async def wakeup_speaker(_current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
     """唤醒小爱音箱 - 兼容 open-xiaoai-bridge API"""
     try:
         manager = get_audio_stream_manager()
@@ -165,15 +222,8 @@ class PlayUrlRequest(BaseModel):
     """播放音频链接请求模型"""
     url: str
 
-class DoubaoTTSRequest(BaseModel):
-    """豆包TTS请求模型"""
-    text: str
-    speaker_id: str = "zh_female_vv_uranus_bigtts"
-    client_ids: Optional[List[str]] = None
-
-
 @router.post("/play/url")
-async def play_url(request: PlayUrlRequest):
+async def play_url(request: PlayUrlRequest, _current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
     """播放音频链接 - 兼容 open-xiaoai-bridge API"""
     if not request.url:
         return {"code": -1, "message": "URL is required"}
@@ -190,7 +240,7 @@ async def play_url(request: PlayUrlRequest):
 
 
 @router.post("/play/file")
-async def play_file(file: UploadFile = File(...)):
+async def play_file(file: UploadFile = File(...), _current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
     """上传并播放音频文件 - 兼容 open-xiaoai-bridge API"""
     if not file:
         return {"code": -1, "message": "File is required"}
@@ -210,9 +260,23 @@ async def play_file(file: UploadFile = File(...)):
         return {"code": -1, "message": str(e)}
 
 
-@router.post("/tts/doubao")
-async def doubao_tts(request: DoubaoTTSRequest):
-    """豆包TTS合成并播放（非流式：先合成整段音频再发送）"""
+class TTSRequest(BaseModel):
+    """统一 TTS 请求模型（按 MILOCO_TTS_ENGINE 自动路由）"""
+    text: str
+    speaker_id: Optional[str] = None
+    client_ids: Optional[List[str]] = None
+
+
+@router.post("/tts")
+async def tts(request: TTSRequest, _current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
+    """
+    统一 TTS 合成并播放接口（唯一入口）。
+
+    按环境变量 `MILOCO_TTS_ENGINE` 自动选择引擎：
+    - `doubao`
+    - `mimo`
+    - `xiaoai`
+    """
     if not request.text:
         return {"code": -1, "message": "Text is required"}
 
@@ -223,23 +287,29 @@ async def doubao_tts(request: DoubaoTTSRequest):
         if not tts.is_initialized:
             ok = await tts.initialize()
             if not ok:
-                return {"code": -1, "message": "Doubao TTS not configured"}
+                return {"code": -1, "message": "TTS service not configured"}
 
-        audio_data = await tts.synthesize(request.text, request.speaker_id)
-        if not audio_data:
-            return {"code": -1, "message": "TTS synthesis failed"}
+        engine = tts.engine
+        logger.info(f"[TTS] Using engine: {engine}")
 
-        manager = get_audio_stream_manager()
-        await manager.send_audio_to_clients(audio_data, request.client_ids)
-        return {"code": 0, "message": "ok"}
+        ok = await tts.speak(request.text, request.speaker_id)
+        if not ok:
+            return {"code": -1, "message": f"{engine} TTS speak failed"}
+
+        return {"code": 0, "message": "ok", "engine": engine}
     except Exception as e:
-        logger.error("Doubao TTS failed: %s", e, exc_info=True)
+        logger.error("TTS failed: %s", e, exc_info=True)
         return {"code": -1, "message": str(e)}
 
 
-@router.post("/tts/doubao/stream")
-async def doubao_tts_stream(request: DoubaoTTSRequest):
-    """豆包TTS流式合成并边下发播放（chunk-by-chunk）"""
+@router.post("/tts/stream")
+async def tts_stream(request: TTSRequest, _current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
+    """
+    统一 TTS 流式合成并播放接口。
+
+    按环境变量 `MILOCO_TTS_ENGINE` 自动选择引擎。
+    对于不支持流式的场景，将按引擎内部策略自动回退。
+    """
     if not request.text:
         return {"code": -1, "message": "Text is required"}
 
@@ -250,20 +320,23 @@ async def doubao_tts_stream(request: DoubaoTTSRequest):
         if not tts.is_initialized:
             ok = await tts.initialize()
             if not ok:
-                return {"code": -1, "message": "Doubao TTS not configured"}
+                return {"code": -1, "message": "TTS service not configured"}
+
+        engine = tts.engine
+        logger.info(f"[TTS Stream] Using engine: {engine}")
 
         ok = await tts.speak_stream(request.text, request.speaker_id, request.client_ids)
         if not ok:
-            return {"code": -1, "message": "Stream TTS failed"}
-        return {"code": 0, "message": "ok"}
+            return {"code": -1, "message": f"{engine} stream TTS failed"}
+
+        return {"code": 0, "message": "ok", "engine": engine}
     except Exception as e:
-        logger.error("Doubao stream TTS failed: %s", e, exc_info=True)
+        logger.error("Stream TTS failed: %s", e, exc_info=True)
         return {"code": -1, "message": str(e)}
 
-
 @router.get("/tts/doubao_voices")
-async def get_doubao_voices():
-    """获取豆包TTS可用音色列表（静态表）"""
+async def get_doubao_voices(_current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
+    """获取豆包可用音色列表（仅在 `MILOCO_TTS_ENGINE=doubao` 时生效）"""
     voices = [
         {"id": "zh_female_vv_uranus_bigtts", "name": "薇薇"},
         {"id": "zh_female_cancan_mars_bigtts", "name": "灿灿"},
@@ -284,6 +357,15 @@ async def ws_play_stream(websocket: WebSocket):
 
     可选：首条 text 消息可携带 JSON {"client_ids":[...]} 指定目标设备；否则广播。
     """
+    try:
+        _verify_xiaomi_bridge_websocket_access(websocket)
+    except HTTPException as e:
+        await websocket.close(code=1008, reason=e.detail or "Unauthorized")
+        return
+    except Exception:
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+
     await websocket.accept()
     manager = get_audio_stream_manager()
     client_ids: Optional[List[str]] = None
@@ -341,6 +423,9 @@ async def audio_stream_websocket(websocket: WebSocket):
     # 该入口容易被误用（HTTP API 端口），并且会导致设备连错端口、握手/投递行为不一致。
     # 正确的小爱音箱连接入口是 BridgeManager 单独启动的 WS 服务（默认 4399）的根路径 "/".
     try:
+        # 即使是 deprecated 入口也要鉴权，避免被匿名探测和滥用。
+        _verify_xiaomi_bridge_websocket_access(websocket)
+
         ip_address = "Unknown"
         try:
             if hasattr(websocket.client, "host"):

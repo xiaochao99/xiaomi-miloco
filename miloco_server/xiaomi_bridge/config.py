@@ -45,9 +45,11 @@ class ASRConfig:
 @dataclass
 class TTSConfig:
     """TTS configuration."""
-    engine: str = "doubao"  # "doubao" or "xiaoai"
+    engine: str = "doubao"  # "doubao", "xiaoai", or "mimo"
     app_id: str = ""
     access_key: str = ""
+    api_key: str = ""  # For MiMo API
+    api_base_url: str = "https://api.xiaomimimo.com"  # For MiMo API
     default_speaker: str = "zh_female_vv_uranus_bigtts"
     audio_format: str = "pcm"  # "pcm" or "mp3"
     stream: bool = True
@@ -118,7 +120,9 @@ class BridgeConfig:
                 engine=os.getenv("MILOCO_TTS_ENGINE", "doubao"),
                 app_id=os.getenv("MILOCO_DOUBAO_APP_ID", ""),
                 access_key=os.getenv("MILOCO_DOUBAO_ACCESS_KEY", ""),
-                default_speaker=os.getenv("MILOCO_DOUBAO_VOICE", "zh_female_vv_uranus_bigtts"),
+                api_key=os.getenv("MILOCO_MIMO_API_KEY", ""),
+                api_base_url=os.getenv("MILOCO_MIMO_API_URL", "https://api.xiaomimimo.com"),
+                default_speaker=os.getenv("MILOCO_TTS_VOICE", "zh_female_vv_uranus_bigtts"),
                 audio_format=os.getenv("MILOCO_TTS_FORMAT", "pcm"),
                 stream=os.getenv("MILOCO_TTS_STREAM", "1").lower() in ("1", "true"),
                 speed=float(os.getenv("MILOCO_TTS_SPEED", "1.0")),

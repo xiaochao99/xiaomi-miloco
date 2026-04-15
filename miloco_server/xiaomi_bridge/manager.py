@@ -144,6 +144,8 @@ class BridgeManager:
             engine=self._config.tts.engine,
             app_id=self._config.tts.app_id,
             access_key=self._config.tts.access_key,
+            api_key=self._config.tts.api_key,
+            api_base_url=self._config.tts.api_base_url,
             default_speaker=self._config.tts.default_speaker,
             audio_format=self._config.tts.audio_format,
             stream=self._config.tts.stream,

@@ -69,22 +69,21 @@ pip install onnxruntime numpy sherpa-onnx httpx
 # 启用 Xiaomi Bridge
 export MILOCO_BRIDGE_ENABLED=1
 
-# 可选配置
+# 可选配置（统一 TTS 接口，根据引擎自动路由）
 export MILOCO_WAKEUP_KEYWORDS="小米同学"
+
+# 1) 使用豆包
 export MILOCO_TTS_ENGINE="doubao"
 export MILOCO_DOUBAO_APP_ID="your_app_id"
 export MILOCO_DOUBAO_ACCESS_KEY="your_access_key"
+
+# 2) 使用 MiMo
+# export MILOCO_TTS_ENGINE="mimo"
+# export MILOCO_MIMO_API_KEY="your_mimo_api_key"
+# export MILOCO_MIMO_API_URL="https://api.xiaomimimo.com"
 ```
 
-### 4. 启动服务
 
-```bash
-# 使用启动脚本
-python start_bridge.py
-
-# 或使用调试模式
-python start_bridge.py --debug
-```
 
 ## 配置说明
 
@@ -102,10 +101,14 @@ python start_bridge.py --debug
 | `MILOCO_KWS_THRESHOLD`     | KWS 检测阈值           | `0.2`                        |
 | `MILOCO_ASR_MODEL`         | ASR 模型类型           | `sense_voice`                |
 | `MILOCO_ASR_INT8`          | 是否使用 INT8 量化       | `1`（启用）                      |
-| `MILOCO_TTS_ENGINE`        | TTS 引擎             | `doubao`                     |
+| `MILOCO_TTS_ENGINE`        | TTS 引擎（`doubao` / `mimo` / `xiaoai`） | `doubao`                     |
 | `MILOCO_DOUBAO_APP_ID`     | 豆包 TTS App ID      | 空                            |
 | `MILOCO_DOUBAO_ACCESS_KEY` | 豆包 TTS Access Key  | 空                            |
+| `MILOCO_MIMO_API_KEY`      | MiMo TTS API Key     | 空                            |
+| `MILOCO_MIMO_API_URL`      | MiMo TTS API 地址      | `https://api.xiaomimimo.com` |
 | `MILOCO_DOUBAO_VOICE`      | 豆包语音 ID            | `zh_female_vv_uranus_bigtts` |
+| `MILOCO_XIAOMI_BRIDGE_API_AUTH` | Xiaomi Bridge API 鉴权开关（`1` 开启，`0` 关闭） | `1` |
+| `MILOCO_XIAOMI_BRIDGE_PUBLIC_ENDPOINTS` | Xiaomi Bridge 匿名白名单端点（逗号分隔，路由键） | `health,status` |
 | `MILOCO_WAKEUP_TIMEOUT`    | 唤醒超时时间（秒）          | `20`                         |
 | `MILOCO_WS_PORT`           | WebSocket 端口       | `4399`                       |
 | `MILOCO_AUDIO_GAIN`        | 音频增益               | `1.0`                        |
@@ -151,6 +154,15 @@ GET /api/xiaomi-bridge/status
 }
 ```
 
+鉴权说明：
+
+- 默认开启 Xiaomi Bridge API 鉴权：`MILOCO_XIAOMI_BRIDGE_API_AUTH=1`
+- 默认匿名白名单仅包含 `health,status`
+- 其余接口（含 `/tts`、`/play/*`、`/wakeup`、`/interrupt`、`/devices`、`/ws/play_stream`）需要携带 JWT 或 API Token
+- `MILOCO_XIAOMI_BRIDGE_PUBLIC_ENDPOINTS` 使用路由键，不带前缀，例如：
+  - `health,status`
+  - `health,status,ws/play_stream`
+
 #### 手动唤醒
 
 ```http
@@ -188,6 +200,41 @@ Content-Type: application/json
 {
     "wakeup_keywords": ["小米同学", "你好"],
     "exit_keywords": ["退出", "停止"]
+}
+```
+
+#### 统一 TTS（唯一接口）
+
+> 当前只保留统一 TTS 接口，不再区分 `/tts/doubao`、`/tts/mimo`。
+> 实际走哪个引擎由环境变量 `MILOCO_TTS_ENGINE` 决定。
+
+```http
+POST /api/xiaomi-bridge/tts
+Content-Type: application/json
+
+{
+    "text": "你好，我是小爱语音助手",
+    "speaker_id": "zh_female_vv_uranus_bigtts"
+}
+```
+
+```http
+POST /api/xiaomi-bridge/tts/stream
+Content-Type: application/json
+
+{
+    "text": "这是一段流式播报测试",
+    "speaker_id": "zh_female_vv_uranus_bigtts"
+}
+```
+
+响应示例：
+
+```json
+{
+    "code": 0,
+    "message": "ok",
+    "engine": "doubao"
 }
 ```
 
@@ -285,26 +332,7 @@ async fn connect_to_bridge() -> Result<(), Box<dyn std::error::Error>> {
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 测试命令
 
-### 检查模型文件
-
-```bash
-python start_bridge.py --check-only
-```
-
-### 列出所需模型
-
-```bash
-python start_bridge.py --list-models
-```
-
-### 测试重构代码
-
-```bash
-cd miloco_server
-python -m xiaomi_bridge.test_bridge
-```
 
 ## 常见问题
 
@@ -331,8 +359,10 @@ python -m xiaomi_bridge.test_bridge
 
 **检查项**:
 
-- 确认 TTS 配置正确（App ID 和 Access Key）
-- 检查网络连接（豆包 TTS 需要联网）
+- 确认 `MILOCO_TTS_ENGINE` 配置正确（`doubao` 或 `mimo`）
+- 若 `doubao`：检查 `MILOCO_DOUBAO_APP_ID` 和 `MILOCO_DOUBAO_ACCESS_KEY`
+- 若 `mimo`：检查 `MILOCO_MIMO_API_KEY`（可选 `MILOCO_MIMO_API_URL`）
+- 检查网络连接（豆包/MiMo 都需要联网）
 - 检查音频输出设备
 
 ### 4. WebSocket 连接失败
@@ -344,6 +374,33 @@ python -m xiaomi_bridge.test_bridge
 - 确认 Bridge 服务正在运行
 - 检查端口 `4399` 是否被占用
 - 确认防火墙允许连接
+
+### 5. Xiaomi Bridge 接口返回 401/WS 1008
+
+**问题**: 调用 `/api/xiaomi-bridge/*` 返回未授权，或 `ws/play_stream` 连接被关闭。
+
+**检查项**:
+
+- 确认是否开启鉴权（默认开启）：`MILOCO_XIAOMI_BRIDGE_API_AUTH=1`
+- 请求是否携带认证信息：
+  - HTTP: `Authorization: Bearer <token>`
+  - WebSocket: query 参数 `?token=<token>` 或 cookie
+- 若需匿名访问，确认端点已加入 `MILOCO_XIAOMI_BRIDGE_PUBLIC_ENDPOINTS`
+- 临时联调可设 `MILOCO_XIAOMI_BRIDGE_API_AUTH=0`（仅建议内网）
+
+## 生产环境推荐配置
+
+```bash
+# 强烈建议：开启鉴权（默认）
+export MILOCO_XIAOMI_BRIDGE_API_AUTH=1
+
+# 匿名白名单最小化，仅保留探活
+export MILOCO_XIAOMI_BRIDGE_PUBLIC_ENDPOINTS="health,status"
+
+# 生产环境优先使用 API Token 或受控 JWT
+# HTTP 示例：
+# Authorization: Bearer apt_xxx 或 Bearer <jwt>
+```
 
 ## 日志说明
 
