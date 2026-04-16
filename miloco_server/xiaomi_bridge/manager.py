@@ -100,6 +100,44 @@ class BridgeManager:
         """Set callback for processing text with Miloco model."""
         self._process_text_callback = callback
 
+    def _create_default_miloco_callback(self) -> Callable[[str], Awaitable[str]]:
+        """Create default Miloco AI chat callback using APIChatAdapter."""
+        from miloco_server.service.ai_chat_adapter import APIChatAdapter, parse_ai_response
+        import uuid
+
+        async def process_miloco_text(text: str) -> str:
+            """Process text using Miloco AI chat interface."""
+            request_id = str(uuid.uuid4())
+            chat_adapter = APIChatAdapter(request_id)
+
+            try:
+                response_text = ""
+                async for message in chat_adapter.process_query(
+                    query=text,
+                    camera_ids=[],
+                    mcp_list=None  # Use all available MCP services
+                ):
+                    if message["type"] == "complete":
+                        response_text = message["data"].get("response", "")
+                        break
+
+                # Extract only <final_answer> content
+                parsed_response = parse_ai_response(response_text)
+                final_answer = parsed_response.get("final_answer", "").strip()
+
+                if final_answer:
+                    logger.info("Miloco response (final_answer): %s", final_answer[:50])
+                    return final_answer
+                else:
+                    logger.warning("No <final_answer> found in response")
+                    return ""
+
+            except Exception as e:
+                logger.error("Miloco callback error: %s", e)
+                return ""
+
+        return process_miloco_text
+
     async def initialize(self, config: BridgeConfig | None = None):
         """Initialize the bridge manager."""
         if config is not None:
@@ -165,6 +203,10 @@ class BridgeManager:
         # Configure conversation controller
         async def on_tts(text: str):
             await self._speak(text)
+
+        # Set default AI chat callback if not provided
+        if not self._process_text_callback:
+            self._process_text_callback = self._create_default_miloco_callback()
 
         self._conversation_controller.set_audio_components(vad=self._vad, asr=self._asr)
         self._conversation_controller.configure(
