@@ -1294,26 +1294,50 @@ class TriggerRuleRunner:
                 return result
 
             if cfg.mode == XiaoAIBroadcastMode.MODEL_REPLY:
-                llm_proxy = self._get_planning_llm_proxy() or self._get_vision_understaning_llm_proxy()
-                if not llm_proxy:
-                    logger.warning("Rule %s XiaoAI model_reply skipped: no LLM proxy", rule.name)
+                user_question = (cfg.text or "").strip()
+                if not user_question:
+                    logger.warning("Rule %s XiaoAI model_reply skipped: empty user question", rule.name)
                     return False
 
-                prompt = (
-                    "你是智能家居语音播报助手。"
-                    f"当前触发规则名称：{rule.name}。"
-                    f"规则条件：{rule.condition or ''}。"
-                    "请生成一条适合语音播放的简短中文播报文案，"
-                    "长度控制在50字以内，不要markdown，不要额外解释。"
-                )
-                resp = await llm_proxy.async_call_llm([{"role": "user", "content": prompt}])
-                content = (resp or {}).get("content", "").strip()
-                if not content:
+                # Use AI Chat Adapter to process the query with full tool calling capability
+                from miloco_server.service.ai_chat_adapter import APIChatAdapter, parse_ai_response
+                import uuid
+                
+                request_id = str(uuid.uuid4())
+                chat_adapter = APIChatAdapter(request_id)
+                
+                # Get MCP list from rule configuration
+                mcp_list = rule.mcp_list if hasattr(rule, 'mcp_list') and rule.mcp_list else None
+                
+                # Process query using AI chat adapter (includes tool calling)
+                response_text = ""
+                try:
+                    async for message in chat_adapter.process_query(
+                        query=user_question,
+                        camera_ids=[],
+                        mcp_list=mcp_list
+                    ):
+                        if message["type"] == "complete":
+                            response_text = message["data"].get("response", "")
+                            break
+                except Exception as e:
+                    logger.error("Rule %s XiaoAI model_reply chat adapter error: %s", rule.name, e)
+                    return False
+
+                if not response_text:
                     logger.warning("Rule %s XiaoAI model_reply skipped: empty model response", rule.name)
                     return False
 
+                # Extract only the <final_answer> content for broadcast
+                parsed_response = parse_ai_response(response_text)
+                broadcast_content = parsed_response.get("final_answer", "").strip()
+                
+                if not broadcast_content:
+                    logger.warning("Rule %s XiaoAI model_reply skipped: no <final_answer> tag found", rule.name)
+                    return False
+
                 # Prefer integrated Xiaomi Bridge (open-xiaoai client-rust RPC).
-                result = await broadcast_via_bridge(content, device_ids)
+                result = await broadcast_via_bridge(broadcast_content, device_ids)
 
                 logger.info("Rule %s XiaoAI model_reply broadcast result: %s", rule.name, result)
                 return result

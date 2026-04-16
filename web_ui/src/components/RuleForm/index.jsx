@@ -593,10 +593,9 @@ useEffect(() => {
 
     const hasActions = selectedActions.length > 0;
     const hasNotification = sendNotification && notificationText.trim();
-    const hasXiaoAIBroadcast = enableXiaoAIBroadcast &&
-      (xiaoaiBroadcastMode === 'model_reply' || xiaoaiBroadcastText.trim());
-    if (enableXiaoAIBroadcast && xiaoaiBroadcastMode === 'text' && !xiaoaiBroadcastText.trim()) {
-      message.error(t('smartCenter.pleaseEnterXiaoAIBroadcastText'));
+    const hasXiaoAIBroadcast = enableXiaoAIBroadcast && xiaoaiBroadcastText.trim();
+    if (enableXiaoAIBroadcast && !xiaoaiBroadcastText.trim()) {
+      message.error(xiaoaiBroadcastMode === 'text' ? t('smartCenter.pleaseEnterXiaoAIBroadcastText') : '请输入问题内容');
       return false;
     }
 
@@ -686,7 +685,7 @@ useEffect(() => {
       } : null,
       xiaoai_broadcast: enableXiaoAIBroadcast ? {
         mode: xiaoaiBroadcastMode,
-        text: xiaoaiBroadcastMode === 'text' ? xiaoaiBroadcastText.trim() : null,
+        text: xiaoaiBroadcastText.trim(),
         device_ids: selectedXiaoaiDevices.length > 0 ? selectedXiaoaiDevices : null,
       } : null,
       filter: {
@@ -1306,15 +1305,13 @@ useEffect(() => {
                     loading={xiaoaiDevicesLoading}
                   />
                 </div>
-                {xiaoaiBroadcastMode === 'text' && (
-                  <Input.TextArea
-                    placeholder={t('smartCenter.pleaseEnterXiaoAIBroadcastText')}
-                    value={xiaoaiBroadcastText}
-                    onChange={(e) => setXiaoaiBroadcastText(e.target.value)}
-                    disabled={isSubmitDisabled}
-                    rows={3}
-                  />
-                )}
+                <Input.TextArea
+                  placeholder={xiaoaiBroadcastMode === 'text' ? t('smartCenter.pleaseEnterXiaoAIBroadcastText') : '请输入问题，模型将根据问题进行回答并播报'}
+                  value={xiaoaiBroadcastText}
+                  onChange={(e) => setXiaoaiBroadcastText(e.target.value)}
+                  disabled={isSubmitDisabled}
+                  rows={3}
+                />
               </div>
             )}
           </div>
