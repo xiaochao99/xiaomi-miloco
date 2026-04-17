@@ -60,6 +60,9 @@ class MilocoConversationController:
         self._exit_keywords: list[str] = ["退出", "结束对话", "停止"]
         self._wakeup_keywords: list[str] = ["小米同学"]
         self._timeout: int = 20  # seconds of silence before auto-exit
+        # When enabled, run at most one "continue" turn and then stop.
+        # This is required for "主动智能/询问后等待用户一句指令" UX.
+        self._single_turn: bool = False
 
         # VAD/ASR references (set by manager)
         self._vad = None
@@ -93,6 +96,7 @@ class MilocoConversationController:
         process_text_callback: Optional[Callable[[str], Awaitable[str]]] = None,
         tts_callback: Optional[Callable[[str], Awaitable[None]]] = None,
         on_state_change: Optional[Callable[[ConversationState], Awaitable[None]]] = None,
+        single_turn: bool | None = None,
     ):
         """Configure conversation controller."""
         if exit_keywords is not None:
@@ -107,6 +111,8 @@ class MilocoConversationController:
             self._tts_callback = tts_callback
         if on_state_change is not None:
             self._on_state_change = on_state_change
+        if single_turn is not None:
+            self._single_turn = single_turn
 
     def set_audio_components(self, vad=None, asr=None):
         """Set VAD and ASR references."""
@@ -171,6 +177,10 @@ class MilocoConversationController:
         """Run VAD → ASR → Miloco → TTS turns until exit."""
         while self._active:
             result = await self._run_one_turn()
+            # "continue" means we processed user speech and spoke a response.
+            # In single-turn mode, we stop after the first successful turn.
+            if result == "continue" and self._single_turn:
+                break
             if result in ("exit", "timeout", "error"):
                 break
 

@@ -6,11 +6,16 @@ Trigger data models
 Define trigger-related data structures
 """
 from enum import Enum
-from typing import Optional, List, Any
+from typing import Optional, List, Any, TYPE_CHECKING
+
+from pydantic import BaseModel, Field
 
 from miloco_server.schema.mcp_schema import MCPClientStatus
 from miloco_server.schema.miot_schema import CameraInfo, HADeviceInfo
-from pydantic import BaseModel, Field
+from miloco_server.schema.wakeup_schema import WakeUpConfig
+
+if TYPE_CHECKING:
+    pass
 
 
 class Action(BaseModel):
@@ -76,6 +81,9 @@ class ExecuteInfo(BaseModel):
     notify: Optional[Notify] = Field(None, description="Mi Home send notification")
     xiaoai_broadcast: Optional[XiaoAIBroadcast] = Field(
         None, description="XiaoAI speaker broadcast action"
+    )
+    xiaoai_wakeup: Optional[WakeUpConfig] = Field(
+        None, description="Wake up XiaoAI configuration"
     )
 
 class ExecuteInfoDetail(ExecuteInfo):

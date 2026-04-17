@@ -28,6 +28,7 @@ export const useRuleFormData = (rule) => {
         automation_actions: [],
         notify: null,
         xiaoai_broadcast: null,
+        xiaoai_wakeup: null,
         filter: null,
         mcp_list: [],
       };
@@ -53,6 +54,7 @@ export const useRuleFormData = (rule) => {
       automation_actions: rule.execute_info?.automation_actions || [],
       notify: rule.execute_info?.notify || null,
       xiaoai_broadcast: rule.execute_info?.xiaoai_broadcast || null,
+      xiaoai_wakeup: rule.execute_info?.xiaoai_wakeup || null,
       filter: rule.filter || null,
       mcp_list: rule.execute_info?.mcp_list || [],
     };
@@ -84,6 +86,7 @@ export const convertFormDataToBackend = (formData) => {
     automation_actions,
     notify,
     xiaoai_broadcast,
+    xiaoai_wakeup,
     filter,
     mcp_list,
     enabled,
@@ -117,6 +120,7 @@ export const convertFormDataToBackend = (formData) => {
       automation_actions: automation_actions || [],
       mcp_list: mcp_list_ids || [],
       xiaoai_broadcast: xiaoai_broadcast || null,
+      xiaoai_wakeup: xiaoai_wakeup || null,
       ...(notify && notify.content ? { notify } : {}),
     },
     filter: filterData,

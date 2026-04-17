@@ -96,6 +96,8 @@ const [form] = Form.useForm();
   const [xiaoaiDevices, setXiaoaiDevices] = useState([]);
   const [selectedXiaoaiDevices, setSelectedXiaoaiDevices] = useState([]);
   const [xiaoaiDevicesLoading, setXiaoaiDevicesLoading] = useState(false);
+  const [enableXiaoAIWakeupAction, setEnableXiaoAIWakeupAction] = useState(false);
+  const [enableXiaoAIProactiveInquiry, setEnableXiaoAIProactiveInquiry] = useState(false);
 
   const [triggerDeviceOptions, setTriggerDeviceOptions] = useState([]);
   const [haDeviceEntitiesMap, setHaDeviceEntitiesMap] = useState({});
@@ -477,6 +479,15 @@ useEffect(() => {
         setSelectedXiaoaiDevices([]);
       }
 
+      if (formData.xiaoai_wakeup) {
+        const enabled = formData.xiaoai_wakeup.enabled || false;
+        setEnableXiaoAIWakeupAction(enabled);
+        setEnableXiaoAIProactiveInquiry((formData.xiaoai_wakeup.mode || '').toLowerCase() === 'proactive');
+      } else {
+        setEnableXiaoAIWakeupAction(false);
+        setEnableXiaoAIProactiveInquiry(false);
+      }
+
       setCheckedMcpServices(formData.mcp_list?.map(mcp => `${mcp?.server_name}#${mcp?.client_id}`) || []);
       setAiRecommendExecuteType(formData.ai_recommend_execute_type || 'static');
       setAiRecommendActionDescriptions(formData.ai_recommend_action_descriptions || []);
@@ -594,6 +605,7 @@ useEffect(() => {
     const hasActions = selectedActions.length > 0;
     const hasNotification = sendNotification && notificationText.trim();
     const hasXiaoAIBroadcast = enableXiaoAIBroadcast && xiaoaiBroadcastText.trim();
+    const hasXiaoAIWakeup = enableXiaoAIWakeupAction;
     if (enableXiaoAIBroadcast && !xiaoaiBroadcastText.trim()) {
       message.error(xiaoaiBroadcastMode === 'text' ? t('smartCenter.pleaseEnterXiaoAIBroadcastText') : '请输入问题内容');
       return false;
@@ -604,7 +616,7 @@ useEffect(() => {
         ? aiRecommendActionDescriptions.length > 0
         : aiRecommendActions.length > 0;
 
-      if (!hasAiRecommendActions && !hasActions && !hasNotification && !hasXiaoAIBroadcast) {
+      if (!hasAiRecommendActions && !hasActions && !hasNotification && !hasXiaoAIBroadcast && !hasXiaoAIWakeup) {
         message.error(t('common.pleaseSelectAction'));
         return false;
       }
@@ -687,6 +699,10 @@ useEffect(() => {
         mode: xiaoaiBroadcastMode,
         text: xiaoaiBroadcastText.trim(),
         device_ids: selectedXiaoaiDevices.length > 0 ? selectedXiaoaiDevices : null,
+      } : null,
+      xiaoai_wakeup: enableXiaoAIWakeupAction ? {
+        enabled: true,
+        mode: enableXiaoAIProactiveInquiry ? 'proactive' : 'manual',
       } : null,
       filter: {
         triggerPeriod,
@@ -1315,6 +1331,36 @@ useEffect(() => {
               </div>
             )}
           </div>
+        </div>
+        <div className={styles.actionItem}>
+          <div className={styles.actionLabel}>
+            <Checkbox
+              checked={enableXiaoAIWakeupAction}
+              onChange={(e) => {
+                setEnableXiaoAIWakeupAction(e.target.checked);
+                if (!e.target.checked) {
+                  setEnableXiaoAIProactiveInquiry(false);
+                }
+              }}
+              disabled={isSubmitDisabled}
+            >
+              唤醒小爱
+            </Checkbox>
+          </div>
+          {enableXiaoAIWakeupAction && (
+            <div style={{ marginTop: 8 }}>
+              <Checkbox
+                checked={enableXiaoAIProactiveInquiry}
+                onChange={(e) => setEnableXiaoAIProactiveInquiry(e.target.checked)}
+                disabled={isSubmitDisabled}
+              >
+                主动询问
+              </Checkbox>
+              <span style={{ fontSize: '12px', color: '#999', marginLeft: 8 }}>
+                播报后直接等待用户下一条语音指令
+              </span>
+            </div>
+          )}
         </div>
       </Form.Item>
       </div>

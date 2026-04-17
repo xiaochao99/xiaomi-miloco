@@ -30,8 +30,20 @@ RUN set -eux \
 COPY miloco_ai_engine/core /app/miloco_ai_engine/core
 COPY third_party /app/third_party
 COPY scripts/ai_engine_cuda_build.sh /app/scripts/ai_engine_cuda_build.sh
+COPY scripts/ai_engine_cpu_build.sh /app/scripts/ai_engine_cpu_build.sh
 
-RUN bash /app/scripts/ai_engine_cuda_build.sh
+#
+# Build and package both variants for "GPU preferred, CPU fallback" runtime:
+# - GPU: /app/output/lib/libllama-mico.so
+# - CPU: /app/output/lib/libllama-mico-cpu.so
+#
+RUN set -eux; \
+    KEEP_OUTPUT=0 BUILD_DIR=/app/build/ai_engine_cpu OUTPUT_DIR=/app/output bash /app/scripts/ai_engine_cpu_build.sh; \
+    test -f /app/output/lib/libllama-mico.so; \
+    mv /app/output/lib/libllama-mico.so /app/output/lib/libllama-mico-cpu.so; \
+    KEEP_OUTPUT=1 BUILD_DIR=/app/build/ai_engine_cuda OUTPUT_DIR=/app/output bash /app/scripts/ai_engine_cuda_build.sh; \
+    test -f /app/output/lib/libllama-mico.so; \
+    test -f /app/output/lib/libllama-mico-cpu.so
 
 
 ################################################
@@ -73,6 +85,7 @@ RUN set -eux \
 FROM ai_engine-base AS ai_engine
 
 ENV LD_LIBRARY_PATH=/app/output/lib:${LD_LIBRARY_PATH}
+ENV LLAMA_MICO_LIB_MODE=auto
 
 WORKDIR /app
 

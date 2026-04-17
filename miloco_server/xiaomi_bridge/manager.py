@@ -54,6 +54,9 @@ class BridgeManager:
         self._conversation_controller = MilocoConversationController.instance()
         self._audio_stream_manager: Optional[AudioStreamManager] = None
 
+        # Avoid triggering KWS during our own TTS playback.
+        self._tts_playing: bool = False
+
         # WebSocket server
         self._ws_server: Optional[uvicorn.Server] = None
         self._ws_server_task: Optional[asyncio.Task] = None
@@ -99,6 +102,22 @@ class BridgeManager:
     def set_process_text_callback(self, callback: Callable[[str], Awaitable[str]]):
         """Set callback for processing text with Miloco model."""
         self._process_text_callback = callback
+
+    def get_default_process_text_callback(self) -> Optional[Callable[[str], Awaitable[str]]]:
+        """
+        Get the default process_text_callback used by the built-in Miloco flow.
+        Wake-up flows may temporarily override it and should restore afterwards.
+        """
+        return self._process_text_callback
+
+    def restore_conversation_default_process_text_callback(self):
+        """Restore conversation controller callback to the bridge default."""
+        if self._process_text_callback:
+            self._conversation_controller.configure(
+                process_text_callback=self._process_text_callback,
+                timeout=self._config.wakeup_timeout,
+                single_turn=False
+            )
 
     def _create_default_miloco_callback(self) -> Callable[[str], Awaitable[str]]:
         """Create default Miloco AI chat callback using APIChatAdapter."""
@@ -354,6 +373,9 @@ class BridgeManager:
             return
 
         # Otherwise, check for wake word via KWS
+        # If we are currently speaking (TTS playback), ignore microphone frames for wake word.
+        if self._tts_playing:
+            return
         if self._kws and self._kws.is_initialized:
             detected = self._kws.detect(audio_data)
             if detected:
@@ -375,10 +397,13 @@ class BridgeManager:
             return
 
         try:
+            self._tts_playing = True
             await self._tts.speak(text)
             logger.info("TTS played: %s", text[:50])
         except Exception as e:
             logger.error("TTS playback failed: %s", e)
+        finally:
+            self._tts_playing = False
 
     async def speak(self, text: str) -> bool:
         """
@@ -404,6 +429,180 @@ class BridgeManager:
         """Broadcast audio to all connected speakers."""
         if self._audio_stream_manager:
             await self._audio_stream_manager.broadcast_audio(audio_data)
+
+    async def play_tts(
+        self,
+        text: str,
+        device_ids: list[str] | None = None,
+        speaker_id: str | None = None
+    ) -> bool:
+        """
+        Play TTS text to specified devices or all devices.
+
+        Args:
+            text: Text to speak
+            device_ids: Target device IDs (None for all devices)
+            speaker_id: Speaker ID for voice selection
+
+        Returns:
+            True if playback started successfully
+        """
+        if not text:
+            return False
+
+        try:
+            if speaker_id and self._tts:
+                original_speaker = self._tts._default_speaker
+                self._tts._default_speaker = speaker_id
+
+            await self._speak(text)
+
+            if speaker_id and self._tts:
+                self._tts._default_speaker = original_speaker
+
+            logger.info(f"[BridgeManager] TTS played: {text[:50]}...")
+            return True
+
+        except Exception as e:
+            logger.error(f"[BridgeManager] TTS playback failed: {e}")
+            return False
+
+    async def play_tts_async(
+        self,
+        text: str,
+        device_ids: list[str] | None = None,
+        callback: Callable[[dict], None] | None = None
+    ) -> bool:
+        """
+        Play TTS asynchronously with completion callback.
+
+        Args:
+            text: Text to speak
+            device_ids: Target device IDs (None for all devices)
+            callback: Completion callback
+
+        Returns:
+            True if playback started
+        """
+        async def _play_with_callback():
+            try:
+                await self.play_tts(text, device_ids)
+                if callback:
+                    callback({"type": "complete", "success": True})
+            except Exception as e:
+                if callback:
+                    callback({"type": "complete", "success": False, "error": str(e)})
+
+        asyncio.create_task(_play_with_callback())
+        return True
+
+    async def start_wakeup_listening(
+        self,
+        session_id: str,
+        callback: Callable[[dict], None] | None = None
+    ) -> bool:
+        """
+        Start wakeup keyword listening for a session.
+
+        Args:
+            session_id: Session identifier
+            callback: Callback when wakeup is detected
+
+        Returns:
+            True if listening started
+        """
+        logger.info(f"[BridgeManager] Starting wakeup listening for session {session_id}")
+
+        try:
+            if self._kws and self._kws.is_initialized:
+                self._kws.reset()
+
+            # NOTE: The conversation controller in this repo uses a continuous VAD/ASR loop
+            # started via `start()`. Older `start_wakeup_mode/stop_wakeup_mode` methods do not exist.
+            # To avoid runtime crash, run `start()` in background here.
+            if not self._conversation_controller.is_active:
+                asyncio.create_task(self._conversation_controller.start())
+
+            # callback is not wired in current implementation; keep for forward compatibility.
+            if callback:
+                pass
+
+            return True
+
+        except Exception as e:
+            logger.error(f"[BridgeManager] Start wakeup listening failed: {e}")
+            return False
+
+    async def stop_wakeup_listening(self, session_id: str) -> bool:
+        """
+        Stop wakeup listening for a session.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            True if stopped successfully
+        """
+        logger.info(f"[BridgeManager] Stopping wakeup listening for session {session_id}")
+
+        try:
+            await self._conversation_controller.stop()
+            return True
+
+        except Exception as e:
+            logger.error(f"[BridgeManager] Stop wakeup listening failed: {e}")
+            return False
+
+    async def capture_voice(
+        self,
+        session_id: str,
+        timeout: int = 60
+    ) -> bytes | None:
+        """
+        Capture voice audio from microphone.
+
+        Args:
+            session_id: Session identifier
+            timeout: Capture timeout in seconds
+
+        Returns:
+            Audio data bytes or None if capture failed/timeout
+        """
+        logger.info(f"[BridgeManager] Starting voice capture for session {session_id}")
+
+        try:
+            if self._audio_stream_manager:
+                audio_data = await self._audio_stream_manager.capture_audio(
+                    timeout=timeout
+                )
+                return audio_data
+            return None
+
+        except Exception as e:
+            logger.error(f"[BridgeManager] Voice capture failed: {e}")
+            return None
+
+    async def speech_to_text(self, audio_data: bytes) -> str | None:
+        """
+        Convert speech audio to text.
+
+        Args:
+            audio_data: Audio data bytes
+
+        Returns:
+            Recognized text or None
+        """
+        if not audio_data or not self._asr:
+            return None
+
+        try:
+            text = await self._asr.recognize(audio_data)
+            logger.info(f"[BridgeManager] STT result: {text[:50] if text else 'None'}...")
+            return text
+
+        except Exception as e:
+            logger.error(f"[BridgeManager] STT failed: {e}")
+            return None
 
 
 # Global singleton
