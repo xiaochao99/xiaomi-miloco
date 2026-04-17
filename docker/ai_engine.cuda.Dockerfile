@@ -8,9 +8,11 @@ ARG BASE_CUDA_RUN_CONTAINER=nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_V
 # Set apt repository.
 
 ARG APT_MIRRORS_URL=http://archive.ubuntu.com/ubuntu/
+ARG APT_FALLBACK_MIRRORS="http://mirrors.aliyun.com/ubuntu/ https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ https://mirrors.ustc.edu.cn/ubuntu/ http://archive.ubuntu.com/ubuntu/"
 # Set pip index URL.
 
 ARG PIP_INDEX_URL=https://pypi.org/simple/
+ARG DEBIAN_FRONTEND=noninteractive
 
 ################################################
 # AI Engine Builder
@@ -19,14 +21,43 @@ FROM ${BASE_CUDA_DEV_CONTAINER} AS ai_engine-builder
 
 # Restate apt mirrors repository.
 ARG APT_MIRRORS_URL
+ARG APT_FALLBACK_MIRRORS
 
 WORKDIR /app
 
-RUN set -eux \
-    && sed -i "s|http://archive.ubuntu.com/ubuntu/|${APT_MIRRORS_URL}|g" /etc/apt/sources.list.d/ubuntu.sources \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    set -eux \
     && if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then sed -Ei 's/^Components: .*/Components: main universe restricted multiverse/' /etc/apt/sources.list.d/ubuntu.sources; fi \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends build-essential cmake git
+    && cp /etc/apt/sources.list.d/ubuntu.sources /tmp/ubuntu.sources.template \
+    && mirrors="${APT_MIRRORS_URL%/}/ ${APT_FALLBACK_MIRRORS}" \
+    && printf '%s\n' \
+        'Acquire::Retries "6";' \
+        'Acquire::http::Timeout "30";' \
+        'Acquire::https::Timeout "30";' \
+        'Acquire::ForceIPv4 "true";' \
+        > /etc/apt/apt.conf.d/99-miloco-retries \
+    && update_ok=0 \
+    && for m in $mirrors; do \
+        cp /tmp/ubuntu.sources.template /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i "s|http://archive.ubuntu.com/ubuntu/|${m}|g" /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i "s|http://security.ubuntu.com/ubuntu/|${m}|g" /etc/apt/sources.list.d/ubuntu.sources; \
+        if apt-get update; then \
+            if apt-cache policy build-essential 2>/dev/null | grep -q 'Candidate: '; then \
+                if ! apt-cache policy build-essential 2>/dev/null | grep -q 'Candidate: (none)'; then \
+                    echo "Using apt mirror: ${m}"; \
+                    update_ok=1; \
+                    break; \
+                fi; \
+            fi; \
+            echo "Mirror ${m} updated index but required packages are unavailable, trying next mirror"; \
+        fi; \
+        apt-get clean; \
+        rm -rf /var/lib/apt/lists/*; \
+    done \
+    && test "$update_ok" = "1" \
+    && (apt-get install -y --no-install-recommends build-essential cmake git \
+        || (apt-get clean && rm -rf /var/lib/apt/lists/* && apt-get update && apt-get install -y --no-install-recommends build-essential cmake git))
 
 COPY miloco_ai_engine/core /app/miloco_ai_engine/core
 COPY third_party /app/third_party
@@ -47,14 +78,14 @@ RUN set -eux; \
     KEEP_OUTPUT=0 BUILD_DIR=/app/build/ai_engine_cuda OUTPUT_DIR=/app/output_gpu bash /app/scripts/ai_engine_cuda_build.sh; \
     test -f /app/output_gpu/lib/libllama-mico.so; \
     # Build-time sanity checks: CPU lib must not depend on CUDA, GPU lib should.
-    if ldd /app/output_cpu/lib/libllama-mico.so | grep -Eq 'libcuda\.so|libcudart\.so|libcublas'; then \
+    if LD_LIBRARY_PATH=/app/output_cpu/lib:${LD_LIBRARY_PATH} ldd /app/output_cpu/lib/libllama-mico.so | grep -Eq 'libcuda\.so|libcudart\.so|libcublas'; then \
         echo "ERROR: CPU build unexpectedly depends on CUDA"; \
-        ldd /app/output_cpu/lib/libllama-mico.so; \
+        LD_LIBRARY_PATH=/app/output_cpu/lib:${LD_LIBRARY_PATH} ldd /app/output_cpu/lib/libllama-mico.so; \
         exit 1; \
     fi; \
-    if ! ldd /app/output_gpu/lib/libllama-mico.so | grep -Eq 'libcuda\.so|libcudart\.so|libcublas'; then \
+    if ! LD_LIBRARY_PATH=/app/output_gpu/lib:${LD_LIBRARY_PATH} ldd /app/output_gpu/lib/libllama-mico.so | grep -Eq 'libcuda\.so|libcudart\.so|libcublas'; then \
         echo "ERROR: GPU build does not show expected CUDA dependencies"; \
-        ldd /app/output_gpu/lib/libllama-mico.so; \
+        LD_LIBRARY_PATH=/app/output_gpu/lib:${LD_LIBRARY_PATH} ldd /app/output_gpu/lib/libllama-mico.so; \
         exit 1; \
     fi
 
@@ -66,6 +97,7 @@ FROM ${BASE_CUDA_RUN_CONTAINER} AS ai_engine-base
 
 # Restate apt mirrors repository.
 ARG APT_MIRRORS_URL
+ARG APT_FALLBACK_MIRRORS
 # Restate PIP index URL.
 ARG PIP_INDEX_URL
 
@@ -76,15 +108,45 @@ WORKDIR /app
 
 COPY miloco_ai_engine/pyproject.toml /app/miloco_ai_engine/pyproject.toml
 
-RUN set -eux \
-    && sed -i "s|http://archive.ubuntu.com/ubuntu/|${APT_MIRRORS_URL}|g" /etc/apt/sources.list.d/ubuntu.sources \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    set -eux \
     && if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then sed -Ei 's/^Components: .*/Components: main universe restricted multiverse/' /etc/apt/sources.list.d/ubuntu.sources; fi \
-    && apt update \
-    && apt install -y --no-install-recommends curl python3 python3-pip python3-dev build-essential \
+    && cp /etc/apt/sources.list.d/ubuntu.sources /tmp/ubuntu.sources.template \
+    && mirrors="${APT_MIRRORS_URL%/}/ ${APT_FALLBACK_MIRRORS}" \
+    && printf '%s\n' \
+        'Acquire::Retries "6";' \
+        'Acquire::http::Timeout "30";' \
+        'Acquire::https::Timeout "30";' \
+        'Acquire::ForceIPv4 "true";' \
+        > /etc/apt/apt.conf.d/99-miloco-retries \
+    && update_ok=0 \
+    && for m in $mirrors; do \
+        cp /tmp/ubuntu.sources.template /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i "s|http://archive.ubuntu.com/ubuntu/|${m}|g" /etc/apt/sources.list.d/ubuntu.sources; \
+        sed -i "s|http://security.ubuntu.com/ubuntu/|${m}|g" /etc/apt/sources.list.d/ubuntu.sources; \
+        if apt-get update; then \
+            if apt-cache policy python3 2>/dev/null | grep -q 'Candidate: '; then \
+                if ! apt-cache policy python3 2>/dev/null | grep -q 'Candidate: (none)'; then \
+                    echo "Using apt mirror: ${m}"; \
+                    update_ok=1; \
+                    break; \
+                fi; \
+            fi; \
+            echo "Mirror ${m} updated index but required packages are unavailable, trying next mirror"; \
+        fi; \
+        apt-get clean; \
+        rm -rf /var/lib/apt/lists/*; \
+    done \
+    && test "$update_ok" = "1" \
+    && (apt-get install -y --no-install-recommends curl python3 python3-pip python3-dev build-essential \
         clinfo \
         ocl-icd-libopencl1 \
         intel-opencl-icd \
+        || (apt-get clean && rm -rf /var/lib/apt/lists/* && apt-get update && apt-get install -y --no-install-recommends curl python3 python3-pip python3-dev build-essential clinfo ocl-icd-libopencl1 intel-opencl-icd)) \
     && pip config set global.index-url "${PIP_INDEX_URL}" \
+    && pip config set global.timeout 120 \
     && pip install --upgrade --break-system-packages setuptools packaging \
     && pip install --no-build-isolation --break-system-packages "numpy>=1.24.0" Cython \
     && pip install --no-build-isolation --break-system-packages /app/miloco_ai_engine \
