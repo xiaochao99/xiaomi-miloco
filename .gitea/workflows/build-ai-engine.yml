@@ -1,0 +1,70 @@
+name: Build AI Engine Image (Gitea)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - v0.2.4
+      - xiaoai
+      - open-xiaoai
+    paths:
+      - docker/ai_engine.cuda.Dockerfile
+      - miloco_ai_engine/**
+      - third_party/**
+      - scripts/ai_engine_*_build.sh
+      - scripts/start_ai_engine.py
+      - config/ai_engine_config.yaml
+      - config/prompt_config.yaml
+      - .gitea/workflows/build-ai-engine.yml
+
+jobs:
+  build-and-push-ai-engine:
+    runs-on: ubuntu-latest
+    env:
+      # Gitea Actions exposes these variables on most installations.
+      REGISTRY: ${{ vars.REGISTRY || 'gitea.hypernas.cn:2443' }}
+      IMAGE_NAMESPACE: ${{ vars.IMAGE_NAMESPACE || 'xiaochao' }}
+      IMAGE_NAME: miloco-ai_engine
+      IMAGE_TAG: ${{ gitea.ref_name }}
+      APT_MIRRORS_URL: ${{ vars.APT_MIRRORS_URL || 'http://mirrors.aliyun.com/ubuntu/' }}
+      APT_FALLBACK_MIRRORS: ${{ vars.APT_FALLBACK_MIRRORS || 'http://mirrors.aliyun.com/ubuntu/ https://mirrors.tuna.tsinghua.edu.cn/ubuntu/ https://mirrors.ustc.edu.cn/ubuntu/ http://archive.ubuntu.com/ubuntu/' }}
+      PIP_INDEX_URL: ${{ vars.PIP_INDEX_URL || 'https://pypi.org/simple/' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show docker info
+        run: |
+          docker version
+          docker info
+
+      - name: Login registry
+        run: |
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "${REGISTRY}" -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Build and push ai_engine image
+        run: |
+          set -euo pipefail
+          IMAGE="${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG}"
+          IMAGE_SHA="${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE_NAME}:sha-${GITHUB_SHA:-${{ gitea.sha }}}"
+
+          docker buildx create --name gitea-builder --driver docker-container --use || docker buildx use gitea-builder
+          docker buildx inspect --bootstrap
+
+          docker buildx build \
+            --platform linux/amd64 \
+            --target ai_engine \
+            --file docker/ai_engine.cuda.Dockerfile \
+            --build-arg APT_MIRRORS_URL="${APT_MIRRORS_URL}" \
+            --build-arg APT_FALLBACK_MIRRORS="${APT_FALLBACK_MIRRORS}" \
+            --build-arg PIP_INDEX_URL="${PIP_INDEX_URL}" \
+            --tag "${IMAGE}" \
+            --tag "${IMAGE_SHA}" \
+            --push \
+            .
+
+      - name: Print result
+        run: |
+          echo "Pushed:"
+          echo "  ${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG}"
