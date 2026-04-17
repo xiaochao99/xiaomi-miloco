@@ -34,7 +34,7 @@ services:
 
   backend:
     container_name: miloco-backend
-    image: ${DOCKER_REPO}xiaomi/miloco-backend:latest
+    image: ${DOCKER_REPO}xiaochao99/miloco-backend:latest
     privileged: true
     # NOTICE: MUST be host for miot device discovery.
     network_mode: host
