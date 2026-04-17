@@ -30,6 +30,7 @@ from miloco_server.controller import (
     openai_compat_router,
     trigger_router,
     web_router,
+    xiaomi_bridge_router,
 )
 from miloco_server.middleware.auth_middleware import AuthStaticFiles
 from miloco_server.middleware.exception_handler import handle_exception
@@ -69,6 +70,7 @@ app.include_router(api_token_router, prefix="/api")
 app.include_router(detection_router, prefix="/api")
 app.include_router(face_recognition_router, prefix="/api")
 app.include_router(openai_compat_router)
+app.include_router(xiaomi_bridge_router, prefix="/api")
 
 
 @app.get("/{full_path:path}")
@@ -108,7 +110,10 @@ async def startup_event():
     # Initialize detection service
     await _init_detection_service()
 
-    # 启动后自动初始化 MIoT（如果已登录）
+    # Initialize Xiaomi bridge
+    await _init_xiaomi_bridge()
+
+    # Auto-initialize MIoT after startup (if logged in)
     await _init_miot_after_startup()
 
 
@@ -131,34 +136,52 @@ async def _init_detection_service():
         logger.error(f"Detection service initialization error: {e}")
 
 
+async def _init_xiaomi_bridge():
+    """Initialize Xiaomi speaker bridge."""
+    try:
+        from miloco_server.xiaomi_bridge.config import BridgeConfig
+        from miloco_server.xiaomi_bridge.manager import init_bridge
+
+        config = BridgeConfig.from_env()
+        if not config.enabled:
+            logger.info("Xiaomi bridge disabled, skipping initialization")
+            return
+
+        await init_bridge(config)
+        logger.info("Xiaomi bridge initialized successfully")
+
+    except Exception as e:
+        logger.error(f"Xiaomi bridge initialization error: {e}")
+
+
 async def _init_miot_after_startup():
-    """启动后自动初始化 MIoT 设备和 MCP 客户端"""
+    """Auto-initialize MIoT devices and MCP clients after startup."""
     try:
         manager = get_manager()
         miot_proxy = manager.miot_proxy
 
-        # 检查是否已登录
+        # Check if already logged in
         if not miot_proxy._oauth_info:
             logger.info("MIoT not logged in, skipping auto-initialization")
             return
 
         logger.info("Auto-initializing MIoT after startup...")
 
-        # 1. 刷新 token（如果需要）
+        # 1. Refresh token if needed
         try:
             await miot_proxy._check_and_refresh_token()
             logger.info("MIoT token check completed")
         except Exception as e:
             logger.warning("MIoT token refresh failed: %s", e)
 
-        # 2. 刷新设备信息（包括摄像头）
+        # 2. Refresh device info (including cameras)
         try:
             await miot_proxy.refresh_miot_info()
             logger.info("MIoT devices refreshed successfully")
         except Exception as e:
             logger.warning("MIoT devices refresh failed: %s", e)
 
-        # 3. 初始化 MCP 客户端（MIoT 场景等）
+        # 3. Initialize MCP clients (MIoT scenarios etc)
         try:
             mcp_service = manager.mcp_service
             if hasattr(mcp_service, 'init_miot_mcp_clients'):
@@ -167,7 +190,7 @@ async def _init_miot_after_startup():
         except Exception as e:
             logger.warning("MCP MIoT clients initialization failed: %s", e)
 
-        # 4. 初始化已启用的目标检测规则（必须在 MIoT 设备刷新后）
+        # 4. Initialize enabled detection rules (must be after MIoT device refresh)
         try:
             logger.info("Initializing detection rules after MIoT startup...")
             await manager.trigger_rule_service.initialize_detection_on_startup()
@@ -184,6 +207,15 @@ async def _init_miot_after_startup():
 async def shutdown_event():
     """Cleanup operations when application shuts down"""
     logger.info("Application is shutting down...")
+
+    # Shutdown Xiaomi bridge
+    try:
+        from miloco_server.xiaomi_bridge.manager import get_bridge_manager
+        bridge_manager = get_bridge_manager()
+        await bridge_manager.stop()
+        logger.info("Xiaomi bridge shutdown completed")
+    except Exception as e:
+        logger.error(f"Xiaomi bridge shutdown error: {e}")
 
     # Shutdown detection service
     try:

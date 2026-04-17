@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Button, Flex, message, Modal, Tooltip } from 'antd';
+import { Button, Checkbox, Flex, Select, message, Modal, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { Sender } from '@ant-design/x';
 import { Icon, RuleForm } from '@/components';
@@ -12,6 +12,7 @@ import { classNames } from '@/utils/util';
 import { useRuleFormUpdates } from '@/hooks/useRuleFormUpdates';
 import { useChatStore } from '@/stores/chatStore';
 import { useGlobalSocket } from '@/hooks/useGlobalSocket';
+import { getXiaomiBridgeDevices } from '@/api';
 import { SelectedItemsPrefix, BottomControlButtons } from './components';
 import styles from './style.module.less';
 
@@ -47,6 +48,35 @@ const Send = ({
 
   const socketActions = useGlobalSocket();
 
+  const [xiaoaiPlayEnabled, setXiaoaiPlayEnabled] = useState(false);
+  const [xiaoaiDevices, setXiaoaiDevices] = useState([]);
+  const [xiaoaiDevicesLoading, setXiaoaiDevicesLoading] = useState(false);
+  const [selectedXiaoaiDevices, setSelectedXiaoaiDevices] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadDevices = async () => {
+      setXiaoaiDevicesLoading(true);
+      try {
+        const resp = await getXiaomiBridgeDevices();
+        const list = resp?.data || resp?.data?.data || [];
+        if (mounted) {
+          setXiaoaiDevices(Array.isArray(list) ? list : []);
+        }
+      } catch (e) {
+        if (mounted) {
+          setXiaoaiDevices([]);
+        }
+      } finally {
+        if (mounted) {
+          setXiaoaiDevicesLoading(false);
+        }
+      }
+    };
+    loadDevices();
+    return () => { mounted = false; };
+  }, []);
+
   useEffect(() => {
     console.log('Send component: clear scroll related timers', { isSocketActive, clearTimeoutGoToBottom });
     if (!isSocketActive && clearTimeoutGoToBottom) {
@@ -64,6 +94,13 @@ const Send = ({
         onBeforeSend: () => {
           console.log('Send component: about to send message:', { text, defaultMcpList });
         }
+      },
+      xiaoaiPlayEnabled ? {
+        xiaoai_play: true,
+        // empty means all devices, null means no override; we send [] to represent "all"
+        xiaoai_client_ids: Array.isArray(selectedXiaoaiDevices) ? selectedXiaoaiDevices : []
+      } : {
+        xiaoai_play: false
       }
     );
 
@@ -114,17 +151,41 @@ const Send = ({
           footer={({ components }) => {
             const { SendButton, LoadingButton } = components;
             return (
-              <Flex align="center" gap={0}>
+              <Flex align="center" justify="space-between" className={styles.sendFooter}>
+                <Flex align="center" gap={12}>
+                  <BottomControlButtons />
 
-                <BottomControlButtons
-                  // onCreateRuleClick={() => setCreateModalVisible(true)}
-                />
+                  <div className={styles.divider} />
 
-                <Flex align="center" style={{ flex: 1, justifyContent: 'flex-end' }}>
+                  <Flex align="center" gap={8}>
+                    <Checkbox
+                      checked={xiaoaiPlayEnabled}
+                      onChange={(e) => setXiaoaiPlayEnabled(e.target.checked)}
+                      disabled={isAnswering}
+                    >
+                      {t('instant.chat.playOnXiaoai')}
+                    </Checkbox>
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      size="small"
+                      disabled={!xiaoaiPlayEnabled || isAnswering}
+                      placeholder={t('instant.chat.selectXiaoaiDevices')}
+                      style={{ minWidth: 220 }}
+                      value={selectedXiaoaiDevices}
+                      onChange={setSelectedXiaoaiDevices}
+                      options={xiaoaiDevices.map(device => ({
+                        label: device.device_name || (device.client_id ? device.client_id.slice(0, 8) + '...' : 'Unknown'),
+                        value: device.client_id,
+                      }))}
+                      loading={xiaoaiDevicesLoading}
+                    />
+                  </Flex>
+                </Flex>
+
+                <Flex align="center">
                   {isAnswering ? (
-                    <LoadingButton onClick={() => {
-                      closeMessage();
-                    }} />
+                    <LoadingButton onClick={closeMessage} />
                   ) : (
                     <SendButton
                       type="primary"

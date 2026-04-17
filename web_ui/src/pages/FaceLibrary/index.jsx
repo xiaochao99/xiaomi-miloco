@@ -165,7 +165,7 @@ const FaceLibrary = () => {
 
   return (
     <div style={{ padding: 16 }}>
-      <Header title="人脸库" />
+      <Header title="人脸识别" />
       <AntCard>
         <Tabs
           items={[

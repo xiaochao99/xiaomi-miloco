@@ -197,11 +197,21 @@ class DirectConditionChecker:
             logger.warning("No device states provided for condition: %s", parsed_condition['raw'])
             return False
 
-        # Check all entities - return True if ANY entity satisfies the condition
-        checked_count = 0
-        logger.info("Checking condition '%s' against %d entities", parsed_condition['raw'], len(device_states))
+        # If trigger_entity_id is specified and exists, only check that entity.
+        if trigger_entity_id and trigger_entity_id in device_states:
+            candidate_states = {trigger_entity_id: device_states[trigger_entity_id]}
+            logger.info(
+                "Checking condition '%s' on specified entity only: %s",
+                parsed_condition['raw'], trigger_entity_id
+            )
+        else:
+            candidate_states = device_states
 
-        for entity_id, state_info in device_states.items():
+        # Check candidate entities - return True if ANY entity satisfies the condition
+        checked_count = 0
+        logger.info("Checking condition '%s' against %d entities", parsed_condition['raw'], len(candidate_states))
+
+        for entity_id, state_info in candidate_states.items():
             state_value = state_info.get('state')
             state_attributes = state_info.get('attributes', {})
 
@@ -263,39 +273,48 @@ class DirectConditionChecker:
         field: str
     ) -> bool:
         """Check comparison condition."""
+        def _numeric_compare(left: float, op: str, right: float) -> bool:
+            if op == '==':
+                return abs(left - right) < 0.001
+            if op == '!=':
+                return abs(left - right) >= 0.001
+            if op == '>':
+                return left > right
+            if op == '>=':
+                return left >= right
+            if op == '<':
+                return left < right
+            if op == '<=':
+                return left <= right
+            return False
+
         # Try numeric comparison
         try:
             state_num = float(state_value)
             expected_num = float(expected_value)
-
-            if operator == '==':
-                return abs(state_num - expected_num) < 0.001
-            elif operator == '!=':
-                return abs(state_num - expected_num) >= 0.001
-            elif operator == '>':
-                return state_num > expected_num
-            elif operator == '>=':
-                return state_num >= expected_num
-            elif operator == '<':
-                return state_num < expected_num
-            elif operator == '<=':
-                return state_num <= expected_num
+            return _numeric_compare(state_num, operator, expected_num)
         except (ValueError, TypeError):
             pass  # Fall back to string comparison
 
         # String comparison
         if operator == '==':
             return str(state_value).lower() == str(expected_value).lower()
-        elif operator == '!=':
+        if operator == '!=':
             return str(state_value).lower() != str(expected_value).lower()
 
         # Check attributes if field is not 'state'
         if field != 'state' and field in attributes:
             attr_value = attributes[field]
             try:
-                return float(attr_value) > float(expected_value) if operator == '>' else False
+                attr_num = float(attr_value)
+                expected_num = float(expected_value)
+                return _numeric_compare(attr_num, operator, expected_num)
             except (ValueError, TypeError):
-                return str(attr_value).lower() == str(expected_value).lower()
+                if operator == '==':
+                    return str(attr_value).lower() == str(expected_value).lower()
+                if operator == '!=':
+                    return str(attr_value).lower() != str(expected_value).lower()
+                return False
 
         return False
 

@@ -49,6 +49,8 @@ class NlpRequestAgent(ChatAgent):
             ChatCachedData(
                 camera_ids=payload.camera_ids,
                 mcp_ids=payload.mcp_list,
+                xiaoai_play=bool(payload.xiaoai_play),
+                xiaoai_client_ids=payload.xiaoai_client_ids,
             ))
 
         asyncio.create_task(self._run_chat(query))

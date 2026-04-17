@@ -26,6 +26,8 @@ class ChatCachedData:
     out_actor_address: Optional[ActorAddress] = None
     camera_ids: Optional[list[str]] = None
     mcp_ids: Optional[list[str]] = None
+    xiaoai_play: Optional[bool] = None
+    xiaoai_client_ids: Optional[list[str]] = None
     other_mcp_tools_meta: Optional[list] = None
     camera_images: Optional[list[CameraImgSeq]] = None
 

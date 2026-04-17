@@ -6,11 +6,16 @@ Trigger data models
 Define trigger-related data structures
 """
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Any, TYPE_CHECKING
+
+from pydantic import BaseModel, Field
 
 from miloco_server.schema.mcp_schema import MCPClientStatus
 from miloco_server.schema.miot_schema import CameraInfo, HADeviceInfo
-from pydantic import BaseModel, Field
+from miloco_server.schema.wakeup_schema import WakeUpConfig
+
+if TYPE_CHECKING:
+    pass
 
 
 class Action(BaseModel):
@@ -43,6 +48,25 @@ class Notify(BaseModel):
     content: str = Field(..., description="Notification content")
 
 
+class XiaoAIBroadcastMode(str, Enum):
+    """XiaoAI broadcast mode"""
+    TEXT = "text"
+    MODEL_REPLY = "model_reply"
+
+
+class XiaoAIBroadcast(BaseModel):
+    """XiaoAI broadcast action"""
+    mode: XiaoAIBroadcastMode = Field(
+        XiaoAIBroadcastMode.TEXT, description="Broadcast mode: text or model_reply"
+    )
+    text: Optional[str] = Field(
+        None, description="Text to play when mode=text"
+    )
+    device_ids: Optional[List[str]] = Field(
+        None, description="List of device IDs to broadcast to. If None, broadcasts to all connected devices."
+    )
+
+
 class ExecuteInfo(BaseModel):
     """Execute info"""
     ai_recommend_execute_type: ExecuteType = Field(
@@ -55,6 +79,12 @@ class ExecuteInfo(BaseModel):
         None, description="MIoT or Home Assistant automation actions to execute")
     mcp_list: Optional[list[str]] = Field(None, description="MCP list")
     notify: Optional[Notify] = Field(None, description="Mi Home send notification")
+    xiaoai_broadcast: Optional[XiaoAIBroadcast] = Field(
+        None, description="XiaoAI speaker broadcast action"
+    )
+    xiaoai_wakeup: Optional[WakeUpConfig] = Field(
+        None, description="Wake up XiaoAI configuration"
+    )
 
 class ExecuteInfoDetail(ExecuteInfo):
     """Execute info detail"""
@@ -169,6 +199,7 @@ class TriggerRule(BaseModel):
     condition: Optional[str] = Field(None, description="Trigger condition (for LLM analysis in hybrid/llm mode)")
     condition_type: ConditionType = Field(ConditionType.LLM, description="Condition check type: llm or direct")
     ha_condition: Optional[str] = Field(None, description="HA device state condition for hybrid mode (direct check)")
+    trigger_entity_id: Optional[str] = Field(None, description="Specific HA entity ID for direct/hybrid state matching")
     execute_info: ExecuteInfo = Field(..., description="Trigger execute info")
     filter: Optional[TriggerFilter] = Field(None, description="Trigger filter")
     detection_condition: Optional[DetectionCondition] = Field(
@@ -209,5 +240,86 @@ class TriggerRuleDetail(TriggerRule):
             cameras=camera_dids,
             ha_devices=ha_device_ids,
             execute_info=execute_info)
+
+
+class TriggerConditionV2(BaseModel):
+    """Unified trigger condition for v2 rules."""
+    type: ConditionType = Field(ConditionType.LLM, description="Condition type")
+    llm_condition: Optional[str] = Field(None, description="Natural language condition for LLM mode")
+    camera_condition: Optional[str] = Field(None, description="Camera condition used in hybrid mode")
+    ha_condition: Optional[str] = Field(None, description="HA condition used in direct/hybrid mode")
+    detection_condition: Optional[DetectionCondition] = Field(None, description="Detection condition config")
+
+
+class TriggerTargetV2(BaseModel):
+    """Trigger targets for v2 rules."""
+    camera_ids: List[str] = Field(default_factory=list, description="Camera IDs")
+    ha_device_ids: List[str] = Field(default_factory=list, description="HA device IDs")
+    trigger_entity_id: Optional[str] = Field(None, description="Specific HA entity used for direct/hybrid matching")
+
+
+class TriggerRuleV2(BaseModel):
+    """Trigger rule v2 data model."""
+    id: Optional[str] = Field(None, description="Rule ID")
+    enabled: bool = Field(True, description="Whether enabled")
+    name: str = Field(..., description="Rule name")
+    trigger: TriggerConditionV2 = Field(..., description="Trigger condition config")
+    targets: TriggerTargetV2 = Field(default_factory=TriggerTargetV2, description="Trigger targets")
+    execute_info: ExecuteInfo = Field(..., description="Execute info")
+    filter: Optional[TriggerFilter] = Field(None, description="Trigger filter")
+
+    def to_runtime_rule(self) -> TriggerRule:
+        """Convert v2 rule to runtime TriggerRule used by runner."""
+        condition_type = self.trigger.type
+        # Runtime condition is aligned with original behavior.
+        if condition_type == ConditionType.DIRECT:
+            condition = self.trigger.ha_condition
+        elif condition_type == ConditionType.HYBRID:
+            condition = self.trigger.camera_condition or self.trigger.llm_condition
+        elif condition_type in (ConditionType.DETECTION, ConditionType.FACE_RECOGNITION):
+            condition = self.trigger.llm_condition
+        else:
+            condition = self.trigger.llm_condition
+
+        return TriggerRule(
+            id=self.id,
+            enabled=self.enabled,
+            name=self.name,
+            cameras=self.targets.camera_ids,
+            ha_devices=self.targets.ha_device_ids,
+            condition=condition,
+            condition_type=condition_type,
+            ha_condition=self.trigger.ha_condition,
+            trigger_entity_id=self.targets.trigger_entity_id,
+            detection_condition=self.trigger.detection_condition,
+            execute_info=self.execute_info,
+            filter=self.filter,
+        )
+
+    @classmethod
+    def from_runtime_rule(cls, rule: TriggerRule) -> "TriggerRuleV2":
+        """Convert runtime TriggerRule back to v2 shape for API responses."""
+        condition_type = rule.condition_type
+        trigger = TriggerConditionV2(
+            type=condition_type,
+            llm_condition=rule.condition if condition_type in (ConditionType.LLM, ConditionType.DETECTION, ConditionType.FACE_RECOGNITION) else None,
+            camera_condition=rule.condition if condition_type == ConditionType.HYBRID else None,
+            ha_condition=rule.ha_condition if condition_type in (ConditionType.DIRECT, ConditionType.HYBRID) else None,
+            detection_condition=rule.detection_condition,
+        )
+        targets = TriggerTargetV2(
+            camera_ids=rule.cameras or [],
+            ha_device_ids=rule.ha_devices or [],
+            trigger_entity_id=rule.trigger_entity_id,
+        )
+        return cls(
+            id=rule.id,
+            enabled=rule.enabled,
+            name=rule.name,
+            trigger=trigger,
+            targets=targets,
+            execute_info=rule.execute_info,
+            filter=rule.filter,
+        )
 
 

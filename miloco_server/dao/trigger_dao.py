@@ -3,7 +3,7 @@
 
 """
 Trigger rule data access object
-Handles CRUD operations for trigger_rule table
+Handles CRUD operations for trigger_rule_v2 table
 """
 
 import logging
@@ -12,7 +12,9 @@ import uuid
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from miloco_server.utils.database import get_db_connector
-from miloco_server.schema.trigger_schema import TriggerRule, Action, TriggerFilter, ExecuteInfo, ConditionType, DetectionCondition
+from miloco_server.schema.trigger_schema import (
+    TriggerRuleV2,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -24,387 +26,152 @@ class TriggerRuleDAO:
     def __init__(self):
         self.db_connector = get_db_connector()
 
-    def _dict_to_trigger_action(self, data: Dict[str, Any]) -> Action:
-        """Convert dictionary to TriggerAction object"""
-        return Action(**data)
+    def _dict_to_trigger_rule_v2(self, data: Dict[str, Any]) -> TriggerRuleV2:
+        """Convert database row to TriggerRuleV2."""
+        payload = data.get("payload")
+        if not payload:
+            raise ValueError("Invalid v2 trigger rule row: payload is empty")
+        return TriggerRuleV2.model_validate(json.loads(payload))
 
-    def _trigger_rule_to_dict(self, rule: TriggerRule) -> Dict[str, Any]:
-        """Convert TriggerRule object to database storage format"""
+    def _trigger_rule_v2_to_dict(self, rule: TriggerRuleV2) -> Dict[str, Any]:
+        """Convert TriggerRuleV2 to database fields."""
+        payload = rule.model_dump(mode="json")
+        condition_type = payload.get("trigger", {}).get("type", "llm")
         return {
             "id": rule.id,
             "name": rule.name,
             "enabled": rule.enabled,
-            "camera_dids": json.dumps(rule.cameras),
-            "ha_devices": json.dumps(rule.ha_devices),
-            "condition": rule.condition,
-            "condition_type": rule.condition_type.value if hasattr(rule, 'condition_type') else "llm",
-            "ha_condition": rule.ha_condition,
-            "detection_condition": json.dumps(rule.detection_condition.model_dump(mode="json")) if rule.detection_condition else None,
-            "execute_info": json.dumps(rule.execute_info.model_dump(mode="json")) if rule.execute_info else None,
-            "filter": json.dumps(rule.filter.model_dump(mode="json")) if rule.filter else None,
+            "condition_type": condition_type,
+            "payload": json.dumps(payload),
         }
 
-    def _dict_to_trigger_rule(self, data: Dict[str, Any]) -> TriggerRule:
-        """Convert database data to TriggerRule object"""
-        cameras = json.loads(data["camera_dids"]) if data.get("camera_dids") else []
-        ha_devices = json.loads(data["ha_devices"]) if data.get("ha_devices") else []
-
-        execute_info_data = json.loads(data["execute_info"]) if data.get("execute_info") else None
-        execute_info = ExecuteInfo(**execute_info_data) if execute_info_data else None
-        filter_data = json.loads(data["filter"]) if data.get("filter") else None
-        filter_obj = TriggerFilter(**filter_data) if filter_data else None
-
-        # Handle condition_type (default to LLM for backward compatibility)
-        condition_type_str = data.get("condition_type", "llm")
-        try:
-            condition_type = ConditionType(condition_type_str)
-        except ValueError:
-            logger.warning("Invalid condition_type '%s', defaulting to 'llm'", condition_type_str)
-            condition_type = ConditionType.LLM
-
-        # Parse detection_condition
-        detection_condition_data = json.loads(data["detection_condition"]) if data.get("detection_condition") else None
-        detection_condition = DetectionCondition(**detection_condition_data) if detection_condition_data else None
-
-        return TriggerRule(
-            id=data["id"],
-            name=data["name"],
-            enabled=bool(data["enabled"]),
-            cameras=cameras,
-            ha_devices=ha_devices,
-            condition=data["condition"],
-            condition_type=condition_type,
-            ha_condition=data.get("ha_condition"),
-            detection_condition=detection_condition,
-            execute_info=execute_info,
-            filter=filter_obj,
-        )
-
-    def create(self, rule: TriggerRule) -> Optional[str]:
-        """
-        Create new trigger rule
-
-        Args:
-            rule: Trigger rule object
-
-        Returns:
-            Optional[str]: New UUID if successful, None if failed
-        """
+    # --------------------
+    # v2 table operations
+    # --------------------
+    def create_v2(self, rule: TriggerRuleV2) -> Optional[str]:
+        """Create trigger rule in trigger_rule_v2 table."""
         try:
             rule_id = str(uuid.uuid4())
-
+            rule.id = rule_id
+            data = self._trigger_rule_v2_to_dict(rule)
+            now = datetime.now().isoformat()
             sql = """
-                INSERT INTO trigger_rule (id, name, enabled, camera_dids, ha_devices, condition, condition_type, ha_condition, detection_condition, execute_info, filter, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO trigger_rule_v2 (id, name, enabled, condition_type, payload, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """
-            current_time = datetime.now().isoformat()
             params = (
-                rule_id,
-                rule.name,
-                rule.enabled,
-                json.dumps(rule.cameras),
-                json.dumps(rule.ha_devices),
-                rule.condition,
-                rule.condition_type.value if hasattr(rule, 'condition_type') else "llm",
-                rule.ha_condition,
-                json.dumps(rule.detection_condition.model_dump(mode="json")) if rule.detection_condition else None,
-                json.dumps(rule.execute_info.model_dump(mode="json")) if rule.execute_info else None,
-                json.dumps(rule.filter.model_dump(mode="json")) if rule.filter else None,
-                current_time,
-                current_time
+                data["id"],
+                data["name"],
+                data["enabled"],
+                data["condition_type"],
+                data["payload"],
+                now,
+                now,
             )
-
             with self.db_connector.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(sql, params)
                 conn.commit()
-
-                logger.info("Trigger rule created successfully: id=%s, name=%s", rule_id, rule.name)
-                return rule_id
-
+            return rule_id
         except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error("Error creating trigger rule: name=%s, error=%s", rule.name, e, exc_info=True)
+            logger.error("Error creating trigger rule v2: name=%s, error=%s", getattr(rule, "name", ""), e, exc_info=True)
             return None
 
-    def get_by_id(self, rule_id: str) -> Optional[TriggerRule]:
-        """
-        Get trigger rule by ID
-
-        Args:
-            rule_id: Rule ID (UUID)
-
-        Returns:
-            Optional[TriggerRule]: Trigger rule object, None if not exists
-        """
+    def get_by_id_v2(self, rule_id: str) -> Optional[TriggerRuleV2]:
+        """Get trigger rule v2 by ID."""
         try:
-            sql = "SELECT * FROM trigger_rule WHERE id = ?"
-            params = (rule_id,)
-
-            results = self.db_connector.execute_query(sql, params)
-
-            if results:
-                logger.debug("Trigger rule found: id=%s", rule_id)
-                return self._dict_to_trigger_rule(results[0])
-            else:
-                logger.debug("Trigger rule not found: id=%s", rule_id)
+            sql = "SELECT * FROM trigger_rule_v2 WHERE id = ?"
+            rows = self.db_connector.execute_query(sql, (rule_id,))
+            if not rows:
                 return None
-
+            return self._dict_to_trigger_rule_v2(rows[0])
         except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error("Error querying trigger rule: id=%s, error=%s", rule_id, e)
+            logger.error("Error querying trigger rule v2: id=%s, error=%s", rule_id, e)
             return None
 
-    def get_by_name(self, name: str) -> Optional[TriggerRule]:
+    def get_all_v2(self, enabled_only: bool = False) -> List[TriggerRuleV2]:
+        """Get all trigger rules from trigger_rule_v2."""
+        if enabled_only:
+            sql = "SELECT * FROM trigger_rule_v2 WHERE enabled = 1 ORDER BY created_at DESC"
+        else:
+            sql = "SELECT * FROM trigger_rule_v2 ORDER BY created_at DESC"
+        rows = self.db_connector.execute_query(sql)
+        return [self._dict_to_trigger_rule_v2(row) for row in rows]
+
+    def update_v2(self, rule: TriggerRuleV2) -> bool:
+        """Update trigger rule in trigger_rule_v2."""
+        if not rule.id:
+            return False
+        data = self._trigger_rule_v2_to_dict(rule)
+        sql = """
+            UPDATE trigger_rule_v2
+            SET name = ?, enabled = ?, condition_type = ?, payload = ?, updated_at = ?
+            WHERE id = ?
         """
-        Get trigger rule by name
+        params = (
+            data["name"],
+            data["enabled"],
+            data["condition_type"],
+            data["payload"],
+            datetime.now().isoformat(),
+            data["id"],
+        )
+        affected = self.db_connector.execute_update(sql, params)
+        return affected > 0
 
-        Args:
-            name: Rule name
+    def delete_v2(self, rule_id: str) -> bool:
+        """Delete trigger rule from trigger_rule_v2."""
+        affected = self.db_connector.execute_update("DELETE FROM trigger_rule_v2 WHERE id = ?", (rule_id,))
+        return affected > 0
 
-        Returns:
-            Optional[TriggerRule]: Trigger rule object, None if not exists
-        """
-        try:
-            sql = "SELECT * FROM trigger_rule WHERE name = ?"
-            params = (name,)
+    def exists_v2(self, rule_id: str) -> bool:
+        """Check if v2 rule exists."""
+        rows = self.db_connector.execute_query("SELECT COUNT(*) AS count FROM trigger_rule_v2 WHERE id = ?", (rule_id,))
+        return bool(rows and rows[0]["count"] > 0)
 
-            results = self.db_connector.execute_query(sql, params)
-
-            if results:
-                logger.debug("Trigger rule found: name=%s", name)
-                return self._dict_to_trigger_rule(results[0])
-            else:
-                logger.debug("Trigger rule not found: name=%s", name)
-                return None
-
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error("Error querying trigger rule: name=%s, error=%s", name, e)
-            return None
-
-    def get_all(self, enabled_only: bool = False) -> List[TriggerRule]:
-        """
-        Get all trigger rules
-
-        Args:
-            enabled_only: Whether to return only enabled rules
-
-        Returns:
-            List[TriggerRule]: List of trigger rules
-        """
-        try:
-            if enabled_only:
-                sql = "SELECT * FROM trigger_rule WHERE enabled = 1 ORDER BY created_at DESC"
-            else:
-                sql = "SELECT * FROM trigger_rule ORDER BY created_at DESC"
-
-            results = self.db_connector.execute_query(sql)
-
-            rules = [self._dict_to_trigger_rule(row) for row in results]
-            logger.debug("Retrieved %s trigger rules", len(rules))
-            return rules
-
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error("Error retrieving trigger rules: error=%s", e)
-            raise e
-
-    def update(self, rule: TriggerRule) -> bool:
-        """
-        Update trigger rule
-
-        Args:
-            rule: Trigger rule object
-
-        Returns:
-            bool: True if update successful, False otherwise
-        """
-        try:
-            sql = """
-                UPDATE trigger_rule
-                SET name = ?, enabled = ?, camera_dids = ?, ha_devices = ?, condition = ?, condition_type = ?, ha_condition = ?, detection_condition = ?, execute_info = ?, filter = ?, updated_at = ?
-                WHERE id = ?
-            """
-            params = (
-                rule.name,
-                rule.enabled,
-                json.dumps(rule.cameras),
-                json.dumps(rule.ha_devices),
-                rule.condition,
-                rule.condition_type.value if hasattr(rule, 'condition_type') else "llm",
-                rule.ha_condition,
-                json.dumps(rule.detection_condition.model_dump(mode="json")) if rule.detection_condition else None,
-                json.dumps(rule.execute_info.model_dump(mode="json")) if rule.execute_info else None,
-                json.dumps(rule.filter.model_dump(mode="json")) if rule.filter else None,
-                datetime.now().isoformat(),
-                rule.id
+    def exists_by_name_v2(self, name: str, exclude_id: Optional[str] = None) -> bool:
+        """Check if v2 rule name exists."""
+        if exclude_id:
+            rows = self.db_connector.execute_query(
+                "SELECT COUNT(*) AS count FROM trigger_rule_v2 WHERE name = ? AND id != ?",
+                (name, exclude_id),
             )
+        else:
+            rows = self.db_connector.execute_query(
+                "SELECT COUNT(*) AS count FROM trigger_rule_v2 WHERE name = ?",
+                (name,),
+            )
+        return bool(rows and rows[0]["count"] > 0)
 
-            affected_rows = self.db_connector.execute_update(sql, params)
-
-            if affected_rows > 0:
-                logger.info("Trigger rule updated successfully: id=%s, name=%s", rule.id, rule.name)
-                return True
-            else:
-                logger.warning("Failed to update trigger rule, might not exist: id=%s", rule.id)
-                return False
-
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error("Error updating trigger rule: id=%s, error=%s", rule.id, e)
-            return False
-
-    def delete(self, rule_id: str) -> bool:
+    def get_rules_by_camera_with_detection_v2(self, camera_id: str, exclude_rule_id: Optional[str] = None) -> List[TriggerRuleV2]:
         """
-        Delete trigger rule
+        Get v2 rules that have detection condition enabled for a specific camera.
 
-        Args:
-            rule_id: Rule ID (UUID)
-
-        Returns:
-            bool: True if deletion successful, False otherwise
+        This is used by detection lifecycle management to decide whether a camera's
+        detection pipeline can be stopped safely when a rule is deleted/disabled.
         """
         try:
-            sql = "DELETE FROM trigger_rule WHERE id = ?"
-            params = (rule_id,)
+            sql = "SELECT * FROM trigger_rule_v2 WHERE enabled = 1"
+            rows = self.db_connector.execute_query(sql)
 
-            affected_rows = self.db_connector.execute_update(sql, params)
-
-            if affected_rows > 0:
-                logger.info("Trigger rule deleted successfully: id=%s", rule_id)
-                return True
-            else:
-                logger.warning("Failed to delete trigger rule, might not exist: id=%s", rule_id)
-                return False
-
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error("Error deleting trigger rule: id=%s, error=%s", rule_id, e)
-            return False
-
-    def exists(self, rule_id: str) -> bool:
-        """
-        Check if trigger rule exists
-
-        Args:
-            rule_id: Rule ID (UUID)
-
-        Returns:
-            bool: True if exists, False otherwise
-        """
-        try:
-            sql = "SELECT COUNT(*) as count FROM trigger_rule WHERE id = ?"
-            params = (rule_id,)
-
-            results = self.db_connector.execute_query(sql, params)
-
-            if results and results[0]["count"] > 0:
-                return True
-            return False
-
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error("Error checking trigger rule existence: id=%s, error=%s", rule_id, e)
-            return False
-
-    def exists_by_name(self, name: str, exclude_id: Optional[str] = None) -> bool:
-        """
-        Check if trigger rule with specified name exists
-
-        Args:
-            name: Rule name
-            exclude_id: Excluded rule ID (UUID) (for checking name uniqueness during update)
-
-        Returns:
-            bool: True if exists, False otherwise
-        """
-        try:
-            if exclude_id is not None:
-                sql = "SELECT COUNT(*) as count FROM trigger_rule WHERE name = ? AND id != ?"
-                params = (name, exclude_id)
-            else:
-                sql = "SELECT COUNT(*) as count FROM trigger_rule WHERE name = ?"
-                params = (name,)
-
-            results = self.db_connector.execute_query(sql, params)
-
-            if results and results[0]["count"] > 0:
-                return True
-            return False
-
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error("Error checking trigger rule name existence: name=%s, error=%s", name, e)
-            return False
-
-    def count_all(self) -> int:
-        """
-        Get total count of trigger rules
-
-        Returns:
-            int: Total count of trigger rules
-        """
-        try:
-            sql = "SELECT COUNT(*) as count FROM trigger_rule"
-            results = self.db_connector.execute_query(sql)
-
-            if results:
-                return results[0]["count"]
-            return 0
-
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error("Error getting trigger rule count: error=%s", e)
-            return 0
-
-    def count_enabled(self) -> int:
-        """
-        Get count of enabled trigger rules
-
-        Returns:
-            int: Count of enabled trigger rules
-        """
-        try:
-            sql = "SELECT COUNT(*) as count FROM trigger_rule WHERE enabled = 1"
-            results = self.db_connector.execute_query(sql)
-
-            if results:
-                return results[0]["count"]
-            return 0
-
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error("Error getting enabled trigger rule count: error=%s", e)
-            return 0
-
-    def get_rules_by_camera_with_detection(self, camera_id: str, exclude_rule_id: Optional[str] = None) -> List[TriggerRule]:
-        """
-        Get rules that have detection condition enabled for a specific camera
-
-        Args:
-            camera_id: Camera device ID
-            exclude_rule_id: Rule ID to exclude (optional)
-
-        Returns:
-            List[TriggerRule]: List of trigger rules with detection enabled
-        """
-        try:
-            # Query all rules and filter in Python (since camera_dids is JSON)
-            sql = "SELECT * FROM trigger_rule WHERE enabled = 1 AND detection_condition IS NOT NULL"
-            results = self.db_connector.execute_query(sql)
-
-            rules = []
-            for row in results:
-                # Skip excluded rule
-                if exclude_rule_id and row["id"] == exclude_rule_id:
+            rules: List[TriggerRuleV2] = []
+            for row in rows:
+                if exclude_rule_id and row.get("id") == exclude_rule_id:
                     continue
-
-                # Parse cameras list
                 try:
-                    camera_dids = json.loads(row["camera_dids"]) if row.get("camera_dids") else []
-                    if camera_id in camera_dids:
-                        # Parse detection_condition to check if enabled
-                        detection_condition_data = json.loads(row["detection_condition"]) if row.get("detection_condition") else None
-                        if detection_condition_data and detection_condition_data.get("enabled"):
-                            rule = self._dict_to_trigger_rule(row)
-                            rules.append(rule)
-                except (json.JSONDecodeError, KeyError) as e:
-                    logger.warning(f"Error parsing rule {row.get('id')}: {e}")
+                    rule_v2 = self._dict_to_trigger_rule_v2(row)
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    logger.warning("Error parsing v2 rule row id=%s: %s", row.get("id"), e)
                     continue
+
+                if camera_id not in (rule_v2.targets.camera_ids or []):
+                    continue
+                if not rule_v2.trigger.detection_condition or not rule_v2.trigger.detection_condition.enabled:
+                    continue
+
+                rules.append(rule_v2)
 
             return rules
-
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.error(f"Error getting rules by camera with detection: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Error getting v2 rules by camera with detection: %s", e)
             return []
