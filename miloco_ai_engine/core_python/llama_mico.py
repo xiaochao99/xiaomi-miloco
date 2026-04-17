@@ -48,6 +48,11 @@ class LlamaMico:
         config["log_file"] = str(c.LOG_FILE_NAME)
         config["log_level"] = c.LOGGING_CONFIG["log_level"].lower()
 
+        # When n_gpu_layers is 0 (CPU only mode), set main_gpu to -1 
+        # to avoid GPU initialization error in GPU-less environments
+        if config.get("n_gpu_layers", 0) == 0:
+            config["main_gpu"] = -1
+
         config_json = json.dumps(config, ensure_ascii=False)
         handle_ptr = ctypes.c_void_p()
         # logger.info("config_json: %s", config_json)
