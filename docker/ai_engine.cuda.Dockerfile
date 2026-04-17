@@ -160,7 +160,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 ################################################
 FROM ai_engine-base AS ai_engine
 
-ENV LD_LIBRARY_PATH=/app/output/lib:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/app/output/lib/cpu:/app/output/lib/gpu:${LD_LIBRARY_PATH}
 ENV LLAMA_MICO_LIB_MODE=auto
 
 WORKDIR /app
