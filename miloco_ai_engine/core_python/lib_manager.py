@@ -120,6 +120,49 @@ class LibraryManager:
             return gpu_candidates + cpu_candidates
         return cpu_candidates + gpu_candidates
 
+    def _candidate_library_dirs(self) -> list[str]:
+        """
+        Candidate directories (ordered) for loading libraries.
+        Supports packaging CPU/GPU libs into separate directories:
+        - /app/output/lib/gpu
+        - /app/output/lib/cpu
+        """
+        mode = (os.environ.get("LLAMA_MICO_LIB_MODE") or "auto").strip().lower()
+
+        # Explicit override always wins.
+        env_lib_dir = os.environ.get("LLAMA_MICO_LIB_DIR") or os.environ.get("MICO_LIB_DIR")
+        candidates: list[str] = []
+        if env_lib_dir:
+            candidates.append(env_lib_dir)
+
+        # Common packaged dirs
+        gpu_dir = os.path.join(os.sep, "app", "output", "lib", "gpu")
+        cpu_dir = os.path.join(os.sep, "app", "output", "lib", "cpu")
+        base_dir = os.path.join(os.sep, "app", "output", "lib")
+
+        if mode == "gpu":
+            candidates += [gpu_dir, base_dir, cpu_dir]
+        elif mode == "cpu":
+            candidates += [cpu_dir, base_dir, gpu_dir]
+        else:
+            # auto: prefer GPU when CUDA seems available
+            if self._cuda_seems_available():
+                candidates += [gpu_dir, base_dir, cpu_dir]
+            else:
+                candidates += [cpu_dir, base_dir, gpu_dir]
+
+        # Repo-relative path (dev)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates.append(os.path.join(current_dir, "..", "..", "output", "lib"))
+
+        # Dedup while preserving order
+        out: list[str] = []
+        for d in candidates:
+            d = os.path.abspath(d)
+            if d not in out:
+                out.append(d)
+        return out
+
     def _load_library(self) -> Optional[ctypes.CDLL]:
         """Load library"""
         if self._library is not None:
@@ -128,8 +171,11 @@ class LibraryManager:
         last_load_error: Optional[BaseException] = None
         found_any_candidate = False
 
-        # Get library path
-        lib_dir = self._get_library_path()
+        # Get library search dirs
+        lib_dirs = [d for d in self._candidate_library_dirs() if os.path.isdir(d)]
+        if not lib_dirs:
+            # fallback to old behavior (for backward compatibility)
+            lib_dirs = [self._get_library_path()]
         # Library name list (prefer Linux .so in containers)
         library_names = self._candidate_library_names() + [
             f"lib{LLAMA_MICO_LIB_NAME}.dylib",  # macOS
@@ -137,26 +183,32 @@ class LibraryManager:
             LLAMA_MICO_LIB_NAME,  # Generic name
         ]
 
-        # Try to load library from specific directory first
-        for lib_name in library_names:
-            lib_path = os.path.join(lib_dir, lib_name)
-            if not os.path.exists(lib_path):
-                logger.warning("Library file not found: %s", lib_path)
-                continue
-            found_any_candidate = True
-            logger.info("Attempting to load library from: %s", lib_path)
-            try:
-                # Load library using RTLD_GLOBAL mode with full path
-                self._library = ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
-                logger.info("LLaMA-MICO library loaded successfully from: %s", lib_path)
-                return self._library
-            except Exception as e: # pylint: disable=broad-exception-caught
-                last_load_error = e
-                logger.warning("Cannot load library from %s: %s", lib_path, e)
-                # If GPU library is present but CUDA deps are missing, try CPU variants next.
-                if self._load_error_looks_like_missing_cuda(e):
-                    logger.warning("Library load failed due to missing CUDA deps; will try CPU variants if available")
-                continue
+        # Try to load library from specific directories first
+        for lib_dir in lib_dirs:
+            for lib_name in library_names:
+                lib_path = os.path.join(lib_dir, lib_name)
+                if not os.path.exists(lib_path):
+                    logger.warning("Library file not found: %s", lib_path)
+                    continue
+                found_any_candidate = True
+                logger.info("Attempting to load library from: %s", lib_path)
+                try:
+                    # Ensure dependent .so resolve from the same directory first.
+                    prev_ld = os.environ.get("LD_LIBRARY_PATH", "")
+                    if lib_dir and (not prev_ld.startswith(lib_dir)):
+                        os.environ["LD_LIBRARY_PATH"] = f"{lib_dir}:{prev_ld}" if prev_ld else lib_dir
+
+                    # Load library using RTLD_GLOBAL mode with full path
+                    self._library = ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
+                    logger.info("LLaMA-MICO library loaded successfully from: %s", lib_path)
+                    return self._library
+                except Exception as e: # pylint: disable=broad-exception-caught
+                    last_load_error = e
+                    logger.warning("Cannot load library from %s: %s", lib_path, e)
+                    # If GPU library is present but CUDA deps are missing, try CPU variants next.
+                    if self._load_error_looks_like_missing_cuda(e):
+                        logger.warning("Library load failed due to missing CUDA deps; will try CPU variants if available")
+                    continue
 
         # Try to load from system path
         # NOTE: ctypes.util.find_library expects a "library name", not a filename.
