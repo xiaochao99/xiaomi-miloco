@@ -24,8 +24,9 @@ WORKDIR /app
 
 RUN set -eux \
     && sed -i "s|http://archive.ubuntu.com/ubuntu/|${APT_MIRRORS_URL}|g" /etc/apt/sources.list.d/ubuntu.sources \
+    && if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then sed -Ei 's/^Components: .*/Components: main universe restricted multiverse/' /etc/apt/sources.list.d/ubuntu.sources; fi \
     && apt-get update \
-    && apt-get install -y build-essential cmake git
+    && apt-get install -y --no-install-recommends build-essential cmake git
 
 COPY miloco_ai_engine/core /app/miloco_ai_engine/core
 COPY third_party /app/third_party
@@ -33,17 +34,29 @@ COPY scripts/ai_engine_cuda_build.sh /app/scripts/ai_engine_cuda_build.sh
 COPY scripts/ai_engine_cpu_build.sh /app/scripts/ai_engine_cpu_build.sh
 
 #
-# Build and package both variants for "GPU preferred, CPU fallback" runtime:
-# - GPU: /app/output/lib/libllama-mico.so
-# - CPU: /app/output/lib/libllama-mico-cpu.so
+# Build and package both variants for "GPU preferred, CPU fallback" runtime.
+# IMPORTANT: install CPU/GPU outputs into separate prefixes to avoid dependency pollution
+# (e.g. CPU lib accidentally linking against ggml-cuda from GPU install).
+#
+# - CPU prefix: /app/output_cpu
+# - GPU prefix: /app/output_gpu
 #
 RUN set -eux; \
-    KEEP_OUTPUT=0 BUILD_DIR=/app/build/ai_engine_cpu OUTPUT_DIR=/app/output bash /app/scripts/ai_engine_cpu_build.sh; \
-    test -f /app/output/lib/libllama-mico.so; \
-    mv /app/output/lib/libllama-mico.so /app/output/lib/libllama-mico-cpu.so; \
-    KEEP_OUTPUT=1 BUILD_DIR=/app/build/ai_engine_cuda OUTPUT_DIR=/app/output bash /app/scripts/ai_engine_cuda_build.sh; \
-    test -f /app/output/lib/libllama-mico.so; \
-    test -f /app/output/lib/libllama-mico-cpu.so
+    KEEP_OUTPUT=0 BUILD_DIR=/app/build/ai_engine_cpu OUTPUT_DIR=/app/output_cpu bash /app/scripts/ai_engine_cpu_build.sh; \
+    test -f /app/output_cpu/lib/libllama-mico.so; \
+    KEEP_OUTPUT=0 BUILD_DIR=/app/build/ai_engine_cuda OUTPUT_DIR=/app/output_gpu bash /app/scripts/ai_engine_cuda_build.sh; \
+    test -f /app/output_gpu/lib/libllama-mico.so; \
+    # Build-time sanity checks: CPU lib must not depend on CUDA, GPU lib should.
+    if ldd /app/output_cpu/lib/libllama-mico.so | grep -Eq 'libcuda\.so|libcudart\.so|libcublas'; then \
+        echo "ERROR: CPU build unexpectedly depends on CUDA"; \
+        ldd /app/output_cpu/lib/libllama-mico.so; \
+        exit 1; \
+    fi; \
+    if ! ldd /app/output_gpu/lib/libllama-mico.so | grep -Eq 'libcuda\.so|libcudart\.so|libcublas'; then \
+        echo "ERROR: GPU build does not show expected CUDA dependencies"; \
+        ldd /app/output_gpu/lib/libllama-mico.so; \
+        exit 1; \
+    fi
 
 
 ################################################
@@ -65,8 +78,9 @@ COPY miloco_ai_engine/pyproject.toml /app/miloco_ai_engine/pyproject.toml
 
 RUN set -eux \
     && sed -i "s|http://archive.ubuntu.com/ubuntu/|${APT_MIRRORS_URL}|g" /etc/apt/sources.list.d/ubuntu.sources \
+    && if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then sed -Ei 's/^Components: .*/Components: main universe restricted multiverse/' /etc/apt/sources.list.d/ubuntu.sources; fi \
     && apt update \
-    && apt install -y curl python3 python3-pip python3-dev build-essential \
+    && apt install -y --no-install-recommends curl python3 python3-pip python3-dev build-essential \
         clinfo \
         ocl-icd-libopencl1 \
         intel-opencl-icd \
@@ -89,7 +103,17 @@ ENV LLAMA_MICO_LIB_MODE=auto
 
 WORKDIR /app
 
-COPY --from=ai_engine-builder /app/output /app/output
+COPY --from=ai_engine-builder /app/output_cpu /app/output_cpu
+COPY --from=ai_engine-builder /app/output_gpu /app/output_gpu
+
+# Put CPU/GPU libs into separate dirs to avoid dependency pollution.
+RUN set -eux; \
+    mkdir -p /app/output/lib/cpu /app/output/lib/gpu; \
+    cp -a /app/output_cpu/lib/. /app/output/lib/cpu/; \
+    cp -a /app/output_gpu/lib/. /app/output/lib/gpu/; \
+    # keep a "default" name for compatibility (GPU one)
+    cp -a /app/output/lib/gpu/libllama-mico.so /app/output/lib/libllama-mico.so; \
+    cp -a /app/output/lib/cpu/libllama-mico.so /app/output/lib/libllama-mico-cpu.so
 COPY config/ai_engine_config.yaml /app/config/ai_engine_config.yaml
 COPY config/prompt_config.yaml /app/config/prompt_config.yaml
 COPY miloco_ai_engine /app/miloco_ai_engine
