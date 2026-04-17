@@ -60,6 +60,10 @@ bool config_params_parse_json(const char* config_json, common_params& params) {
         // Parse optional configuration parameters
         if (config.contains("n_gpu_layers")) {
             params.n_gpu_layers = config["n_gpu_layers"].get<int32_t>();
+            // When n_gpu_layers is 0 (CPU only mode), set main_gpu to -1 to avoid GPU initialization
+            if (params.n_gpu_layers == 0) {
+                params.main_gpu = -1;
+            }
         }
         if (config.contains("total_context_num")) {
             params.n_ctx = config["total_context_num"].get<int32_t>();
