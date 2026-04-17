@@ -15,7 +15,16 @@ from miloco_server.utils.llm_utils.device_chooser import DeviceChooser
 from miloco_server import actor_system
 from miloco_server.schema.chat_schema import Confirmation, Dialog, Event, InstructionPayload, Internal
 from miloco_server.schema.miot_schema import CameraInfo, HADeviceInfo
-from miloco_server.schema.trigger_schema import Action, Notify, TriggerRule, TriggerRuleDetail, ExecuteInfo, ExecuteType, ExecuteInfoDetail
+from miloco_server.schema.trigger_schema import (
+    Action,
+    Notify,
+    TriggerRuleV2,
+    TriggerConditionV2,
+    TriggerTargetV2,
+    ExecuteInfo,
+    ExecuteType,
+    ConditionType,
+)
 from pydantic.dataclasses import dataclass
 from thespian.actors import Actor, ActorAddress, ActorExitRequest
 
@@ -128,19 +137,22 @@ class RuleCreateTool(Actor):
                 notify=Notify(content=notify)
             )
 
-            choosed_mcp_list = await self._choose_mcp_list()
-            trigger_rule_detail = TriggerRuleDetail(
+            trigger_rule_v2 = TriggerRuleV2(
                 name=name,
-                cameras=chosen_cameras,
-                ha_devices=chosen_ha_devices,
-                condition=condition,
-                execute_info=ExecuteInfoDetail.from_execute_info(
-                    execute_info, choosed_mcp_list),
-                enabled=True
+                enabled=True,
+                trigger=TriggerConditionV2(
+                    type=ConditionType.LLM,
+                    llm_condition=condition,
+                ),
+                targets=TriggerTargetV2(
+                    camera_ids=[c.did for c in chosen_cameras] if chosen_cameras else [],
+                    ha_device_ids=[d.did for d in chosen_ha_devices] if chosen_ha_devices else [],
+                ),
+                execute_info=execute_info,
             )
 
             save_rule_confirm = Confirmation.SaveRuleConfirm(
-                rule=trigger_rule_detail,
+                rule=trigger_rule_v2,
                 camera_options=all_cameras,
                 ha_device_options=all_ha_devices,
                 action_options=[
@@ -236,10 +248,10 @@ class RuleCreateTool(Actor):
         else:
             self._future.set_result({"content": "User refused to save this rule"})
 
-    async def _create_rule_and_respond(self, rule: TriggerRule):
+    async def _create_rule_and_respond(self, rule: TriggerRuleV2):
         """Asynchronously create rule and respond with result"""
         try:
-            rule_id = await self._manager.trigger_rule_service.create_trigger_rule(rule)
+            rule_id = await self._manager.trigger_rule_service.create_trigger_rule_v2(rule)
             if rule_id:
                 self._future.set_result(
                     {"content": self._simplify_rule_introduction(rule)})
@@ -249,19 +261,19 @@ class RuleCreateTool(Actor):
             logger.error("[%s] Error creating trigger rule: %s", self._request_id, str(e))
             self._future.set_result({"error": str(e)})
 
-    def _simplify_rule_introduction(self, rule: TriggerRule) -> str:
+    def _simplify_rule_introduction(self, rule: TriggerRuleV2) -> str:
         """Simplify rule introduction"""
         action_introductions = []
-        if rule.execute_info.ai_recommend_action_descriptions:
+        if rule.execute_info and rule.execute_info.ai_recommend_action_descriptions:
             action_introductions.append(rule.execute_info.ai_recommend_action_descriptions)
-        if rule.execute_info.automation_actions:
+        if rule.execute_info and rule.execute_info.automation_actions:
             action_introductions.append([action.introduction for action in rule.execute_info.automation_actions])
-        if rule.execute_info.notify:
+        if rule.execute_info and rule.execute_info.notify:
             action_introductions.append(f"notify: {rule.execute_info.notify.content}")
 
         return (
             f"User modified rule created successfully, finally rule name: {rule.name}, "
-            f"condition: {rule.condition}, action_introductions: {action_introductions}"
+            f"condition: {rule.trigger.llm_condition}, action_introductions: {action_introductions}"
         )
 
     def _send_instruction(self, instruction_payload: InstructionPayload):

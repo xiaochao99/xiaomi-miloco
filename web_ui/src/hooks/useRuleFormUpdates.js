@@ -3,7 +3,7 @@
  * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
  */
 
-import { deleteSmartRule, getSmartRules, saveSmartRule, updateSmartRule } from "@/api";
+import { deleteSmartRuleV2, getSmartRulesV2, saveSmartRuleV2, updateSmartRuleV2 } from "@/api";
 import { message } from "antd";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,8 +16,23 @@ export const useRuleFormUpdates = () => {
 
   const fetchRules = async () => {
     try {
-      const ruleList = await getSmartRules();
-      setRules(ruleList?.data || []);
+      const ruleList = await getSmartRulesV2();
+      const normalized = (ruleList?.data || []).map(rule => ({
+        id: rule.id,
+        name: rule.name,
+        enabled: rule.enabled,
+        condition_type: rule.trigger?.type || 'llm',
+        condition: rule.trigger?.llm_condition || rule.trigger?.camera_condition || rule.trigger?.ha_condition || '',
+        ha_condition: rule.trigger?.ha_condition || '',
+        trigger_entity_id: rule.targets?.trigger_entity_id || null,
+        detection_condition: rule.trigger?.detection_condition || null,
+        cameras: rule.targets?.camera_ids || [],
+        ha_devices: rule.targets?.ha_device_ids || [],
+        execute_info: rule.execute_info || {},
+        filter: rule.filter || null,
+        __raw_v2: rule,
+      }));
+      setRules(normalized);
     } catch (error) {
       console.error('fetchRules error', error);
       message.error(t('smartCenter.getRuleListFailed'));
@@ -28,10 +43,35 @@ export const useRuleFormUpdates = () => {
     const camera_dids = Array.isArray(formData.cameras)
       ? formData.cameras.map(camera => typeof camera === 'object' ? camera.did : camera)
       : formData.cameras || [];
+    const conditionType = formData.condition_type || 'llm';
     const ruleData = {
-      ...formData,
-      cameras: camera_dids,
+      name: formData.name,
       enabled: formData.enabled !== undefined ? formData.enabled : true,
+      trigger: {
+        type: conditionType,
+        llm_condition: conditionType === 'llm' || conditionType === 'detection' || conditionType === 'face_recognition'
+          ? (formData.condition || '')
+          : null,
+        camera_condition: conditionType === 'hybrid' ? (formData.condition || '') : null,
+        ha_condition: conditionType === 'direct' || conditionType === 'hybrid'
+          ? (formData.ha_condition || formData.condition || '')
+          : null,
+        detection_condition: formData.detection_condition || null,
+      },
+      targets: {
+        camera_ids: camera_dids || [],
+        ha_device_ids: Array.isArray(formData.ha_devices) ? formData.ha_devices : [],
+        trigger_entity_id: formData.trigger_entity_id || null,
+      },
+      execute_info: formData.execute_info || {
+        ai_recommend_execute_type: formData.ai_recommend_execute_type || 'dynamic',
+        ai_recommend_action_descriptions: formData.ai_recommend_action_descriptions || [],
+        ai_recommend_actions: formData.ai_recommend_actions || [],
+        automation_actions: formData.automation_actions || [],
+        mcp_list: formData.mcp_list || [],
+        notify: formData.notify || null,
+      },
+      filter: formData.filter || null,
     };
 
     return ruleData;
@@ -40,7 +80,7 @@ export const useRuleFormUpdates = () => {
   const handleSaveRule = async (formData) => {
     try {
       setLoading(true);
-      const response = await saveSmartRule(formData);
+      const response = await saveSmartRuleV2(buildRuleData(formData));
 
       if (response?.code === 0) {
         message.success(t('smartCenter.ruleSaved'));
@@ -68,7 +108,7 @@ export const useRuleFormUpdates = () => {
       });
 
       ruleData.enabled = rule.enabled !== undefined ? rule.enabled : true;
-      const response = await updateSmartRule(rule.id, ruleData);
+      const response = await updateSmartRuleV2(rule.id, ruleData);
 
       if (response && response.code === 0) {
         message.success(t('smartCenter.ruleUpdated'));
@@ -86,7 +126,7 @@ export const useRuleFormUpdates = () => {
 
   const handleDeleteRule = async (rule) => {
     try {
-      const response = await deleteSmartRule(rule.id);
+      const response = await deleteSmartRuleV2(rule.id);
       if (response?.code === 0) {
         message.success(t('smartCenter.ruleDeleted'));
         await fetchRules();
@@ -117,23 +157,18 @@ export const useRuleFormUpdates = () => {
           : rule.ha_devices
         : [];
 
-      const updateData = {
-        name: rule.name,
+      const updateData = buildRuleData({
+        ...rule,
         cameras: camera_dids,
         ha_devices: ha_device_dids,
-        condition: rule.condition,
-        condition_type: rule.condition_type || 'llm',
-        ha_condition: rule.ha_condition || '',
-        detection_condition: rule.detection_condition || null,
         execute_info: {
           ...rest,
           mcp_list: mcp_list?.length > 0 ? mcp_list.map(mcp => mcp.client_id) : [],
         },
-        filter: rule.filter || null,
-        enabled: checked
-      };
+        enabled: checked,
+      });
 
-      const response = await updateSmartRule(rule.id, updateData);
+      const response = await updateSmartRuleV2(rule.id, updateData);
       if (response.code === 0) {
         fetchRules();
       } else {

@@ -1,0 +1,118 @@
+.card {
+  display: flex;
+  align-items: flex-start;
+  padding: 16px;
+  background: var(--bg-color-2);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  transition: all 0.3s ease;
+
+  &:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+}
+
+.iconWrapper {
+  flex-shrink: 0;
+  margin-right: 16px;
+}
+
+.icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%);
+  border-radius: 12px;
+  color: #fff;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+.nameRow {
+  margin-bottom: 12px;
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.onlineBadge {
+  font-size: 12px;
+  font-weight: 500;
+  color: #52c41a;
+  background: rgba(82, 196, 26, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.editButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-color-4);
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: var(--bg-color-3);
+    color: var(--text-color);
+  }
+}
+
+.editContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editInput {
+  flex: 1;
+  max-width: 200px;
+}
+
+.saveBtn {
+  padding: 4px 12px;
+}
+
+.cancelBtn {
+  padding: 4px 12px;
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.infoItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.label {
+  color: var(--text-color-4);
+  flex-shrink: 0;
+}
+
+.value {
+  color: var(--text-color-2);
+  font-family: monospace;
+}

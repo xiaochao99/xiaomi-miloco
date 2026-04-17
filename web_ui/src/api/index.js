@@ -33,6 +33,10 @@ export const updateSmartRule = (ruleId, data) => putApi(`/api/trigger/rule/${rul
 export const deleteSmartRule = (id) => deleteApi(`/api/trigger/rule/${id}`);
 
 export const getSmartRules = () => getApi('/api/trigger/rules');
+export const saveSmartRuleV2 = (data) => postApi('/api/trigger/v2/rule', data);
+export const updateSmartRuleV2 = (ruleId, data) => putApi(`/api/trigger/v2/rule/${ruleId}`, data);
+export const deleteSmartRuleV2 = (id) => deleteApi(`/api/trigger/v2/rule/${id}`);
+export const getSmartRulesV2 = () => getApi('/api/trigger/v2/rules');
 export const executeSceneActions = (data) => postApi('/api/trigger/execute_actions', data);
 export const getRuleTriggerLogs = (limit = 500) => getApi(`/api/trigger/logs?limit=${limit}`);
 
@@ -55,6 +59,8 @@ export const getHaAutomationActions = () => getApi('/api/ha/automation_actions')
 export const refreshHaAutomation = () => getApi('/api/ha/refresh_ha_automations');
 export const getHADeviceList = () => getApi('/api/ha/devices');
 export const getHaDevicesGrouped = () => getApi('/api/ha/devices_grouped');
+export const getHAEntityStateOptions = (entityId) =>
+  getApi(`/api/ha/entity_state_options?entity_id=${encodeURIComponent(entityId)}`);
 export const controlHADevice = (data) => postApi('/api/ha/control', data);
 
 // mcp
@@ -94,3 +100,8 @@ export const enrollFace = (data) => postApi('/api/face/library/enroll', data, 60
 export const listFaceProfiles = () => getApi('/api/face/library/list');
 export const deleteFaceProfile = (profileId) => deleteApi(`/api/face/library/${profileId}`);
 export const searchFaces = (data) => postApi('/api/face/search', data, 60000);
+
+// Xiaomi Bridge API
+export const getXiaomiBridgeDevices = () => getApi('/api/xiaomi-bridge/devices');
+export const getXiaomiBridgeDevice = (clientId) => getApi(`/api/xiaomi-bridge/devices/${clientId}`);
+export const updateXiaomiBridgeDevice = (clientId, data) => putApi(`/api/xiaomi-bridge/devices/${clientId}`, data);

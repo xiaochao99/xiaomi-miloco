@@ -7,7 +7,7 @@ Handles Home Assistant configuration, automation, and action execution
 Uses unified exception handling framework
 """
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from miot.ha_api import HAAutomationInfo
 
@@ -144,4 +144,19 @@ async def control_ha_device(control_req: HAControlRequest, current_user: str = D
         code=0,
         message="Home Assistant device controlled successfully",
         data=None
+    )
+
+
+@router.get(path="/entity_state_options", summary="Get selectable states for an HA entity", response_model=NormalResponse)
+async def get_entity_state_options(
+    entity_id: str = Query(..., description="Home Assistant entity_id"),
+    current_user: str = Depends(verify_token)
+):
+    """Get all selectable state options for one HA entity."""
+    logger.info("Get HA entity state options API called, user: %s, entity_id: %s", current_user, entity_id)
+    data = await manager.ha_service.get_entity_state_options(entity_id)
+    return NormalResponse(
+        code=0,
+        message="HA entity state options retrieved successfully",
+        data=data
     )

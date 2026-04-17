@@ -10,3 +10,5 @@ export { default as HADeviceList } from './HADeviceList';
 export { default as RTSPCameraCard } from './RTSPCameraCard';
 export { RTSPCameraList } from './RTSPCameraList';
 export { RTSPCameraModal } from './RTSPCameraModal';
+export { default as XiaoAIDeviceCard } from './XiaoAIDeviceCard';
+export { default as XiaoAIDeviceList } from './XiaoAIDeviceList';

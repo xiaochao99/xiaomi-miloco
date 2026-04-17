@@ -104,7 +104,7 @@ class Manager:
 
         # Initialize trigger
         self._trigger_rule_runner = TriggerRuleRunner(
-            trigger_rules=self._trigger_rule_dao.get_all(enabled_only=False),
+            trigger_rules=[rule.to_runtime_rule() for rule in self._trigger_rule_dao.get_all_v2(enabled_only=False)],
             miot_proxy=self._miot_proxy,
             ha_proxy=self._ha_proxy,
             get_llm_proxy_by_purpose=self.get_llm_proxy_by_purpose,
