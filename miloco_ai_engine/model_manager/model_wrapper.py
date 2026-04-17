@@ -28,7 +28,8 @@ class ModelStatus(Enum):
 class ModelWrapper(Actor):
     """Model instance"""
 
-    MODEL_REQUER_TIMEOUT = 30.0
+    # Increased timeout for CPU mode (Qwen3-8B runs much slower on CPU)
+    MODEL_REQUER_TIMEOUT = 120.0  # seconds
 
     def __init__(self, model_name: str, model_config: ModelConfig):
         super().__init__()
