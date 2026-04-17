@@ -9,6 +9,8 @@ services:
       - AI_ENGINE_HOST=${AI_ENGINE_HOST:-0.0.0.0}
       - AI_ENGINE_PORT=${AI_ENGINE_PORT:-8001}
       - AI_ENGINE_LOG_LEVEL=${AI_ENGINE_LOG_LEVEL:-info}
+      # Prefer GPU; fall back to CPU when CUDA libs aren't available.
+      - LLAMA_MICO_LIB_MODE=${LLAMA_MICO_LIB_MODE:-auto}
       - FACE_INFERENCE_PROVIDER=openvino_gpu
       - FACE_CTX_ID=-1
       - TZ=${TZ:-Asia/Shanghai}

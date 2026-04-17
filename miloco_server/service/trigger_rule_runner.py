@@ -35,6 +35,7 @@ from miloco_server.schema.trigger_schema import (
     Action, TriggerRule, ExecuteType, ConditionType, XiaoAIBroadcastMode
 )
 from miloco_server.service.xiaoai_broadcast_service import broadcast_via_bridge
+from miloco_server.service.wakeup_scheduler import WakeUpScheduler
 from miloco_server.utils.check_img_motion import check_camera_motion
 from miloco_server.utils.direct_condition_checker import direct_condition_checker
 from miloco_server.utils.local_models import ModelPurpose
@@ -44,6 +45,8 @@ from miloco_server.utils.trigger_filter import trigger_filter
 from miloco_server.detection.trigger_integration import get_detection_trigger_integration
 from miloco_server.service import trigger_rule_dynamic_executor_cache
 from miloco_server.service.trigger_rule_dynamic_executor import START, TriggerRuleDynamicExecutor
+from miloco_server.schema.wakeup_schema import WakeUpMode
+from miloco_server.xiaomi_bridge.manager import get_bridge_manager
 
 logger = logging.getLogger(name=__name__)
 
@@ -1223,9 +1226,15 @@ class TriggerRuleRunner:
         ai_recommend_dynamic_execute_result = None
         automation_action_execute_results = None
         notify_result = None
+        wakeup_cfg = rule.execute_info.xiaoai_wakeup if rule.execute_info else None
+        interactive_wakeup = (
+            wakeup_cfg
+            and wakeup_cfg.enabled
+            and wakeup_cfg.mode != WakeUpMode.MANUAL
+        )
 
         # Handle STATIC action type
-        if execute_type == ExecuteType.STATIC and rule.execute_info.ai_recommend_actions:
+        if (not interactive_wakeup) and execute_type == ExecuteType.STATIC and rule.execute_info.ai_recommend_actions:
             ai_recommend_action_execute_results = []
             for action in rule.execute_info.ai_recommend_actions:
                 result = await self.execute_action(action)
@@ -1233,7 +1242,7 @@ class TriggerRuleRunner:
                     ActionExecuteResult(action=action, result=result))
 
         # Handle DYNAMIC action type
-        if execute_type == ExecuteType.DYNAMIC:
+        if (not interactive_wakeup) and execute_type == ExecuteType.DYNAMIC:
             ai_recommend_dynamic_execute_result = AiRecommendDynamicExecuteResult(
                 is_done=False,
                 ai_recommend_action_descriptions=rule.execute_info.ai_recommend_action_descriptions,
@@ -1246,7 +1255,7 @@ class TriggerRuleRunner:
                 logger.warning("[%s] Dynamic action descriptions not found, skip dynamic action", execute_id)
 
         # Handle automation actions
-        if rule.execute_info.automation_actions:
+        if (not interactive_wakeup) and rule.execute_info.automation_actions:
             automation_action_execute_results = []
             for action in rule.execute_info.automation_actions:
                 result = await self.execute_action(action)
@@ -1260,8 +1269,24 @@ class TriggerRuleRunner:
             notify_result = NotifyResult(notify=rule.execute_info.notify, result=notify_res)
 
         # XiaoAI broadcast action
-        if rule.execute_info.xiaoai_broadcast:
+        # In interactive wakeup mode, proactive inquiry TTS is handled by WakeUpScheduler to avoid double-TTS.
+        if (not interactive_wakeup) and rule.execute_info.xiaoai_broadcast:
             await self._execute_xiaoai_broadcast(rule)
+
+        # WakeUp (唤醒小爱) interactive voice flow:
+        if interactive_wakeup:
+            try:
+                bridge_manager = get_bridge_manager()
+                planning_proxy = self._get_planning_llm_proxy()
+                wakeup_scheduler = WakeUpScheduler(
+                    bridge_manager=bridge_manager,
+                    llm_proxy=planning_proxy,
+                    tool_executor=self._tool_executor
+                )
+                wakeup_scheduler.set_ha_proxy(self.ha_proxy)
+                _ = await wakeup_scheduler.execute_wakeup_flow(rule, trigger_event=None)
+            except Exception as e:
+                logger.error("WakeUpScheduler execution failed for rule %s: %s", rule.name, e)
 
         return ExecuteResult(
             ai_recommend_execute_type=execute_type,

@@ -15,10 +15,12 @@ CUDA_ARCS="75;80;86;89;90" # default 20xx/30xx/40xx/50xx
 NATIVE_ARCS=OFF
 
 AI_ENGINE_DIR="${PROJECT_ROOT}/miloco_ai_engine/core"
-BUILD_DIR="${PROJECT_ROOT}/build/ai_engine"
-OUTPUT_DIR="${PROJECT_ROOT}/output"
+BUILD_DIR="${BUILD_DIR:-${PROJECT_ROOT}/build/ai_engine_cuda}"
+OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/output}"
 
-rm -rf "${OUTPUT_DIR}"
+if [ "${KEEP_OUTPUT:-0}" != "1" ]; then
+    rm -rf "${OUTPUT_DIR}"
+fi
 mkdir -p "${BUILD_DIR}" "${OUTPUT_DIR}"
 
 cmake -S "${AI_ENGINE_DIR}" -B "${BUILD_DIR}" \
