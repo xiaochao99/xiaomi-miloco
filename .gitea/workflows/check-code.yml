@@ -16,7 +16,7 @@ concurrency:
 jobs:
   code_quality:
     name: Code Quality Check
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
