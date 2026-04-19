@@ -18,6 +18,12 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# Silero VAD at 16 kHz expects exactly 512 samples per inference (see SileroVADOnnx.__call__).
+# The audio bridge often sends 20 ms frames (320 samples / 640 bytes). We buffer to 512-sample
+# chunks before running the model; otherwise Silero throws every frame and VAD degrades to
+# unreliable energy fallback on variable-sized buffers.
+BYTES_PER_VAD_FRAME_16K = 1024  # 512 * int16
+
 
 class SileroVADOnnx:
     """Silero VAD wrapper using ONNX Runtime."""
@@ -150,6 +156,10 @@ class VADManager:
         self._fallback: Optional[EnergyVAD] = None
         self._is_speaking = False
         self._speech_buffer: list[bytes] = []
+        # Frames seen as speech before Silero confirms onset (see _process_one_vad_frame).
+        # Without this, only the N-th frame is kept and the first ~min_speech_duration_ms
+        # of audio is lost — ASR often drops the first syllable (e.g. 一加一 → 加一).
+        self._pre_speech_buffer: list[bytes] = []
         self._silence_frame_count = 0
         self._speech_frame_count = 0
         
@@ -157,6 +167,9 @@ class VADManager:
         self._on_speech_start = None
         self._on_speech_end = None
         self._paused = False
+
+        # Incomplete tail from upstream (e.g. 640-byte WebSocket chunks) until we have 512 samples
+        self._rx_buffer: bytes = b""
         
         # Initialize model
         self._init_model(model_path)
@@ -180,18 +193,64 @@ class VADManager:
         self._on_speech_end = on_speech_end
     
     def _detect_speech(self, audio_chunk: bytes) -> float:
-        """Detect speech probability in audio chunk."""
+        """Detect speech probability on one Silero-sized frame (512 samples at 16 kHz)."""
+        if len(audio_chunk) != BYTES_PER_VAD_FRAME_16K:
+            if self._fallback:
+                return self._fallback(audio_chunk, self._sample_rate)
+            return 0.0
+
         if self._model:
             try:
                 samples = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) / 32768.0
                 return self._model(samples, self._sample_rate)
             except Exception as e:
                 logger.debug("Silero VAD error: %s", e)
-        
+
         if self._fallback:
             return self._fallback(audio_chunk, self._sample_rate)
-        
+
         return 0.0
+
+    def _process_one_vad_frame(self, frame: bytes) -> Optional[str]:
+        """Run state machine on one 512-sample / 1024-byte PCM frame."""
+        speech_prob = self._detect_speech(frame)
+        is_speech = speech_prob > self._threshold
+
+        if is_speech:
+            self._silence_frame_count = 0
+            self._speech_frame_count += 1
+
+            if not self._is_speaking:
+                self._pre_speech_buffer.append(frame)
+                if self._speech_frame_count >= self._min_speech_frames:
+                    self._is_speaking = True
+                    self._speech_buffer = list(self._pre_speech_buffer)
+                    self._pre_speech_buffer = []
+                    logger.debug("VAD: Speech started (prob=%.3f)", speech_prob)
+                    if self._on_speech_start:
+                        self._on_speech_start()
+                    return "speech_start"
+            else:
+                self._speech_buffer.append(frame)
+        else:
+            self._speech_frame_count = 0
+            self._pre_speech_buffer = []
+
+            if self._is_speaking:
+                self._silence_frame_count += 1
+                self._speech_buffer.append(frame)
+
+                if self._silence_frame_count >= self._min_silence_frames:
+                    self._is_speaking = False
+                    segment = b"".join(self._speech_buffer)
+                    self._speech_buffer = []
+                    self._silence_frame_count = 0
+                    logger.debug("VAD: Speech ended (%d bytes)", len(segment))
+                    if self._on_speech_end:
+                        self._on_speech_end(segment)
+                    return "speech_end"
+
+        return None
     
     def process_chunk(self, audio_chunk: bytes) -> Optional[str]:
         """
@@ -204,44 +263,18 @@ class VADManager:
         """
         if self._paused:
             return None
-        
-        speech_prob = self._detect_speech(audio_chunk)
-        is_speech = speech_prob > self._threshold
-        
-        if is_speech:
-            self._silence_frame_count = 0
-            self._speech_frame_count += 1
-            
-            if not self._is_speaking:
-                if self._speech_frame_count >= self._min_speech_frames:
-                    self._is_speaking = True
-                    self._speech_buffer = []
-                    logger.debug("VAD: Speech started (prob=%.3f)", speech_prob)
-                    if self._on_speech_start:
-                        self._on_speech_start()
-                    # Include pre-speech buffer
-                    self._speech_buffer.append(audio_chunk)
-                    return "speech_start"
-            else:
-                self._speech_buffer.append(audio_chunk)
-        else:
-            self._speech_frame_count = 0
-            
-            if self._is_speaking:
-                self._silence_frame_count += 1
-                self._speech_buffer.append(audio_chunk)  # include trailing silence
-                
-                if self._silence_frame_count >= self._min_silence_frames:
-                    self._is_speaking = False
-                    segment = b"".join(self._speech_buffer)
-                    self._speech_buffer = []
-                    self._silence_frame_count = 0
-                    logger.debug("VAD: Speech ended (%d bytes)", len(segment))
-                    if self._on_speech_end:
-                        self._on_speech_end(segment)
-                    return "speech_end"
-        
-        return None
+
+        self._rx_buffer += audio_chunk
+        first_event: Optional[str] = None
+
+        while len(self._rx_buffer) >= BYTES_PER_VAD_FRAME_16K:
+            frame = self._rx_buffer[:BYTES_PER_VAD_FRAME_16K]
+            self._rx_buffer = self._rx_buffer[BYTES_PER_VAD_FRAME_16K:]
+            evt = self._process_one_vad_frame(frame)
+            if evt and first_event is None:
+                first_event = evt
+
+        return first_event
     
     def get_speech_buffer(self) -> bytes:
         """Get current speech buffer."""
@@ -256,8 +289,10 @@ class VADManager:
         self._paused = False
         self._is_speaking = False
         self._speech_buffer = []
+        self._pre_speech_buffer = []
         self._silence_frame_count = 0
         self._speech_frame_count = 0
+        self._rx_buffer = b""
         
         if self._model:
             self._model.reset_states()
@@ -268,9 +303,11 @@ class VADManager:
         """Reset all state."""
         self._is_speaking = False
         self._speech_buffer = []
+        self._pre_speech_buffer = []
         self._silence_frame_count = 0
         self._speech_frame_count = 0
         self._paused = False
+        self._rx_buffer = b""
         
         if self._model:
             self._model.reset_states()

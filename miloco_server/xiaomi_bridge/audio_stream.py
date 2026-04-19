@@ -12,7 +12,7 @@ import asyncio
 import logging
 import os
 import time
-from typing import Optional, Dict, Set, Any
+from typing import Optional, Dict, Set, Any, Callable
 from dataclasses import dataclass, field
 import json
 import uuid
@@ -86,6 +86,8 @@ class AudioStreamManager:
     def __init__(self):
         self._devices: Dict[str, ConnectedDevice] = {}  # 改为存储设备对象
         self._audio_handler = None
+        # client_id -> sync callback when client sends Event.playback_drained (see manager._speak)
+        self._playback_drained_handler: Optional[Callable[[str], None]] = None
         self._running = False
         self._config = AudioStreamConfig()
         # Command channel tuning (open-xiaoai client-rust RPC)
@@ -165,6 +167,10 @@ class AudioStreamManager:
     def set_audio_handler(self, handler):
         """设置音频处理回调"""
         self._audio_handler = handler
+
+    def set_playback_drained_handler(self, handler: Optional[Callable[[str], None]]) -> None:
+        """客户端上报本地播放排空时调用（同步回调，应仅 asyncio.Event.set 等轻量操作）。"""
+        self._playback_drained_handler = handler
     
     async def start(self):
         """启动音频流管理器"""
@@ -297,12 +303,16 @@ class AudioStreamManager:
                 device.sender_task.cancel()
                 try:
                     await device.sender_task
+                except asyncio.CancelledError:
+                    pass
                 except Exception:
                     pass
             if device.play_sender_task:
                 device.play_sender_task.cancel()
                 try:
                     await device.play_sender_task
+                except asyncio.CancelledError:
+                    pass
                 except Exception:
                     pass
             if client_id in self._devices:
@@ -317,7 +327,14 @@ class AudioStreamManager:
         等设备开始有任何 rx（或 hello）后再发送，避免“未 ready 即下发导致丢消息”。
         """
         while True:
-            cmd = await device.command_queue.get()
+            try:
+                cmd = await device.command_queue.get()
+            except asyncio.CancelledError:
+                logger.debug(
+                    "[Command Send] sender loop cancelled while waiting (device=%s)",
+                    device.client_id,
+                )
+                raise
             try:
                 cmd_id = None
                 try:
@@ -434,7 +451,13 @@ class AudioStreamManager:
 
         if "Event" in data and isinstance(data.get("Event"), dict):
             ev = data["Event"]
-            logger.debug("[RPC Event] event=%s id=%s", ev.get("event"), ev.get("id"))
+            ev_name = ev.get("event")
+            if ev_name == "playback_drained" and self._playback_drained_handler:
+                try:
+                    self._playback_drained_handler(device.client_id)
+                except Exception as exc:
+                    logger.warning("[RPC Event] playback_drained handler failed: %s", exc)
+            logger.debug("[RPC Event] event=%s id=%s", ev_name, ev.get("id"))
             return
 
         if "Request" in data and isinstance(data.get("Request"), dict):
@@ -510,7 +533,11 @@ class AudioStreamManager:
         playback_start = None  # monotonic seconds when first packet sent
 
         while True:
-            session_id, payload = await device.play_queue.get()
+            try:
+                session_id, payload = await device.play_queue.get()
+            except asyncio.CancelledError:
+                logger.debug("[Play Sender] cancelled waiting queue: %s", device.client_id)
+                raise
             try:
                 # Drop stale packets from previous session.
                 if session_id != device.play_session_id:
@@ -621,6 +648,43 @@ class AudioStreamManager:
         }
         await self._send_rpc_direct(device, "start_recording", payload)
         device.recording_started = True
+
+    async def pause_recording_for_playback(self, client_ids: Optional[list[str]] = None) -> None:
+        """
+        open-xiaoai-client-rust: stop_recording so uplink mic does not capture self-TTS
+        (notably stream tail / room echo). Per client readme, only affects that peer's recorder.
+        """
+        targets = client_ids if client_ids else list(self._devices.keys())
+        for client_id in targets:
+            device = self._devices.get(client_id)
+            if not device:
+                continue
+            try:
+                await self._send_rpc_direct(device, "stop_recording", None)
+            except Exception as e:
+                logger.warning(
+                    "[AudioStream] stop_recording failed for %s: %s",
+                    client_id,
+                    e,
+                )
+            device.recording_started = False
+
+    async def resume_recording_after_playback(self, client_ids: Optional[list[str]] = None) -> None:
+        """Re-issue start_recording after TTS (recording_started must be False)."""
+        targets = client_ids if client_ids else list(self._devices.keys())
+        for client_id in targets:
+            device = self._devices.get(client_id)
+            if not device:
+                continue
+            device.recording_started = False
+            try:
+                await self._ensure_recording_started(device)
+            except Exception as e:
+                logger.warning(
+                    "[AudioStream] start_recording after playback failed for %s: %s",
+                    client_id,
+                    e,
+                )
 
     async def _send_rpc_direct(self, device: ConnectedDevice, command: str, payload: Dict[str, Any] | None = None):
         """Send one RPC request directly to websocket, preserving startup ordering."""

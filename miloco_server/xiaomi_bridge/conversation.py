@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import time
 from enum import Enum
 from typing import Optional, Callable, Awaitable
 
@@ -63,6 +65,9 @@ class MilocoConversationController:
         # When enabled, run at most one "continue" turn and then stop.
         # This is required for "主动智能/询问后等待用户一句指令" UX.
         self._single_turn: bool = False
+        # Play once after KWS on_wakeup, before first VAD listen (see on_wakeup / _conversation_loop).
+        self._wakeup_opening_reply: str = ""
+        self._play_opening_after_next_start: bool = False
 
         # VAD/ASR references (set by manager)
         self._vad = None
@@ -97,12 +102,15 @@ class MilocoConversationController:
         tts_callback: Optional[Callable[[str], Awaitable[None]]] = None,
         on_state_change: Optional[Callable[[ConversationState], Awaitable[None]]] = None,
         single_turn: bool | None = None,
+        wakeup_opening_reply: str | None = None,
     ):
         """Configure conversation controller."""
         if exit_keywords is not None:
             self._exit_keywords = exit_keywords
         if wakeup_keywords is not None:
             self._wakeup_keywords = wakeup_keywords
+        if wakeup_opening_reply is not None:
+            self._wakeup_opening_reply = wakeup_opening_reply
         if timeout is not None:
             self._timeout = timeout
         if process_text_callback is not None:
@@ -145,7 +153,7 @@ class MilocoConversationController:
         except Exception as exc:
             logger.error("Conversation loop error: %s: %s", type(exc).__name__, exc)
         finally:
-            self.stop()
+            await self.stop()
 
     async def stop(self):
         """Stop conversation mode."""
@@ -153,6 +161,7 @@ class MilocoConversationController:
             return
 
         self._active = False
+        self._play_opening_after_next_start = False
 
         # Cancel pending VAD future
         self._cancel_vad_future()
@@ -170,11 +179,26 @@ class MilocoConversationController:
     async def on_wakeup(self, text: str = ""):
         """Handle wakeup event (from KWS or API)."""
         logger.info("Wakeup triggered: %s", text)
+        opening = (self._wakeup_opening_reply or "").strip()
+        if opening:
+            self._play_opening_after_next_start = True
         if not self._active:
             await self.start()
 
     async def _conversation_loop(self):
         """Run VAD → ASR → Miloco → TTS turns until exit."""
+        if self._play_opening_after_next_start and (self._wakeup_opening_reply or "").strip():
+            self._play_opening_after_next_start = False
+            try:
+                await self._set_state(ConversationState.SPEAKING)
+                if self._tts_callback:
+                    await self._tts_callback((self._wakeup_opening_reply or "").strip())
+            except Exception as exc:
+                logger.error("Wakeup opening TTS failed: %s: %s", type(exc).__name__, exc)
+            finally:
+                if self._active:
+                    await self._set_state(ConversationState.LISTENING)
+
         while self._active:
             result = await self._run_one_turn()
             # "continue" means we processed user speech and spoke a response.
@@ -201,7 +225,10 @@ class MilocoConversationController:
         # 1. Wait for speech
         speech_bytes = await self._wait_for_speech()
         if speech_bytes is None:
-            logger.debug("No speech detected, timeout")
+            logger.info(
+                "No speech segment within %ds (VAD timeout); user command did not enter dialogue",
+                self._timeout,
+            )
             return "timeout"
 
         logger.debug("Got speech buffer: %d bytes", len(speech_bytes))
@@ -217,6 +244,71 @@ class MilocoConversationController:
         if not text:
             logger.debug("ASR empty, retrying")
             return "continue"
+
+        # Drop likely self-TTS tail picked up by mic (short phrase contained in last playback text).
+        echo_guard = os.getenv("MILOCO_ASR_TTS_ECHO_GUARD", "1").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        max_echo_chars = int(os.getenv("MILOCO_ASR_TTS_ECHO_MAX_CHARS", "12"))
+        echo_window_s = float(os.getenv("MILOCO_ASR_TTS_ECHO_WINDOW_S", "5"))
+        if echo_guard and len(text.strip()) <= max_echo_chars:
+            try:
+                from miloco_server.xiaomi_bridge.manager import get_bridge_manager
+
+                bm = get_bridge_manager()
+                plain = getattr(bm, "_last_played_tts_plain", "") or ""
+                ts_at = float(getattr(bm, "_last_played_tts_at", 0) or 0)
+                if (
+                    plain
+                    and (time.monotonic() - ts_at) < echo_window_s
+                    and text.strip() in plain
+                ):
+                    logger.info("ASR dropped as likely TTS echo: %r", text[:40])
+                    return "continue"
+            except Exception:
+                pass
+
+        # Short backchannels right after TTS are often speaker tail / room pickup, not a command.
+        filler_guard = os.getenv("MILOCO_ASR_POST_TTS_FILLER_GUARD", "1").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        filler_window_s = float(os.getenv("MILOCO_ASR_POST_TTS_FILLER_WINDOW_S", "4"))
+        max_filler_chars = int(os.getenv("MILOCO_ASR_POST_TTS_FILLER_MAX_CHARS", "3"))
+        if filler_guard and len(text.strip()) <= max_filler_chars:
+            try:
+                from miloco_server.xiaomi_bridge.manager import get_bridge_manager
+
+                bm = get_bridge_manager()
+                ts_at = float(getattr(bm, "_last_played_tts_at", 0) or 0)
+                if ts_at > 0 and (time.monotonic() - ts_at) < filler_window_s:
+                    t = text.strip()
+                    default_fillers = (
+                        "嗯",
+                        "嗯嗯",
+                        "呃",
+                        "唔",
+                        "哼",
+                        "哦",
+                        "噢",
+                        "额",
+                        "诶",
+                        "欸",
+                    )
+                    extra = os.getenv("MILOCO_ASR_POST_TTS_FILLER_EXTRA", "").strip()
+                    fillers = set(default_fillers)
+                    if extra:
+                        for part in extra.split(","):
+                            p = part.strip()
+                            if p:
+                                fillers.add(p)
+                    if t in fillers:
+                        logger.info("ASR dropped as post-TTS filler/backchannel: %r", t[:40])
+                        return "continue"
+            except Exception:
+                pass
 
         logger.info("ASR result: %s", text[:50])
 
@@ -289,7 +381,7 @@ class MilocoConversationController:
             result = await asyncio.wait_for(self._vad_future, timeout=self._timeout)
             return result
         except asyncio.TimeoutError:
-            logger.debug("VAD timeout, no speech detected")
+            logger.debug("VAD future wait_for timed out (no speech_end within %ds)", self._timeout)
             self._vad.pause()
             return None
         finally:

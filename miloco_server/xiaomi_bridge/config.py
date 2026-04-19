@@ -79,6 +79,8 @@ class BridgeConfig:
     # Conversation settings
     exit_keywords: List[str] = field(default_factory=lambda: ["退出", "结束对话", "停止"])
     wakeup_timeout: int = 20  # seconds of silence before auto-exit
+    # Non-empty: after KWS wakeup, speak this once via TTS before the first listen turn.
+    wakeup_opening_reply: str = ""
     
     # Audio settings
     sample_rate: int = 16000
@@ -134,6 +136,7 @@ class BridgeConfig:
             
             exit_keywords=os.getenv("MILOCO_EXIT_KEYWORDS", "退出,结束对话,停止").split(","),
             wakeup_timeout=int(os.getenv("MILOCO_WAKEUP_TIMEOUT", "20")),
+            wakeup_opening_reply=os.getenv("MILOCO_WAKEUP_OPENING_REPLY", "").strip(),
             sample_rate=int(os.getenv("MILOCO_SAMPLE_RATE", "16000")),
             ws_port=int(os.getenv("MILOCO_WS_PORT", "4399")),
             ws_host=os.getenv("MILOCO_WS_HOST", "0.0.0.0"),

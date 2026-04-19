@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import time
 from typing import Optional, Callable, Awaitable
 
 import uvicorn
@@ -26,6 +28,7 @@ from miloco_server.xiaomi_bridge.kws import KWSManager
 from miloco_server.xiaomi_bridge.asr import ASRManager
 from miloco_server.xiaomi_bridge.tts import TTSService
 from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager, AudioStreamManager
+from miloco_server.utils.speech_plain_text import plain_text_for_tts
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,13 @@ class BridgeManager:
 
         # Avoid triggering KWS during our own TTS playback.
         self._tts_playing: bool = False
+        # After resume_recording, ignore mic briefly (DAC/room tail still audible).
+        self._playback_tail_suppress_until: float = 0.0
+        # Last TTS plain text (for ASR echo guard in conversation path).
+        self._last_played_tts_plain: str = ""
+        self._last_played_tts_at: float = 0.0
+        # When MILOCO_TTS_WAIT_CLIENT_PLAYBACK_DRAIN=1, client must send Event playback_drained.
+        self._playback_drain_events: Optional[dict[str, asyncio.Event]] = None
 
         # WebSocket server
         self._ws_server: Optional[uvicorn.Server] = None
@@ -218,6 +228,7 @@ class BridgeManager:
 
         # Connect audio stream to audio processing
         self._audio_stream_manager.set_audio_handler(self.handle_audio_frame)
+        self._audio_stream_manager.set_playback_drained_handler(self._on_client_playback_drained)
 
         # Configure conversation controller
         async def on_tts(text: str):
@@ -234,6 +245,7 @@ class BridgeManager:
             timeout=self._config.wakeup_timeout,
             process_text_callback=self._process_text_callback,
             tts_callback=on_tts,
+            wakeup_opening_reply=self._config.wakeup_opening_reply,
         )
 
         self._initialized = True
@@ -242,11 +254,12 @@ class BridgeManager:
         await self._start_ws_server()
 
         logger.info(
-            "Xiaomi bridge initialized (tts=%s, wakeup=%s, asr=%s, ws_port=%d)",
+            "Xiaomi bridge initialized (tts=%s, wakeup=%s, asr=%s, ws_port=%d, opening_reply=%s)",
             self._config.tts.engine,
             self._config.kws.keywords,
             self._config.asr.model,
             self._config.ws_port,
+            bool((self._config.wakeup_opening_reply or "").strip()),
         )
 
     async def _start_ws_server(self):
@@ -322,6 +335,9 @@ class BridgeManager:
             return
         if not self._initialized:
             await self.initialize()
+        # Avoid a stuck TTS flag blocking KWS/VAD across restarts or partial failures.
+        self._tts_playing = False
+        self._playback_tail_suppress_until = 0.0
         logger.info("Xiaomi bridge started")
 
     async def stop(self):
@@ -348,6 +364,46 @@ class BridgeManager:
 
         logger.info("Xiaomi bridge stopped")
 
+    def _on_client_playback_drained(self, client_id: str) -> None:
+        pending = self._playback_drain_events
+        if pending and client_id in pending:
+            pending[client_id].set()
+            logger.info("Client reported playback_drained: %s", client_id)
+
+    async def _await_client_playback_drain(
+        self,
+        client_ids: Optional[list[str]],
+        timeout_s: float,
+    ) -> bool:
+        """Wait until each target client sends one playback_drained Event (or timeout)."""
+        mgr = self._audio_stream_manager
+        if not mgr:
+            return False
+        if client_ids:
+            ids = list(client_ids)
+        else:
+            ids = list(mgr.connected_clients)
+        if not ids:
+            return True
+        events = {cid: asyncio.Event() for cid in ids}
+        self._playback_drain_events = events
+        try:
+            tasks = [asyncio.create_task(events[cid].wait()) for cid in ids]
+            done, pending_tasks = await asyncio.wait(tasks, timeout=timeout_s)
+            for t in pending_tasks:
+                t.cancel()
+            ok = all(ev.is_set() for ev in events.values())
+            if not ok:
+                logger.warning(
+                    "playback_drained incomplete: %s/%s clients within %.1fs",
+                    sum(1 for ev in events.values() if ev.is_set()),
+                    len(ids),
+                    timeout_s,
+                )
+            return ok
+        finally:
+            self._playback_drain_events = None
+
     async def handle_audio_frame(self, audio_data: bytes):
         """
         Handle incoming audio frame from speaker microphone.
@@ -356,6 +412,9 @@ class BridgeManager:
         Reference: open-xiaoai-bridge XiaoAI audio processing
         """
         if not self._config.enabled:
+            return
+
+        if time.monotonic() < self._playback_tail_suppress_until:
             return
 
         # Apply audio gain
@@ -367,8 +426,14 @@ class BridgeManager:
             samples = np.clip(samples, -32768, 32767).astype(np.int16)
             audio_data = samples.tobytes()
 
-        # If conversation is active, feed to VAD
+        # If conversation is active, feed to VAD only while waiting for user speech (LISTENING).
+        # Do NOT gate on _tts_playing here: it can lag state transitions and starve VAD entirely
+        # (symptom: wake works once then never hears commands / appears "can't wake").
+        # Echo from speaker is mainly during SPEAKING; skip VAD for PROCESSING/SPEAKING.
         if self._conversation_controller.is_active and self._vad:
+            st = self._conversation_controller.state
+            if st in (ConversationState.PROCESSING, ConversationState.SPEAKING):
+                return
             self._vad.process_chunk(audio_data)
             return
 
@@ -384,11 +449,25 @@ class BridgeManager:
                 if matched:
                     logger.info("Wake word detected: %s", matched)
                     self._kws.reset()
-                    await self._conversation_controller.on_wakeup(matched)
+                    # Must NOT await on_wakeup/start here: _process_audio awaits this handler
+                    # sequentially; awaiting would block all further mic frames and VAD would
+                    # never run → permanent 20s timeout. Run conversation in a background task.
+                    asyncio.create_task(self._conversation_controller.on_wakeup(matched))
 
-    async def _speak(self, text: str):
-        """Speak text through speaker (TTS)."""
+    async def _speak(self, text: str, client_ids: Optional[list[str]] = None):
+        """
+        Speak text through speaker (TTS).
+
+        open-xiaoai-client: pause peer recording during playback so the mic path
+        does not capture self-playback (especially stream tail). See stop_recording
+        / start_recording in client-rust protocol.
+        """
         if not text:
+            return
+
+        text = plain_text_for_tts(text)
+        if not text:
+            logger.warning("TTS text empty after plain-text normalization; skip playback")
             return
 
         if not self._tts or not self._tts.is_initialized:
@@ -396,23 +475,72 @@ class BridgeManager:
             logger.info("TTS text (not played): %s", text[:100])
             return
 
+        pause_mic = os.getenv("MILOCO_PAUSE_RECORDING_DURING_TTS", "1").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        wait_client_drain = os.getenv("MILOCO_TTS_WAIT_CLIENT_PLAYBACK_DRAIN", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        client_drain_timeout_s = float(os.getenv("MILOCO_CLIENT_PLAYBACK_DRAIN_TIMEOUT_S", "30"))
+        # speak() returns when uplink has finished *sending* PCM; the device still has ring
+        # buffer + transducer tail. Extra drain avoids mic reopening during audible tail.
+        post_play_drain_ms = int(os.getenv("MILOCO_TTS_POST_PLAY_DRAIN_MS", "1100"))
+        resume_delay_ms = int(os.getenv("MILOCO_TTS_RESUME_RECORDING_DELAY_MS", "550"))
+        tail_ignore_ms = int(os.getenv("MILOCO_PLAYBACK_TAIL_IGNORE_MS", "1000"))
+        after_stop_ms = int(os.getenv("MILOCO_AFTER_STOP_RECORDING_MS", "40"))
+        # Client-reported drain replaces most fixed server sleep when enabled.
+        effective_post_drain_ms = 0 if (pause_mic and wait_client_drain) else post_play_drain_ms
+
+        tts_plain_recorded = False
         try:
             self._tts_playing = True
-            await self._tts.speak(text)
+            if self._audio_stream_manager and pause_mic:
+                try:
+                    await self._audio_stream_manager.pause_recording_for_playback(client_ids)
+                    if after_stop_ms > 0:
+                        await asyncio.sleep(after_stop_ms / 1000.0)
+                except Exception as e:
+                    logger.warning("pause_recording_for_playback: %s", e)
+            await self._tts.speak(text, client_ids=client_ids)
+            if pause_mic and wait_client_drain:
+                drained = await self._await_client_playback_drain(client_ids, client_drain_timeout_s)
+                if not drained:
+                    logger.warning(
+                        "playback_drained wait timed out or incomplete; continuing to resume mic"
+                    )
+            elif pause_mic and effective_post_drain_ms > 0:
+                await asyncio.sleep(effective_post_drain_ms / 1000.0)
+            self._last_played_tts_plain = text
+            tts_plain_recorded = True
             logger.info("TTS played: %s", text[:50])
         except Exception as e:
             logger.error("TTS playback failed: %s", e)
         finally:
             self._tts_playing = False
+            try:
+                if pause_mic and resume_delay_ms > 0:
+                    await asyncio.sleep(resume_delay_ms / 1000.0)
+                if self._audio_stream_manager and pause_mic:
+                    await self._audio_stream_manager.resume_recording_after_playback(client_ids)
+            except Exception as e:
+                logger.warning("resume_recording_after_playback: %s", e)
+            if tail_ignore_ms > 0:
+                self._playback_tail_suppress_until = time.monotonic() + tail_ignore_ms / 1000.0
+            # Filler/echo guards in conversation use time since uplink is accepting mic again.
+            if tts_plain_recorded:
+                self._last_played_tts_at = time.monotonic()
 
-    async def speak(self, text: str) -> bool:
+    async def speak(self, text: str, client_ids: Optional[list[str]] = None) -> bool:
         """
         Speak text through the speaker.
         Used for one-shot TTS playback (e.g., from API or rules).
         """
         if not text:
             return False
-        await self._speak(text)
+        await self._speak(text, client_ids=client_ids)
         return True
 
     def set_tts_speaker(self, speaker_id: str):
@@ -455,7 +583,7 @@ class BridgeManager:
                 original_speaker = self._tts._default_speaker
                 self._tts._default_speaker = speaker_id
 
-            await self._speak(text)
+            await self._speak(text, client_ids=device_ids)
 
             if speaker_id and self._tts:
                 self._tts._default_speaker = original_speaker

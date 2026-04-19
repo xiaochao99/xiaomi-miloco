@@ -212,7 +212,9 @@ class ChatAgent(Actor):
     async def _run_finally_do(self, success: bool, error_message: str | None) -> None:
         """Run finally do."""
         if not success:
-            self._send_instruction(Dialog.Exception(message=error_message))
+            # Dialog.Exception requires a non-None string (Pydantic validation).
+            msg = (error_message or "").strip() or "处理未完成或已中断"
+            self._send_instruction(Dialog.Exception(message=msg))
         self._send_dialog_finish(success)
 
 
