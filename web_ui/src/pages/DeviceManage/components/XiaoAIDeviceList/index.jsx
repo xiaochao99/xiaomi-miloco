@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Spin, Empty, message } from 'antd';
 import XiaoAIDeviceCard from '../XiaoAIDeviceCard';
-import { getXiaomiBridgeDevices } from '@/api';
+import { getXiaoAIDevices } from '@/api';
 import styles from './index.module.less';
 
 const XiaoAIDeviceList = () => {
@@ -18,7 +18,7 @@ const XiaoAIDeviceList = () => {
   const fetchDevices = async () => {
     setLoading(true);
     try {
-      const response = await getXiaomiBridgeDevices();
+      const response = await getXiaoAIDevices();
       if (response?.code === 0) {
         setDevices(response.data || []);
       } else {

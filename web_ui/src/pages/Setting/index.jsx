@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typography, Segmented, Table, Popconfirm, Tag, Tooltip, Alert} from 'antd';
 import { useTranslation } from 'react-i18next';
 import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined, PlusOutlined, CopyOutlined, DeleteOutlined, EyeOutlined, VideoCameraOutlined } from '@ant-design/icons';
-import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig, getRTSPServerConfig, setRTSPServerConfig } from '@/api';
+import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig, getRTSPServerConfig, setRTSPServerConfig, getXiaoAIConfig, updateXiaoAIConfig, restartXiaoAI } from '@/api';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSettingStore } from '@/stores/settingStore';
 import { Card, Header } from '@/components';
@@ -60,6 +60,59 @@ const Setting = () => {
     port: 8554
   });
   const [loadingRtspServerConfig, setLoadingRtspServerConfig] = useState(false);
+
+  // Xiaomi Bridge config states
+  const [bridgeConfig, setBridgeConfig] = useState({
+    enabled: false,
+    vad: {
+      threshold: 0.10,
+      min_speech_duration_ms: 250,
+      min_silence_duration_ms: 500,
+      model_path: 'models/vad/silero_vad.onnx'
+    },
+    kws: {
+      keywords: ['小米同学'],
+      keywords_score: 2.0,
+      keywords_threshold: 0.2,
+      model_dir: 'models/kws/sherpa-onnx-kws'
+    },
+    asr: {
+      model: 'sense_voice',
+      int8: true,
+      model_dir: 'models/asr/sense-voice',
+      num_threads: 2
+    },
+    tts: {
+      engine: 'doubao',
+      app_id: '',
+      access_key: '',
+      api_key: '',
+      api_base_url: 'https://api.xiaomimimo.com',
+      default_speaker: 'zh_female_vv_uranus_bigtts',
+      audio_format: 'pcm',
+      stream: true,
+      speed: 1.0
+    },
+    audio_input: {
+      gain: 1.0
+    },
+    exit_keywords: ['退出', '结束对话', '停止'],
+    wakeup_timeout: 20,
+    wakeup_opening_reply: '',
+    sample_rate: 16000,
+    ws_port: 4399,
+    ws_host: '0.0.0.0'
+  });
+  const [loadingBridgeConfig, setLoadingBridgeConfig] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    vad: false,
+    kws: false,
+    asr: false,
+    tts: false,
+    audio: false,
+    dialog: false,
+    ws: false
+  });
 
   // language options
   const languageOptions = [
@@ -131,6 +184,87 @@ const Setting = () => {
   useEffect(() => {
     fetchRtspServerConfig();
   }, []);
+
+  // Load Xiaomi Bridge Config
+  useEffect(() => {
+    fetchBridgeConfig();
+  }, []);
+
+  const fetchBridgeConfig = async () => {
+    setLoadingBridgeConfig(true);
+    try {
+      const res = await getXiaoAIConfig();
+      if (res && res.code === 0) {
+        setBridgeConfig(res.data);
+      }
+    } catch (error) {
+      console.error('Failed to load Xiaomi Bridge config:', error);
+    } finally {
+      setLoadingBridgeConfig(false);
+    }
+  };
+
+  const handleBridgeConfigChange = (section, key, value) => {
+    setBridgeConfig(prev => {
+      if (section) {
+        return {
+          ...prev,
+          [section]: {
+            ...prev[section],
+            [key]: value
+          }
+        };
+      }
+      return {
+        ...prev,
+        [key]: value
+      };
+    });
+  };
+
+  const handleBridgeConfigSave = async () => {
+    setLoadingBridgeConfig(true);
+    try {
+      const res = await updateXiaoAIConfig(bridgeConfig);
+      if (res && res.code === 0) {
+        message.success(t('setting.xiaoaiServiceConfigSaved'));
+        if (res.data) {
+          setBridgeConfig(res.data);
+        }
+      } else {
+        message.error(res?.message || t('setting.xiaoaiServiceConfigSaveFailed'));
+      }
+    } catch (error) {
+      console.error('Failed to save XiaoAI Service config:', error);
+      message.error(t('setting.xiaoaiServiceConfigSaveFailed'));
+    } finally {
+      setLoadingBridgeConfig(false);
+    }
+  };
+
+  const handleBridgeRestart = async () => {
+    setLoadingBridgeConfig(true);
+    try {
+      const res = await restartXiaoAI();
+      if (res && res.code === 0) {
+        message.success(t('setting.xiaoaiServiceRestartSuccess'));
+      } else {
+        message.error(res?.message || t('setting.xiaoaiServiceRestartFailed'));
+      }
+    } catch (error) {
+      console.error('Failed to restart XiaoAI Service:', error);
+      message.error(t('setting.xiaoaiServiceRestartFailed'));
+    } finally {
+      setLoadingBridgeConfig(false);
+    }
+  };
+
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
 
   const fetchCameraConfig = async () => {
     try {
@@ -621,6 +755,552 @@ const Setting = () => {
                 },
               ]}
             />
+          </div>
+        </Card>
+
+        {/* XiaoAI Service Configuration */}
+        <Card className={styles.settingCard} contentClassName={styles.settingCardContent}>
+          <div className={styles.settingCardTitle}>
+            <Space>
+              <ToolOutlined />
+              {t('setting.xiaoaiServiceSetting')}
+            </Space>
+          </div>
+          <div className={styles.settingCardItemList}>
+            {/* Enable toggle */}
+            <div className={styles.settingItem}>
+              <div className={styles.settingLabel}>
+                <KeyOutlined /> {t('setting.xiaoaiServiceEnabled')}
+                <Tooltip title={t('setting.xiaoaiServiceEnabledDesc')}>
+                  <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                </Tooltip>
+              </div>
+              <Switch
+                checked={!!bridgeConfig.enabled}
+                onChange={(checked) => handleBridgeConfigChange(null, 'enabled', checked)}
+                disabled={loadingBridgeConfig}
+              />
+            </div>
+
+            {/* VAD Settings */}
+            <div className={styles.settingItem}>
+              <Button
+                type="link"
+                onClick={() => toggleSection('vad')}
+                style={{ padding: 0 }}
+                className={styles.settingLabel}
+              >
+                <ToolOutlined /> {t('setting.vadSettings')}
+              </Button>
+              <span style={{ color: '#999', fontSize: 12 }}>
+                {expandedSections.vad ? t('common.close') : t('common.edit')}
+              </span>
+            </div>
+            {expandedSections.vad && (
+              <div style={{ paddingLeft: 24, marginBottom: 16, borderLeft: 2, borderColor: '#e8e8e8', paddingBottom: 16 }}>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.vadThreshold')}
+                    <Tooltip title={t('setting.vadThresholdDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={bridgeConfig.vad?.threshold}
+                    onChange={(e) => handleBridgeConfigChange('vad', 'threshold', parseFloat(e.target.value) || 0)}
+                    style={{ width: 150 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.vadMinSpeech')}
+                    <Tooltip title={t('setting.vadMinSpeechDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={bridgeConfig.vad?.min_speech_duration_ms}
+                    onChange={(e) => handleBridgeConfigChange('vad', 'min_speech_duration_ms', parseInt(e.target.value) || 0)}
+                    style={{ width: 150 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.vadMinSilence')}
+                    <Tooltip title={t('setting.vadMinSilenceDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={bridgeConfig.vad?.min_silence_duration_ms}
+                    onChange={(e) => handleBridgeConfigChange('vad', 'min_silence_duration_ms', parseInt(e.target.value) || 0)}
+                    style={{ width: 150 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* KWS Settings */}
+            <div className={styles.settingItem}>
+              <Button
+                type="link"
+                onClick={() => toggleSection('kws')}
+                style={{ padding: 0 }}
+                className={styles.settingLabel}
+              >
+                <KeyOutlined /> {t('setting.kwsSettings')}
+              </Button>
+              <span style={{ color: '#999', fontSize: 12 }}>
+                {expandedSections.kws ? t('common.close') : t('common.edit')}
+              </span>
+            </div>
+            {expandedSections.kws && (
+              <div style={{ paddingLeft: 24, marginBottom: 16, borderLeft: 2, borderColor: '#e8e8e8', paddingBottom: 16 }}>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.kwsKeywords')}
+                    <Tooltip title={t('setting.kwsKeywordsDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    value={(bridgeConfig.kws?.keywords || []).join(',')}
+                    onChange={(e) => handleBridgeConfigChange('kws', 'keywords', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                    style={{ width: 300 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.kwsScore')}
+                    <Tooltip title={t('setting.kwsScoreDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    value={bridgeConfig.kws?.keywords_score}
+                    onChange={(e) => handleBridgeConfigChange('kws', 'keywords_score', parseFloat(e.target.value) || 0)}
+                    style={{ width: 150 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.kwsThreshold')}
+                    <Tooltip title={t('setting.kwsThresholdDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={bridgeConfig.kws?.keywords_threshold}
+                    onChange={(e) => handleBridgeConfigChange('kws', 'keywords_threshold', parseFloat(e.target.value) || 0)}
+                    style={{ width: 150 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* ASR Settings */}
+            <div className={styles.settingItem}>
+              <Button
+                type="link"
+                onClick={() => toggleSection('asr')}
+                style={{ padding: 0 }}
+                className={styles.settingLabel}
+              >
+                <ToolOutlined /> {t('setting.asrSettings')}
+              </Button>
+              <span style={{ color: '#999', fontSize: 12 }}>
+                {expandedSections.asr ? t('common.close') : t('common.edit')}
+              </span>
+            </div>
+            {expandedSections.asr && (
+              <div style={{ paddingLeft: 24, marginBottom: 16, borderLeft: 2, borderColor: '#e8e8e8', paddingBottom: 16 }}>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.asrModel')}
+                  </div>
+                  <Select
+                    value={bridgeConfig.asr?.model}
+                    onChange={(value) => handleBridgeConfigChange('asr', 'model', value)}
+                    style={{ width: 200 }}
+                    disabled={loadingBridgeConfig}
+                  >
+                    <Option value="sense_voice">{t('setting.asrModelSenseVoice')}</Option>
+                    <Option value="paraformer">{t('setting.asrModelParaformer')}</Option>
+                    <Option value="fire_red_asr">{t('setting.asrModelFireRed')}</Option>
+                  </Select>
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.asrInt8')}
+                    <Tooltip title={t('setting.asrInt8Desc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Switch
+                    checked={!!bridgeConfig.asr?.int8}
+                    onChange={(checked) => handleBridgeConfigChange('asr', 'int8', checked)}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.asrThreads')}
+                    <Tooltip title={t('setting.asrThreadsDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={bridgeConfig.asr?.num_threads}
+                    onChange={(e) => handleBridgeConfigChange('asr', 'num_threads', parseInt(e.target.value) || 1)}
+                    style={{ width: 100 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* TTS Settings */}
+            <div className={styles.settingItem}>
+              <Button
+                type="link"
+                onClick={() => toggleSection('tts')}
+                style={{ padding: 0 }}
+                className={styles.settingLabel}
+              >
+                <ToolOutlined /> {t('setting.ttsSettings')}
+              </Button>
+              <span style={{ color: '#999', fontSize: 12 }}>
+                {expandedSections.tts ? t('common.close') : t('common.edit')}
+              </span>
+            </div>
+            {expandedSections.tts && (
+              <div style={{ paddingLeft: 24, marginBottom: 16, borderLeft: 2, borderColor: '#e8e8e8', paddingBottom: 16 }}>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.ttsEngine')}
+                  </div>
+                  <Select
+                    value={bridgeConfig.tts?.engine}
+                    onChange={(value) => handleBridgeConfigChange('tts', 'engine', value)}
+                    style={{ width: 200 }}
+                    disabled={loadingBridgeConfig}
+                  >
+                    <Option value="doubao">{t('setting.ttsEngineDoubao')}</Option>
+                    <Option value="xiaoai">{t('setting.ttsEngineXiaoai')}</Option>
+                    <Option value="mimo">{t('setting.ttsEngineMimo')}</Option>
+                  </Select>
+                </div>
+                {bridgeConfig.tts?.engine === 'doubao' && (
+                  <>
+                    <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                      <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                        {t('setting.ttsAppId')}
+                      </div>
+                      <Input
+                        value={bridgeConfig.tts?.app_id}
+                        onChange={(e) => handleBridgeConfigChange('tts', 'app_id', e.target.value)}
+                        style={{ width: 300 }}
+                        disabled={loadingBridgeConfig}
+                      />
+                    </div>
+                    <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                      <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                        {t('setting.ttsAccessKey')}
+                      </div>
+                      <Input.Password
+                        value={bridgeConfig.tts?.access_key}
+                        onChange={(e) => handleBridgeConfigChange('tts', 'access_key', e.target.value)}
+                        style={{ width: 300 }}
+                        disabled={loadingBridgeConfig}
+                      />
+                    </div>
+                  </>
+                )}
+                {bridgeConfig.tts?.engine === 'mimo' && (
+                  <>
+                    <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                      <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                        {t('setting.ttsApiKey')}
+                      </div>
+                      <Input.Password
+                        value={bridgeConfig.tts?.api_key}
+                        onChange={(e) => handleBridgeConfigChange('tts', 'api_key', e.target.value)}
+                        style={{ width: 300 }}
+                        disabled={loadingBridgeConfig}
+                      />
+                    </div>
+                    <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                      <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                        {t('setting.ttsApiUrl')}
+                      </div>
+                      <Input
+                        value={bridgeConfig.tts?.api_base_url}
+                        onChange={(e) => handleBridgeConfigChange('tts', 'api_base_url', e.target.value)}
+                        style={{ width: 300 }}
+                        disabled={loadingBridgeConfig}
+                      />
+                    </div>
+                  </>
+                )}
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.ttsVoice')}
+                  </div>
+                  <Input
+                    value={bridgeConfig.tts?.default_speaker}
+                    onChange={(e) => handleBridgeConfigChange('tts', 'default_speaker', e.target.value)}
+                    style={{ width: 300 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.ttsFormat')}
+                  </div>
+                  <Select
+                    value={bridgeConfig.tts?.audio_format}
+                    onChange={(value) => handleBridgeConfigChange('tts', 'audio_format', value)}
+                    style={{ width: 150 }}
+                    disabled={loadingBridgeConfig}
+                  >
+                    <Option value="pcm">{t('setting.ttsFormatPcm')}</Option>
+                    <Option value="mp3">{t('setting.ttsFormatMp3')}</Option>
+                  </Select>
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.ttsStream')}
+                    <Tooltip title={t('setting.ttsStreamDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Switch
+                    checked={!!bridgeConfig.tts?.stream}
+                    onChange={(checked) => handleBridgeConfigChange('tts', 'stream', checked)}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.ttsSpeed')}
+                    <Tooltip title={t('setting.ttsSpeedDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0.5}
+                    max={2}
+                    step={0.1}
+                    value={bridgeConfig.tts?.speed}
+                    onChange={(e) => handleBridgeConfigChange('tts', 'speed', parseFloat(e.target.value) || 1)}
+                    style={{ width: 100 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Audio Settings */}
+            <div className={styles.settingItem}>
+              <Button
+                type="link"
+                onClick={() => toggleSection('audio')}
+                style={{ padding: 0 }}
+                className={styles.settingLabel}
+              >
+                <ToolOutlined /> {t('setting.audioSettings')}
+              </Button>
+              <span style={{ color: '#999', fontSize: 12 }}>
+                {expandedSections.audio ? t('common.close') : t('common.edit')}
+              </span>
+            </div>
+            {expandedSections.audio && (
+              <div style={{ paddingLeft: 24, marginBottom: 16, borderLeft: 2, borderColor: '#e8e8e8', paddingBottom: 16 }}>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.audioGain')}
+                    <Tooltip title={t('setting.audioGainDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={10}
+                    step={0.1}
+                    value={bridgeConfig.audio_input?.gain}
+                    onChange={(e) => handleBridgeConfigChange('audio_input', 'gain', parseFloat(e.target.value) || 1)}
+                    style={{ width: 100 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.audioSampleRate')}
+                  </div>
+                  <Input
+                    type="number"
+                    min={8000}
+                    max={48000}
+                    value={bridgeConfig.sample_rate}
+                    onChange={(e) => handleBridgeConfigChange(null, 'sample_rate', parseInt(e.target.value) || 16000)}
+                    style={{ width: 120 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Dialog Settings */}
+            <div className={styles.settingItem}>
+              <Button
+                type="link"
+                onClick={() => toggleSection('dialog')}
+                style={{ padding: 0 }}
+                className={styles.settingLabel}
+              >
+                <ToolOutlined /> {t('setting.dialogSettings')}
+              </Button>
+              <span style={{ color: '#999', fontSize: 12 }}>
+                {expandedSections.dialog ? t('common.close') : t('common.edit')}
+              </span>
+            </div>
+            {expandedSections.dialog && (
+              <div style={{ paddingLeft: 24, marginBottom: 16, borderLeft: 2, borderColor: '#e8e8e8', paddingBottom: 16 }}>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.dialogExitKeywords')}
+                    <Tooltip title={t('setting.dialogExitKeywordsDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    value={(bridgeConfig.exit_keywords || []).join(',')}
+                    onChange={(e) => handleBridgeConfigChange(null, 'exit_keywords', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
+                    style={{ width: 300 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.dialogTimeout')}
+                    <Tooltip title={t('setting.dialogTimeoutDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    type="number"
+                    min={5}
+                    max={120}
+                    value={bridgeConfig.wakeup_timeout}
+                    onChange={(e) => handleBridgeConfigChange(null, 'wakeup_timeout', parseInt(e.target.value) || 20)}
+                    style={{ width: 100 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.dialogOpeningReply')}
+                    <Tooltip title={t('setting.dialogOpeningReplyDesc')}>
+                      <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                    </Tooltip>
+                  </div>
+                  <Input
+                    value={bridgeConfig.wakeup_opening_reply}
+                    onChange={(e) => handleBridgeConfigChange(null, 'wakeup_opening_reply', e.target.value)}
+                    style={{ width: 300 }}
+                    disabled={loadingBridgeConfig}
+                    placeholder={t('common.optional')}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* WebSocket Settings */}
+            <div className={styles.settingItem}>
+              <Button
+                type="link"
+                onClick={() => toggleSection('ws')}
+                style={{ padding: 0 }}
+                className={styles.settingLabel}
+              >
+                <ToolOutlined /> {t('setting.wsSettings')}
+              </Button>
+              <span style={{ color: '#999', fontSize: 12 }}>
+                {expandedSections.ws ? t('common.close') : t('common.edit')}
+              </span>
+            </div>
+            {expandedSections.ws && (
+              <div style={{ paddingLeft: 24, marginBottom: 16, borderLeft: 2, borderColor: '#e8e8e8', paddingBottom: 16 }}>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.wsPort')}
+                  </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={bridgeConfig.ws_port}
+                    onChange={(e) => handleBridgeConfigChange(null, 'ws_port', parseInt(e.target.value) || 4399)}
+                    style={{ width: 120 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+                <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                  <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                    {t('setting.wsHost')}
+                  </div>
+                  <Input
+                    value={bridgeConfig.ws_host}
+                    onChange={(e) => handleBridgeConfigChange(null, 'ws_host', e.target.value)}
+                    style={{ width: 200 }}
+                    disabled={loadingBridgeConfig}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: 12, padding: 16, borderTop: '1px solid #f0f0f0', justifyContent: 'flex-end' }}>
+              <Popconfirm
+                title={t('setting.xiaoaiServiceRestartConfirm')}
+                description={t('setting.xiaoaiServiceRestartConfirmDesc')}
+                onConfirm={handleBridgeRestart}
+                okText={t('common.confirm')}
+                cancelText={t('common.cancel')}
+              >
+                <Button type="default" loading={loadingBridgeConfig}>
+                  {t('common.reload')}
+                </Button>
+              </Popconfirm>
+              <Button type="primary" onClick={handleBridgeConfigSave} loading={loadingBridgeConfig}>
+                {t('common.save')}
+              </Button>
+            </div>
           </div>
         </Card>
 

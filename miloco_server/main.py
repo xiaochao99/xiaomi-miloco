@@ -142,7 +142,7 @@ async def _init_xiaomi_bridge():
         from miloco_server.xiaomi_bridge.config import BridgeConfig
         from miloco_server.xiaomi_bridge.manager import init_bridge
 
-        config = BridgeConfig.from_env()
+        config = BridgeConfig.from_database()
         if not config.enabled:
             logger.info("Xiaomi bridge disabled, skipping initialization")
             return

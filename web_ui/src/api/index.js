@@ -101,7 +101,12 @@ export const listFaceProfiles = () => getApi('/api/face/library/list');
 export const deleteFaceProfile = (profileId) => deleteApi(`/api/face/library/${profileId}`);
 export const searchFaces = (data) => postApi('/api/face/search', data, 60000);
 
-// Xiaomi Bridge API
-export const getXiaomiBridgeDevices = () => getApi('/api/xiaomi-bridge/devices');
-export const getXiaomiBridgeDevice = (clientId) => getApi(`/api/xiaomi-bridge/devices/${clientId}`);
-export const updateXiaomiBridgeDevice = (clientId, data) => putApi(`/api/xiaomi-bridge/devices/${clientId}`, data);
+// XiaoAI Service API
+export const getXiaoAIDevices = () => getApi('/api/xiaomi-bridge/devices');
+export const getXiaoAIDevice = (clientId) => getApi(`/api/xiaomi-bridge/devices/${clientId}`);
+export const updateXiaoAIDevice = (clientId, data) => putApi(`/api/xiaomi-bridge/devices/${clientId}`, data);
+
+// XiaoAI Service Configuration API
+export const getXiaoAIConfig = () => getApi('/api/xiaomi-bridge/config');
+export const updateXiaoAIConfig = (data) => putApi('/api/xiaomi-bridge/config', data);
+export const restartXiaoAI = () => postApi('/api/xiaomi-bridge/config/restart');

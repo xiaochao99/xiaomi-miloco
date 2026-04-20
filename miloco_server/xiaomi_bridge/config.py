@@ -141,3 +141,28 @@ class BridgeConfig:
             ws_port=int(os.getenv("MILOCO_WS_PORT", "4399")),
             ws_host=os.getenv("MILOCO_WS_HOST", "0.0.0.0"),
         )
+
+    @classmethod
+    def from_database(cls) -> "BridgeConfig":
+        """
+        Create config from database configuration.
+        
+        Priority:
+        1. Database stored configuration (if exists)
+        2. Environment variables (fallback)
+        
+        Returns:
+            BridgeConfig: Configuration loaded from database or environment.
+        """
+        try:
+            from miloco_server.service.xiaomi_bridge_config_service import XiaomiBridgeConfigService
+            
+            config_service = XiaomiBridgeConfigService.instance()
+            schema_config = config_service.get_config()
+            return config_service.to_bridge_config(schema_config)
+        except Exception as e:
+            # Fallback to environment variables if database is not available
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to load config from database, using environment variables: {e}")
+            return cls.from_env()

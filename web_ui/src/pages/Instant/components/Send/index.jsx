@@ -12,7 +12,7 @@ import { classNames } from '@/utils/util';
 import { useRuleFormUpdates } from '@/hooks/useRuleFormUpdates';
 import { useChatStore } from '@/stores/chatStore';
 import { useGlobalSocket } from '@/hooks/useGlobalSocket';
-import { getXiaomiBridgeDevices } from '@/api';
+import { getXiaoAIDevices } from '@/api';
 import { SelectedItemsPrefix, BottomControlButtons } from './components';
 import styles from './style.module.less';
 
@@ -58,7 +58,7 @@ const Send = ({
     const loadDevices = async () => {
       setXiaoaiDevicesLoading(true);
       try {
-        const resp = await getXiaomiBridgeDevices();
+        const resp = await getXiaoAIDevices();
         const list = resp?.data || resp?.data?.data || [];
         if (mounted) {
           setXiaoaiDevices(Array.isArray(list) ? list : []);

@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Input, Button, Tooltip } from 'antd';
 import { EditOutlined, CheckOutlined, XOutlined } from '@ant-design/icons';
-import { updateXiaomiBridgeDevice } from '@/api';
+import { updateXiaoAIDevice } from '@/api';
 import styles from './index.module.less';
 
 const XiaoAIDeviceCard = ({ device, onUpdate }) => {
@@ -31,7 +31,7 @@ const XiaoAIDeviceCard = ({ device, onUpdate }) => {
     
     setSaving(true);
     try {
-      const response = await updateXiaomiBridgeDevice(device.client_id, { device_name: editName.trim() });
+      const response = await updateXiaoAIDevice(device.client_id, { device_name: editName.trim() });
       if (response?.code === 0) {
         if (onUpdate) {
           onUpdate(device.client_id, editName.trim());

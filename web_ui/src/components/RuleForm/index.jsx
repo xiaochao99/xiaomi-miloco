@@ -8,7 +8,7 @@ import { Select, Input, Button, Checkbox, Form, Tooltip, Spin, message, Switch, 
 const { Option } = Select;
 import { QuestionCircleOutlined, ReloadOutlined, UpOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { refreshHaAutomation, getXiaomiBridgeDevices, getHADeviceList, getHAEntityStateOptions } from '@/api';
+import { refreshHaAutomation, getXiaoAIDevices, getHADeviceList, getHAEntityStateOptions } from '@/api';
 import TimeSelector from '@/components/TimeSelector';
 import DetectionConditionForm from '@/components/DetectionConditionForm';
 import {
@@ -115,7 +115,7 @@ const [form] = Form.useForm();
   const fetchXiaoaiDevices = async () => {
     setXiaoaiDevicesLoading(true);
     try {
-      const response = await getXiaomiBridgeDevices();
+      const response = await getXiaoAIDevices();
       if (response?.code === 0) {
         setXiaoaiDevices(response.data || []);
       }

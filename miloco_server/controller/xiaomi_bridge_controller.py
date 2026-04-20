@@ -16,6 +16,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, File, UploadFile,
 from pydantic import BaseModel
 
 from miloco_server.middleware import verify_token, verify_websocket_token
+from miloco_server.schema.xiaomi_bridge_schema import (
+    BridgeConfigSchema,
+    BridgeConfigResponse,
+    BridgeRestartResponse,
+)
+from miloco_server.service.xiaomi_bridge_config_service import XiaomiBridgeConfigService
 from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
 
 logger = logging.getLogger(__name__)
@@ -445,3 +451,81 @@ async def audio_stream_websocket(websocket: WebSocket):
             await websocket.close(code=1008, reason="Deprecated endpoint")
         except Exception:
             pass
+
+
+# ==================== Configuration Management API ====================
+
+@router.get("/config", response_model=BridgeConfigResponse)
+async def get_bridge_config(_current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
+    """
+    获取小爱音箱配置。
+    
+    Returns:
+        BridgeConfigResponse: 当前配置信息
+    """
+    try:
+        config_service = XiaomiBridgeConfigService.instance()
+        config = config_service.get_config()
+        return {"code": 0, "message": "success", "data": config}
+    except Exception as e:
+        logger.error(f"Failed to get bridge config: {e}")
+        return {"code": -1, "message": str(e), "data": None}
+
+
+@router.put("/config", response_model=BridgeConfigResponse)
+async def update_bridge_config(
+    config: BridgeConfigSchema,
+    _current_user: str = Depends(_verify_xiaomi_bridge_http_access),
+):
+    """
+    更新小爱音箱配置。
+    
+    Args:
+        config: 新的配置信息
+        
+    Returns:
+        BridgeConfigResponse: 更新后的配置信息
+    """
+    try:
+        config_service = XiaomiBridgeConfigService.instance()
+        success = config_service.save_config(config)
+        if not success:
+            return {"code": -1, "message": "Failed to save config", "data": None}
+        
+        logger.info("[XiaoAI Bridge] Configuration updated, restart required for changes to take effect")
+        return {"code": 0, "message": "success", "data": config}
+    except Exception as e:
+        logger.error(f"Failed to update bridge config: {e}")
+        return {"code": -1, "message": str(e), "data": None}
+
+
+@router.post("/config/restart", response_model=BridgeRestartResponse)
+async def restart_bridge(_current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
+    """
+    重启小爱音箱桥接服务（应用新配置）。
+    
+    Returns:
+        BridgeRestartResponse: 重启结果
+    """
+    try:
+        from miloco_server.xiaomi_bridge.manager import get_bridge_manager, init_bridge
+        
+        # Stop existing bridge
+        bridge_manager = get_bridge_manager()
+        await bridge_manager.stop()
+        logger.info("[XiaoAI Bridge] Bridge stopped for restart")
+        
+        # Load new config and restart
+        from miloco_server.xiaomi_bridge.config import BridgeConfig
+        config = BridgeConfig.from_database()
+        
+        if not config.enabled:
+            return {"code": 0, "message": "Bridge is disabled, skipped restart", "data": None}
+        
+        await init_bridge(config)
+        logger.info("[XiaoAI Bridge] Bridge restarted with new configuration")
+        
+        return {"code": 0, "message": "success", "data": {"restarted": True}}
+    except Exception as e:
+        logger.error(f"Failed to restart bridge: {e}")
+        return {"code": -1, "message": str(e), "data": None}

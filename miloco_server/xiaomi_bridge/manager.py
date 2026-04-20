@@ -342,19 +342,38 @@ class BridgeManager:
 
     async def stop(self):
         """Stop the bridge."""
-        await self._conversation_controller.stop()
+        try:
+            await self._conversation_controller.stop()
+        except Exception as e:
+            logger.warning(f"Failed to stop conversation controller: {e}")
 
-        # Stop WebSocket server
+        # Stop WebSocket server with timeout
         if self._ws_server:
-            await self._ws_server.shutdown()
+            try:
+                # Shutdown with timeout to prevent hanging
+                shutdown_task = asyncio.create_task(self._ws_server.shutdown())
+                await asyncio.wait_for(shutdown_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.error("WebSocket server shutdown timeout, forcing stop")
+                self._ws_server = None
+            except Exception as e:
+                logger.warning(f"Failed to shutdown WebSocket server: {e}")
+            
             if self._ws_server_task:
-                await self._ws_server_task
+                try:
+                    await asyncio.wait_for(self._ws_server_task, timeout=5.0)
+                except (asyncio.TimeoutError, Exception) as e:
+                    logger.warning(f"Failed to wait for WebSocket server task: {e}")
+                self._ws_server_task = None
+            
             self._ws_server = None
-            self._ws_server_task = None
             logger.info("WebSocket server stopped")
 
         if self._audio_stream_manager:
-            await self._audio_stream_manager.stop()
+            try:
+                await self._audio_stream_manager.stop()
+            except Exception as e:
+                logger.warning(f"Failed to stop audio stream manager: {e}")
 
         if self._vad:
             self._vad.reset()
