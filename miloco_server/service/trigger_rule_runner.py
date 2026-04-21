@@ -1320,6 +1320,16 @@ class TriggerRuleRunner:
 
             if cfg.mode == XiaoAIBroadcastMode.MODEL_REPLY:
                 user_question = (cfg.text or "").strip()
+                
+                # 如果配置的问题为空，尝试从设备控制的自定义执行动作中获取
+                if not user_question and rule.execute_info and rule.execute_info.automation_actions:
+                    for action in rule.execute_info.automation_actions:
+                        if hasattr(action, 'introduction') and action.introduction:
+                            user_question = action.introduction.strip()
+                            if user_question:
+                                logger.info("Rule %s using custom action as question: %s", rule.name, user_question)
+                                break
+                
                 if not user_question:
                     logger.warning("Rule %s XiaoAI model_reply skipped: empty user question", rule.name)
                     return False
@@ -1332,7 +1342,7 @@ class TriggerRuleRunner:
                 chat_adapter = APIChatAdapter(request_id)
                 
                 # Get MCP list from rule configuration
-                mcp_list = rule.mcp_list if hasattr(rule, 'mcp_list') and rule.mcp_list else None
+                mcp_list = rule.execute_info.mcp_list if rule.execute_info and rule.execute_info.mcp_list else None
                 
                 # Process query using AI chat adapter (includes tool calling)
                 response_text = ""

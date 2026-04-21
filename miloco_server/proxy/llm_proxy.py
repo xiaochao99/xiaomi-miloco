@@ -136,6 +136,25 @@ class OpenAIProxy(LLMProxy):
                 "error": str(e),
             }
 
+    async def chat(self, messages: list[dict]) -> str:
+        """
+        Simple chat interface for compatibility with WakeUpContextBuilder
+        
+        Args:
+            messages: Message list in format [{"role": "...", "content": "..."}]
+            
+        Returns:
+            Response content string
+        """
+        try:
+            result = await self.async_call_llm(messages)
+            if result.get("success"):
+                return result.get("content", "")
+            return ""
+        except Exception as e:
+            logger.error("Error in chat method: %s", str(e))
+            return ""
+
     async def async_call_llm_stream(self, messages: list[ChatCompletionMessageParam],
                                   tools: Optional[list[ChatCompletionToolParam]] = None) -> AsyncGenerator[dict[str, any], None]:
         """

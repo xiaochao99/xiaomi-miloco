@@ -96,7 +96,6 @@ const [form] = Form.useForm();
   const [xiaoaiDevices, setXiaoaiDevices] = useState([]);
   const [selectedXiaoaiDevices, setSelectedXiaoaiDevices] = useState([]);
   const [xiaoaiDevicesLoading, setXiaoaiDevicesLoading] = useState(false);
-  const [enableXiaoAIWakeupAction, setEnableXiaoAIWakeupAction] = useState(false);
   const [enableXiaoAIProactiveInquiry, setEnableXiaoAIProactiveInquiry] = useState(false);
 
   const [triggerDeviceOptions, setTriggerDeviceOptions] = useState([]);
@@ -104,6 +103,9 @@ const [form] = Form.useForm();
   const [haEntityStateMetaMap, setHaEntityStateMetaMap] = useState({});
   const [entityStateOptionsMap, setEntityStateOptionsMap] = useState({});
   const [wizardStep, setWizardStep] = useState('trigger');
+  
+  // 用于快速数据获取的目标实体
+  const [selectedTargetEntities, setSelectedTargetEntities] = useState([]);
 
   useEffect(() => {
     if (passedHaDeviceOptions?.length === 0 && !globalHaFetched) {
@@ -233,6 +235,28 @@ const [form] = Form.useForm();
     return entities;
   }, [form, haDeviceEntitiesMap, triggerDeviceOptions, haEntityNameMap]);
 
+  // 用于快速数据获取的所有可用HA实体选项
+  const haEntityOptions = useMemo(() => {
+    const allowedDomains = new Set(['switch', 'light', 'sensor', 'binary_sensor', 'climate']);
+    const entities = [];
+    const seen = new Set();
+    Object.values(haDeviceEntitiesMap).forEach((deviceEntities) => {
+      deviceEntities.forEach((entityId) => {
+        const domain = typeof entityId === 'string' ? entityId.split('.')[0] : '';
+        if (!allowedDomains.has(domain)) {
+          return;
+        }
+        if (!seen.has(entityId)) {
+          seen.add(entityId);
+          const friendly = haEntityNameMap?.[entityId];
+          const label = friendly ? `${friendly}（${entityId}）` : entityId;
+          entities.push({ label, value: entityId });
+        }
+      });
+    });
+    return entities;
+  }, [haDeviceEntitiesMap, haEntityNameMap]);
+
   const selectedTriggerEntityId = Form.useWatch('trigger_entity_id', form);
   const triggerEntityDomain = useMemo(() => {
     if (!selectedTriggerEntityId || typeof selectedTriggerEntityId !== 'string') {
@@ -240,9 +264,44 @@ const [form] = Form.useForm();
     }
     return selectedTriggerEntityId.split('.')[0] || null;
   }, [selectedTriggerEntityId]);
-  const isNumericTriggerEntity = triggerEntityDomain === 'sensor';
+  // 判断是否为数值型实体：根据 ha_condition 的格式来判断
+  // 如果 ha_condition 匹配数值条件格式（如 state > 25），则显示数值输入框
+  // 否则显示状态选择框
+  const isNumericTriggerEntity = useMemo(() => {
+    const haConditionValue = form.getFieldValue('ha_condition') || formData?.ha_condition;
+    if (haConditionValue && typeof haConditionValue === 'string') {
+      // 检查是否匹配数值条件格式
+      const numericPattern = /^\s*state\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/;
+      if (numericPattern.test(haConditionValue)) {
+        return true;
+      }
+      // 如果是纯字符串状态值（如"已开锁"）或状态条件格式（如'state == "已开锁"'），则不是数值型
+      return false;
+    }
+    // 默认情况下，如果是 sensor 类型，假设是数值型
+    return triggerEntityDomain === 'sensor';
+  }, [triggerEntityDomain, formData?.ha_condition, form]);
   const [numericOperator, setNumericOperator] = useState('>');
   const [numericThreshold, setNumericThreshold] = useState(null);
+
+  useEffect(() => {
+    // 使用 setTimeout 确保在表单字段设置完成后再解析
+    const timer = setTimeout(() => {
+      const haConditionValue = form.getFieldValue('ha_condition');
+      if (haConditionValue && typeof haConditionValue === 'string') {
+        const matched = haConditionValue.match(/^\s*state\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/);
+        if (matched) {
+          setNumericOperator(matched[1]);
+          setNumericThreshold(parseFloat(matched[2]));
+          return;
+        }
+      }
+      setNumericOperator('>');
+      setNumericThreshold(null);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [form, initialRule]);
 
   useEffect(() => {
     const fetchEntityStateOptions = async () => {
@@ -420,10 +479,20 @@ useEffect(() => {
         typeof device === 'object' ? device.did : device
       ) || [];
 
+      // 处理 ha_condition 的格式转换：如果是纯字符串状态值（如"已开锁"），转换为条件格式（如"state == \"已开锁\""）
+      let haConditionValue = formData.ha_condition || '';
+      if (haConditionValue && typeof haConditionValue === 'string') {
+        // 检查是否已经是条件格式（以 "state " 开头）
+        if (!haConditionValue.startsWith('state ') && !haConditionValue.startsWith('numeric ')) {
+          // 转换为条件格式
+          haConditionValue = `state == "${haConditionValue}"`;
+        }
+      }
+
       form.setFieldsValue({
         name: formData.name,
         condition: formData.condition,
-        ha_condition: formData.ha_condition || '',
+        ha_condition: haConditionValue,
         trigger_entity_id: formData.trigger_entity_id || undefined,
         trigger_devices: [...cameras, ...ha_devices],
       });
@@ -480,11 +549,8 @@ useEffect(() => {
       }
 
       if (formData.xiaoai_wakeup) {
-        const enabled = formData.xiaoai_wakeup.enabled || false;
-        setEnableXiaoAIWakeupAction(enabled);
         setEnableXiaoAIProactiveInquiry((formData.xiaoai_wakeup.mode || '').toLowerCase() === 'proactive');
       } else {
-        setEnableXiaoAIWakeupAction(false);
         setEnableXiaoAIProactiveInquiry(false);
       }
 
@@ -492,6 +558,7 @@ useEffect(() => {
       setAiRecommendExecuteType(formData.ai_recommend_execute_type || 'static');
       setAiRecommendActionDescriptions(formData.ai_recommend_action_descriptions || []);
       setAiRecommendActions(formData.ai_recommend_actions || []);
+      setSelectedTargetEntities(formData.target_entities || []);
       if(formData?.ai_recommend_actions?.length === 0) {
         setAiGeneratedActions([]);
       }
@@ -605,10 +672,24 @@ useEffect(() => {
     const hasActions = selectedActions.length > 0;
     const hasNotification = sendNotification && notificationText.trim();
     const hasXiaoAIBroadcast = enableXiaoAIBroadcast && xiaoaiBroadcastText.trim();
-    const hasXiaoAIWakeup = enableXiaoAIWakeupAction;
-    if (enableXiaoAIBroadcast && !xiaoaiBroadcastText.trim()) {
-      message.error(xiaoaiBroadcastMode === 'text' ? t('smartCenter.pleaseEnterXiaoAIBroadcastText') : '请输入问题内容');
-      return false;
+    const hasXiaoAIWakeup = enableXiaoAIProactiveInquiry;
+    // 小爱音箱播报验证
+    if (enableXiaoAIBroadcast) {
+      // 如果是文本模式，必须输入文本
+      if (xiaoaiBroadcastMode === 'text' && !xiaoaiBroadcastText.trim()) {
+        message.error(t('smartCenter.pleaseEnterXiaoAIBroadcastText'));
+        return false;
+      }
+      // 如果是模型回复模式，可以不输入问题，但需要有指定实体或设备控制动作
+      if (xiaoaiBroadcastMode === 'model_reply' && !xiaoaiBroadcastText.trim()) {
+        const hasTargetEntities = selectedTargetEntities.length > 0;
+        const hasAutomationActions = selectedActions.length > 0;
+        const hasAiRecommendActions = aiRecommendActions.length > 0;
+        if (!hasTargetEntities && !hasAutomationActions && !hasAiRecommendActions) {
+          message.error('请输入问题内容，或选择指定实体，或配置设备控制动作');
+          return false;
+        }
+      }
     }
 
     if (type === 'submit') {
@@ -700,9 +781,9 @@ useEffect(() => {
         text: xiaoaiBroadcastText.trim(),
         device_ids: selectedXiaoaiDevices.length > 0 ? selectedXiaoaiDevices : null,
       } : null,
-      xiaoai_wakeup: enableXiaoAIWakeupAction ? {
+      xiaoai_wakeup: enableXiaoAIProactiveInquiry ? {
         enabled: true,
-        mode: enableXiaoAIProactiveInquiry ? 'proactive' : 'manual',
+        mode: 'proactive',
       } : null,
       filter: {
         triggerPeriod,
@@ -711,6 +792,7 @@ useEffect(() => {
         triggerIntervalSeconds,
       },
       mcp_list: checkedMcpServices.map(service => availableMcpServices.find(mcp => `${mcp?.server_name}#${mcp?.client_id}` === service)).filter(Boolean),
+      target_entities: selectedTargetEntities.length > 0 ? selectedTargetEntities : null,
       enabled: initialRule?.enabled !== undefined ? initialRule.enabled : true,
     };
 
@@ -1235,6 +1317,28 @@ useEffect(() => {
                 disabled={isSubmitDisabled || aiRecommendActions.length === 0}
               />
             </div>
+            {/* 快速数据获取 - 指定HA实体 */}
+            <div className={classNames(styles.actionControl, styles.actionControl2)}>
+              <span>
+                指定实体
+                <Tooltip
+                  placement="right"
+                  title="选择要获取数据的HA实体，模型将直接获取这些实体的状态，无需调用工具，速度更快。">
+                  <InfoCircleOutlined style={{ marginLeft: 4, color: '#999' }} />
+                </Tooltip>
+              </span>
+              <Select
+                mode="multiple"
+                allowClear
+                placeholder="请选择HA实体"
+                disabled={isSubmitDisabled}
+                options={haEntityOptions}
+                value={selectedTargetEntities}
+                onChange={(values) => {
+                  setSelectedTargetEntities(values);
+                }}
+              />
+            </div>
           </div>
           <div className={styles.actionItem}>
             <div className={styles.actionLabel}>{t('smartCenter.automationScene')}</div>
@@ -1335,32 +1439,16 @@ useEffect(() => {
         <div className={styles.actionItem}>
           <div className={styles.actionLabel}>
             <Checkbox
-              checked={enableXiaoAIWakeupAction}
-              onChange={(e) => {
-                setEnableXiaoAIWakeupAction(e.target.checked);
-                if (!e.target.checked) {
-                  setEnableXiaoAIProactiveInquiry(false);
-                }
-              }}
+              checked={enableXiaoAIProactiveInquiry}
+              onChange={(e) => setEnableXiaoAIProactiveInquiry(e.target.checked)}
               disabled={isSubmitDisabled}
             >
-              唤醒小爱
+              主动询问
             </Checkbox>
+            <span style={{ fontSize: '12px', color: '#999', marginLeft: 8 }}>
+              播报后直接等待用户下一条语音指令
+            </span>
           </div>
-          {enableXiaoAIWakeupAction && (
-            <div style={{ marginTop: 8 }}>
-              <Checkbox
-                checked={enableXiaoAIProactiveInquiry}
-                onChange={(e) => setEnableXiaoAIProactiveInquiry(e.target.checked)}
-                disabled={isSubmitDisabled}
-              >
-                主动询问
-              </Checkbox>
-              <span style={{ fontSize: '12px', color: '#999', marginLeft: 8 }}>
-                播报后直接等待用户下一条语音指令
-              </span>
-            </div>
-          )}
         </div>
       </Form.Item>
       </div>

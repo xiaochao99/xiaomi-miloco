@@ -78,6 +78,8 @@ class ExecuteInfo(BaseModel):
     automation_actions: Optional[list[Action]] = Field(
         None, description="MIoT or Home Assistant automation actions to execute")
     mcp_list: Optional[list[str]] = Field(None, description="MCP list")
+    target_entities: Optional[list[str]] = Field(
+        None, description="Target HA entity IDs for quick data fetching")
     notify: Optional[Notify] = Field(None, description="Mi Home send notification")
     xiaoai_broadcast: Optional[XiaoAIBroadcast] = Field(
         None, description="XiaoAI speaker broadcast action"

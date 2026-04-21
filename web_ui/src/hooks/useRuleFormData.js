@@ -31,6 +31,7 @@ export const useRuleFormData = (rule) => {
         xiaoai_wakeup: null,
         filter: null,
         mcp_list: [],
+        target_entities: [],
       };
     }
 
@@ -45,7 +46,18 @@ export const useRuleFormData = (rule) => {
       ha_devices: isV2 ? (rule.targets?.ha_device_ids || []) : (rule.ha_devices || []),
       condition: isV2 ? (rule.trigger?.llm_condition || rule.trigger?.camera_condition || '') : (rule.condition || ''),
       condition_type: isV2 ? (rule.trigger?.type || 'llm') : (rule.condition_type || 'llm'),
-      ha_condition: isV2 ? (rule.trigger?.ha_condition || '') : (rule.ha_condition || ''),
+      // 处理 ha_condition 的格式转换：如果是纯字符串状态值（如"已开锁"），转换为条件格式（如"state == \"已开锁\""）
+      ha_condition: (() => {
+        const originalHaCondition = isV2 ? (rule.trigger?.ha_condition || '') : (rule.ha_condition || '');
+        if (originalHaCondition && typeof originalHaCondition === 'string') {
+          // 检查是否已经是条件格式（以 "state " 或 "numeric " 开头）
+          if (!originalHaCondition.startsWith('state ') && !originalHaCondition.startsWith('numeric ')) {
+            // 转换为条件格式
+            return `state == "${originalHaCondition}"`;
+          }
+        }
+        return originalHaCondition;
+      })(),
       trigger_entity_id: isV2 ? (rule.targets?.trigger_entity_id || null) : (rule.trigger_entity_id || null),
       detection_condition: isV2 ? (rule.trigger?.detection_condition || null) : (rule.detection_condition || null),
       ai_recommend_execute_type: rule.execute_info?.ai_recommend_execute_type || 'static',
@@ -57,6 +69,7 @@ export const useRuleFormData = (rule) => {
       xiaoai_wakeup: rule.execute_info?.xiaoai_wakeup || null,
       filter: rule.filter || null,
       mcp_list: rule.execute_info?.mcp_list || [],
+      target_entities: rule.execute_info?.target_entities || [],
     };
 
     return formData;
@@ -89,6 +102,7 @@ export const convertFormDataToBackend = (formData) => {
     xiaoai_wakeup,
     filter,
     mcp_list,
+    target_entities,
     enabled,
   } = formData;
 
@@ -122,6 +136,7 @@ export const convertFormDataToBackend = (formData) => {
       xiaoai_broadcast: xiaoai_broadcast || null,
       xiaoai_wakeup: xiaoai_wakeup || null,
       ...(notify && notify.content ? { notify } : {}),
+      ...(target_entities && target_entities.length > 0 ? { target_entities } : {}),
     },
     filter: filterData,
   };
@@ -160,8 +175,10 @@ export const convertBackendToFormData = (backendData) => {
     automation_actions: backendData.execute_info?.automation_actions || [],
     notify: backendData.execute_info?.notify || null,
     xiaoai_broadcast: backendData.execute_info?.xiaoai_broadcast || null,
+    xiaoai_wakeup: backendData.execute_info?.xiaoai_wakeup || null,
     filter: backendData.filter ? formDataUtils.toFormFormat(backendData.filter) : null,
     mcp_list: backendData.execute_info?.mcp_list || [],
+    target_entities: backendData.execute_info?.target_entities || [],
     enabled: backendData.enabled,
   };
 };
