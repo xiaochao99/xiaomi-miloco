@@ -56,7 +56,11 @@ jobs:
       - name: Check Docker availability
         run: |
           docker --version
-          docker-compose --version
+
+      - name: Install dependencies
+        run: |
+          which apt-get && apt-get update && apt-get install -y curl ca-certificates || true
+          which npm || (curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs) || true
 
       - name: Log in to Gitea Registry
         uses: docker/login-action@v2
@@ -91,7 +95,11 @@ jobs:
       - name: Check Docker availability
         run: |
           docker --version
-          docker-compose --version
+
+      - name: Install dependencies
+        run: |
+          which apt-get && apt-get update && apt-get install -y curl ca-certificates || true
+          which npm || (curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs) || true
 
       - name: Log in to Gitea Registry
         uses: docker/login-action@v2
