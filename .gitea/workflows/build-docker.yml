@@ -18,8 +18,8 @@ on:
         default: true
 
 env:
-  # Gitea Registry 地址，可通过 Secrets 配置
-  DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'gitea.hypernas.cn:2443' }}
+  # GitHub Container Registry
+  DOCKER_REGISTRY: ghcr.io
 
 jobs:
   setup:
@@ -43,10 +43,11 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Set lowercase repository owner
+      - name: Set lowercase GitHub username
         id: lowercase
         run: |
-          LOWERCASE_OWNER=$(echo "${{ gitea.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          # 使用 Secrets 中的 GitHub 用户名，或从环境变量获取
+          LOWERCASE_OWNER=$(echo "${{ secrets.GHCR_USERNAME || gitea.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "LOWERCASE_OWNER=$LOWERCASE_OWNER" >> $GITHUB_OUTPUT
 
   build-ai-engine:
@@ -73,20 +74,27 @@ jobs:
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           fi
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build ai_engine (no push)
+      - name: Build and push ai_engine to GHCR
         uses: docker/build-push-action@v4
         with:
           context: .
           file: docker/ai_engine.cuda.Dockerfile
-          push: false
+          push: true
           tags: |
-            miloco-ai_engine:${{ needs.setup.outputs.version }}
+            ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:${{ needs.setup.outputs.version }}
 
   build-backend:
     needs: setup
@@ -112,18 +120,25 @@ jobs:
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           fi
 
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build backend (multi-arch, no push)
+      - name: Build and push backend to GHCR (multi-arch)
         uses: docker/build-push-action@v4
         with:
           context: .
           file: docker/backend.Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: false
+          push: true
           tags: |
-            miloco-backend:${{ needs.setup.outputs.version }}
+            ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:${{ needs.setup.outputs.version }}
