@@ -53,14 +53,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Check Docker availability
+      - name: Install Docker CLI and dependencies
         run: |
-          docker --version
+          if which apt-get; then
+            apt-get update && apt-get install -y docker.io curl ca-certificates
+          elif which apk; then
+            apk add docker-cli curl ca-certificates
+          elif which yum; then
+            yum install -y docker curl ca-certificates
+          fi
 
-      - name: Install dependencies
+      - name: Install Node.js if needed
         run: |
-          which apt-get && apt-get update && apt-get install -y curl ca-certificates || true
-          which npm || (curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs) || true
+          if ! which npm; then
+            curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
+          fi
 
       - name: Log in to Gitea Registry
         uses: docker/login-action@v2
@@ -92,14 +99,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Check Docker availability
+      - name: Install Docker CLI and dependencies
         run: |
-          docker --version
+          if which apt-get; then
+            apt-get update && apt-get install -y docker.io curl ca-certificates
+          elif which apk; then
+            apk add docker-cli curl ca-certificates
+          elif which yum; then
+            yum install -y docker curl ca-certificates
+          fi
 
-      - name: Install dependencies
+      - name: Install Node.js if needed
         run: |
-          which apt-get && apt-get update && apt-get install -y curl ca-certificates || true
-          which npm || (curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs) || true
+          if ! which npm; then
+            curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
+          fi
 
       - name: Log in to Gitea Registry
         uses: docker/login-action@v2
