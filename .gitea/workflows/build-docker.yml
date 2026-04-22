@@ -73,6 +73,12 @@ jobs:
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           fi
 
+      - name: Configure Docker for insecure registry
+        run: |
+          mkdir -p /etc/docker
+          echo '{ "insecure-registries": ["gitea.hypernas.cn:2443"] }' > /etc/docker/daemon.json
+          systemctl restart docker || true
+
       - name: Log in to Gitea Registry
         uses: docker/login-action@v2
         with:
@@ -118,6 +124,12 @@ jobs:
           if ! which npm; then
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           fi
+
+      - name: Configure Docker for insecure registry
+        run: |
+          mkdir -p /etc/docker
+          echo '{ "insecure-registries": ["gitea.hypernas.cn:2443"] }' > /etc/docker/daemon.json
+          systemctl restart docker || true
 
       - name: Log in to Gitea Registry
         uses: docker/login-action@v2
