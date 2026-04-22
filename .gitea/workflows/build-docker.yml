@@ -16,6 +16,10 @@ on:
         description: 'Build AI engine image'
         type: boolean
         default: true
+      version-tag:
+        description: 'Custom version tag (leave empty to auto-detect: tag->version, main->latest, others->dev)'
+        type: string
+        default: ''
 
 env:
   # GitHub Container Registry
@@ -34,7 +38,10 @@ jobs:
       - name: Set version tag
         id: vars
         run: |
-          if [[ "${GITEA_REF_TYPE}" == "tag" ]]; then
+          # 如果用户手动指定了版本标签，优先使用
+          if [[ -n "${{ gitea.event.inputs.version-tag }}" ]]; then
+            VERSION="${{ gitea.event.inputs.version-tag }}"
+          elif [[ "${GITEA_REF_TYPE}" == "tag" ]]; then
             VERSION=${GITEA_REF_NAME}
           elif [[ "${GITEA_REF}" == "refs/heads/main" ]]; then
             VERSION=latest
