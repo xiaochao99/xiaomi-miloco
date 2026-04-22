@@ -18,7 +18,7 @@ TOOL_NAME_CONNECT_CHARS = "___"
 
 class ToolExecutor:
     """Executor for managing and executing MCP tools."""
-    def __init__(self, mcp_client_manager: MCPClientManager):
+    def __init__(self, mcp_client_manager: Optional[MCPClientManager]):
         self.mcp_client_manager = mcp_client_manager
 
     def _create_function_definition(self, name: str, description: str,
@@ -93,6 +93,10 @@ class ToolExecutor:
         converted_tools: list[ChatCompletionToolParam] = []
 
         try:
+            if not self.mcp_client_manager:
+                logger.warning("MCP client manager not initialized, returning empty tool list")
+                return []
+
             if mcp_client_ids:
                 tool_infos = self.mcp_client_manager.get_tools_by_ids(mcp_client_ids)
             else:
@@ -180,11 +184,15 @@ class ToolExecutor:
         return client_id, tool_name, parameters
 
     def get_server_name(self, client_id: str) -> str:
+        if not self.mcp_client_manager:
+            return "Unknown Server"
         client = self.mcp_client_manager.get_client(client_id)
-        return client.config.server_name if client else "Unknow Server"
+        return client.config.server_name if client else "Unknown Server"
 
     async def execute_tool_by_params(self, client_id: str, tool_name: str,
                                      parameters: dict[str, Any]) -> CallToolResult:
+        if not self.mcp_client_manager:
+            return CallToolResult(success=False, error_message="MCP client manager not initialized")
         tool_result = await self.mcp_client_manager.call_tool(
             client_id=client_id, tool_name=tool_name, arguments=parameters)
         return tool_result

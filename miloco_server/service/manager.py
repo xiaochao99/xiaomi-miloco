@@ -29,11 +29,11 @@ from miloco_server.mcp.mcp_client_manager import MCPClientManager
 from miloco_server.service.auth_service import AuthService
 from miloco_server.service.miot_service import MiotService
 from miloco_server.service.ha_service import HaService
+from miloco_server.service.chat_history_service import ChatHistoryService
+from miloco_server.service.api_token_service import ApiTokenService
 from miloco_server.service.trigger_rule_service import TriggerRuleService
 from miloco_server.service.model_service import ModelService
 from miloco_server.service.mcp_service import McpService
-from miloco_server.service.chat_history_service import ChatHistoryService
-from miloco_server.service.api_token_service import ApiTokenService
 from miloco_server.config.normal_config import MIOT_CONFIG, RTSP_CAMERA_CONFIG
 from miloco_server.utils.chat_companion import ChatCompanion
 
@@ -93,16 +93,13 @@ class Manager:
 
         # LLM proxy initialization moved to ModelService.__init__ for automatic execution
 
-        # Initialize MCP client manager
-        self._mcp_client_manager = await MCPClientManager.create(self._mcp_config_dao, self._miot_proxy, self._ha_proxy)
-
-        # Initialize tool executor
-        self._tool_executor = ToolExecutor(self._mcp_client_manager)
+        # Initialize tool executor (without MCP client manager first)
+        self._tool_executor = ToolExecutor(None)
 
         # Initialize default preset action manager
         self._default_preset_action_manager = DefaultPresetActionManager(self._tool_executor)
 
-        # Initialize trigger
+        # Initialize trigger (this creates HaStateListener and registers to DeviceCacheManager)
         self._trigger_rule_runner = TriggerRuleRunner(
             trigger_rules=[rule.to_runtime_rule() for rule in self._trigger_rule_dao.get_all_v2(enabled_only=False)],
             miot_proxy=self._miot_proxy,
@@ -112,6 +109,15 @@ class Manager:
             tool_executor=self._tool_executor,
             trigger_rule_log_dao=self._trigger_rule_log_dao,
         )
+
+        # Start trigger runner to initialize HaStateListener
+        await self._trigger_rule_runner.start_periodic_task()
+
+        # Now initialize MCP client manager (will register cached HA tools)
+        self._mcp_client_manager = await MCPClientManager.create(self._mcp_config_dao, self._miot_proxy, self._ha_proxy)
+
+        # Update tool executor with MCP client manager
+        self._tool_executor.mcp_client_manager = self._mcp_client_manager
 
         # Initialize all services
         self._auth_service = AuthService(self._kv_dao)
@@ -134,8 +140,6 @@ class Manager:
             self._mcp_client_manager,
             self._ha_service
         )
-
-        await self._trigger_rule_runner.start_periodic_task()
 
         # Note: Detection rules initialization is moved to _init_miot_after_startup
         # in main.py to ensure MIoT devices are ready first
@@ -197,6 +201,12 @@ class Manager:
     @property
     def default_preset_action_manager(self) -> DefaultPresetActionManager:
         return self._default_preset_action_manager
+
+    @property
+    def device_cache_manager(self):
+        """Get device cache manager for fast HA state queries (lazy init)"""
+        from miloco_server.service.device_cache_manager import get_device_cache_manager
+        return get_device_cache_manager(self._kv_dao)
 
     def get_llm_proxy_by_purpose(self, purpose: ModelPurpose) -> LLMProxy:
         llm_proxy_by_purpose = self._model_service.get_llm_proxy()

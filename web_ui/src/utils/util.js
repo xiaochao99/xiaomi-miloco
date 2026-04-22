@@ -24,3 +24,11 @@ export const formatDataToMarkdown = (obj) => {
 export const isFirefox = () => {
   return typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf('firefox') > -1
 }
+
+export const isEdge = () => {
+  return typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf('edg') > -1
+}
+
+export const isChrome = () => {
+  return typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().indexOf('chrome') > -1 && !isEdge()
+}

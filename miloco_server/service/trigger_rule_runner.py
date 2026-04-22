@@ -84,6 +84,13 @@ class TriggerRuleRunner:
             on_connected=self._refresh_ha_device_map
         ) if ha_config else None
 
+        # Register HA Listener to DeviceCacheManager for MCP tools
+        if self._ha_listener:
+            from miloco_server.service.device_cache_manager import get_device_cache_manager
+            cache_manager = get_device_cache_manager()
+            cache_manager.set_ha_listener(self._ha_listener)
+            logger.info("HA Listener registered to DeviceCacheManager")
+
         # Initialize Trigger Buffer
         self._trigger_buffer = TriggerBuffer(self._execute_buffered_rules)
 
