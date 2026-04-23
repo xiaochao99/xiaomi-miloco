@@ -16,10 +16,14 @@ console.log('[HTTP] Module loaded v2 - Camera Config Fix');
 
 instace.interceptors.request.use(
   (config) => {
-    // Set Content-Type for POST/PUT requests with data
     const method = config.method?.toLowerCase();
     if ((method === 'post' || method === 'put') && config.data) {
-      config.headers['Content-Type'] = 'application/json';
+      // Don't set Content-Type for FormData, let browser set it with boundary
+      if (config.data instanceof FormData) {
+        delete config.headers['Content-Type'];
+      } else {
+        config.headers['Content-Type'] = 'application/json';
+      }
     }
     console.log('HTTP Request:', config.method, config.url, config.data);
     return config;
@@ -69,12 +73,13 @@ instace.interceptors.response.use(
 
 const callapi = (method = "GET", url, data = {}, timeout = null) => {
   const isGet = method === "GET";
+  const isFormData = data instanceof FormData;
   const config = {
     method,
     url,
     params: isGet ? data : {},
     data: isGet ? {} : data,
-    headers: isGet ? {} : {
+    headers: isGet ? {} : isFormData ? {} : {
       'Content-Type': 'application/json'
     }
   };

@@ -4,10 +4,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typography, Segmented, Table, Popconfirm, Tag, Tooltip, Alert} from 'antd';
+import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typography, Segmented, Table, Popconfirm, Tag, Tooltip, Alert, Upload, List, Spin} from 'antd';
 import { useTranslation } from 'react-i18next';
-import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined, PlusOutlined, CopyOutlined, DeleteOutlined, EyeOutlined, VideoCameraOutlined } from '@ant-design/icons';
-import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig, getRTSPServerConfig, setRTSPServerConfig, getXiaoAIConfig, updateXiaoAIConfig, restartXiaoAI } from '@/api';
+import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined, PlusOutlined, CopyOutlined, DeleteOutlined, EyeOutlined, VideoCameraOutlined, UploadOutlined, AudioOutlined, SoundOutlined, ExperimentOutlined } from '@ant-design/icons';
+import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig, getRTSPServerConfig, setRTSPServerConfig, getXiaoAIConfig, updateXiaoAIConfig, restartXiaoAI, listVoiceClones, uploadVoiceClone, deleteVoiceClone, synthesizeWithVoiceClone, voiceDesignTTS } from '@/api';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSettingStore } from '@/stores/settingStore';
 import { Card, Header } from '@/components';
@@ -91,7 +91,9 @@ const Setting = () => {
       default_speaker: 'zh_female_vv_uranus_bigtts',
       audio_format: 'pcm',
       stream: true,
-      speed: 1.0
+      speed: 1.0,
+      mimo_tts_model: 'mimo-v2.5-tts',
+      voice_design_description: ''
     },
     audio_input: {
       gain: 1.0
@@ -113,6 +115,19 @@ const Setting = () => {
     dialog: false,
     ws: false
   });
+
+  // Voice clone states
+  const [voiceClones, setVoiceClones] = useState([]);
+  const [loadingVoiceClones, setLoadingVoiceClones] = useState(false);
+  const [voiceCloneName, setVoiceCloneName] = useState('');
+  const [voiceCloneUploading, setVoiceCloneUploading] = useState(false);
+  const [voiceCloneTestText, setVoiceCloneTestText] = useState('');
+  const [voiceCloneTesting, setVoiceCloneTesting] = useState(false);
+
+  // Voice design states
+  const [voiceDesignDesc, setVoiceDesignDesc] = useState('');
+  const [voiceDesignText, setVoiceDesignText] = useState('');
+  const [voiceDesigning, setVoiceDesigning] = useState(false);
 
   // language options
   const languageOptions = [
@@ -190,12 +205,22 @@ const Setting = () => {
     fetchBridgeConfig();
   }, []);
 
+  // Load Voice Clones when TTS section is open and model is voiceclone
+  useEffect(() => {
+    if (expandedSections.tts && bridgeConfig.tts?.mimo_tts_model === 'mimo-v2.5-tts-voiceclone') {
+      fetchVoiceClones();
+    }
+  }, [expandedSections.tts, bridgeConfig.tts?.mimo_tts_model]);
+
   const fetchBridgeConfig = async () => {
     setLoadingBridgeConfig(true);
     try {
       const res = await getXiaoAIConfig();
       if (res && res.code === 0) {
         setBridgeConfig(res.data);
+        if (res.data?.tts?.voice_design_description) {
+          setVoiceDesignDesc(res.data.tts.voice_design_description);
+        }
       }
     } catch (error) {
       console.error('Failed to load Xiaomi Bridge config:', error);
@@ -264,6 +289,108 @@ const Setting = () => {
       ...prev,
       [section]: !prev[section]
     }));
+  };
+
+  const fetchVoiceClones = async () => {
+    setLoadingVoiceClones(true);
+    try {
+      const res = await listVoiceClones();
+      if (res && res.code === 0) {
+        setVoiceClones(res.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load voice clones:', error);
+    } finally {
+      setLoadingVoiceClones(false);
+    }
+  };
+
+  const handleVoiceCloneUpload = async (file) => {
+    console.log('[VoiceClone] Upload called:', { voiceCloneName, fileType: typeof file, fileName: file?.name });
+    if (!voiceCloneName.trim()) {
+      message.warning(t('setting.voiceCloneNamePlaceholder'));
+      return false;
+    }
+    setVoiceCloneUploading(true);
+    try {
+      const res = await uploadVoiceClone(file, voiceCloneName.trim());
+      console.log('[VoiceClone] Upload result:', res);
+      if (res && res.code === 0) {
+        message.success(t('common.addSuccess'));
+        setVoiceCloneName('');
+        fetchVoiceClones();
+      } else {
+        message.error(res?.message || t('common.addFail'));
+      }
+    } catch (error) {
+      console.error('[VoiceClone] Upload error:', error);
+      message.error(t('common.addFail'));
+    } finally {
+      setVoiceCloneUploading(false);
+    }
+    return false;
+  };
+
+  const handleVoiceCloneDelete = async (cloneId) => {
+    try {
+      const res = await deleteVoiceClone(cloneId);
+      if (res && res.code === 0) {
+        message.success(t('common.deleteSuccess'));
+        fetchVoiceClones();
+      } else {
+        message.error(res?.message || t('common.deleteFail'));
+      }
+    } catch (error) {
+      message.error(t('common.deleteFail'));
+    }
+  };
+
+  const handleVoiceCloneTest = async (cloneId) => {
+    const text = voiceCloneTestText.trim() || t('setting.voiceCloneTestText');
+    setVoiceCloneTesting(true);
+    try {
+      const res = await synthesizeWithVoiceClone({
+        text,
+        mimo_model: 'mimo-v2.5-tts-voiceclone',
+        voice: cloneId,
+      });
+      if (res && res.code === 0) {
+        message.success(t('common.success'));
+      } else {
+        message.error(res?.message || t('common.fail'));
+      }
+    } catch (error) {
+      message.error(t('common.fail'));
+    } finally {
+      setVoiceCloneTesting(false);
+    }
+  };
+
+  const handleVoiceDesignPreview = async () => {
+    if (!voiceDesignDesc.trim()) {
+      message.warning(t('setting.voiceDesignDescriptionDesc'));
+      return;
+    }
+    if (!voiceDesignText.trim()) {
+      message.warning(t('setting.voiceDesignTextPlaceholder'));
+      return;
+    }
+    setVoiceDesigning(true);
+    try {
+      const res = await voiceDesignTTS({
+        description: voiceDesignDesc.trim(),
+        text: voiceDesignText.trim(),
+      });
+      if (res && res.code === 0) {
+        message.success(t('common.success'));
+      } else {
+        message.error(res?.message || t('common.fail'));
+      }
+    } catch (error) {
+      message.error(t('common.fail'));
+    } finally {
+      setVoiceDesigning(false);
+    }
   };
 
   const fetchCameraConfig = async () => {
@@ -1063,6 +1190,166 @@ const Setting = () => {
                         disabled={loadingBridgeConfig}
                       />
                     </div>
+                    <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                      <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                        {t('setting.mimoTtsModel')}
+                      </div>
+                      <Select
+                        value={bridgeConfig.tts?.mimo_tts_model || 'mimo-v2.5-tts'}
+                        onChange={(value) => handleBridgeConfigChange('tts', 'mimo_tts_model', value)}
+                        style={{ width: 320 }}
+                        disabled={loadingBridgeConfig}
+                      >
+                        <Option value="mimo-v2.5-tts">{t('setting.mimoTtsModelV25')}</Option>
+                        <Option value="mimo-v2.5-tts-voicedesign">{t('setting.mimoTtsModelVoiceDesign')}</Option>
+                        <Option value="mimo-v2.5-tts-voiceclone">{t('setting.mimoTtsModelVoiceClone')}</Option>
+                      </Select>
+                    </div>
+                    <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                      <div className={styles.settingLabel} style={{ fontWeight: 'normal' }}>
+                        <Tooltip title={t('setting.ttsAudioTagDesc')}>
+                          <span>{t('setting.ttsAudioTagInfo')} <span style={{ color: '#999', fontSize: 12 }}>(?)</span></span>
+                        </Tooltip>
+                      </div>
+                    </div>
+
+                    {/* Voice Design Section */}
+                    {bridgeConfig.tts?.mimo_tts_model === 'mimo-v2.5-tts-voicedesign' && (
+                      <div style={{ margin: '8px 0', padding: 12, background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+                        <div style={{ fontWeight: 500, marginBottom: 8 }}>
+                          <ExperimentOutlined /> {t('setting.mimoTtsModelVoiceDesign')}
+                        </div>
+                        <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                          <div className={styles.settingLabel} style={{ fontWeight: 'normal', fontSize: 13 }}>
+                            {t('setting.voiceDesignDescription')}
+                            <Tooltip title={t('setting.voiceDesignDescriptionDesc')}>
+                              <span style={{ marginLeft: 4, color: '#999', fontSize: 12 }}>(?)</span>
+                            </Tooltip>
+                          </div>
+                          <Input.TextArea
+                            rows={2}
+                            value={voiceDesignDesc}
+                            onChange={(e) => {
+                              setVoiceDesignDesc(e.target.value);
+                              handleBridgeConfigChange('tts', 'voice_design_description', e.target.value);
+                            }}
+                            placeholder={t('setting.voiceDesignDescriptionDesc')}
+                            style={{ width: 300 }}
+                          />
+                        </div>
+                        <div className={styles.settingItem} style={{ borderBottom: 'none' }}>
+                          <div className={styles.settingLabel} style={{ fontWeight: 'normal', fontSize: 13 }}>
+                            {t('setting.voiceDesignText')}
+                          </div>
+                          <Input.TextArea
+                            rows={2}
+                            value={voiceDesignText}
+                            onChange={(e) => setVoiceDesignText(e.target.value)}
+                            placeholder={t('setting.voiceDesignTextPlaceholder')}
+                            style={{ width: 300 }}
+                          />
+                        </div>
+                        <div style={{ textAlign: 'right', marginTop: 8 }}>
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<SoundOutlined />}
+                            loading={voiceDesigning}
+                            onClick={handleVoiceDesignPreview}
+                            disabled={!voiceDesignDesc.trim() || !voiceDesignText.trim()}
+                          >
+                            {voiceDesigning ? t('setting.voiceDesignPreviewing') : t('setting.voiceDesignPreview')}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Voice Clone Section */}
+                    {bridgeConfig.tts?.mimo_tts_model === 'mimo-v2.5-tts-voiceclone' && (
+                      <div style={{ margin: '8px 0', padding: 12, background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+                        <div style={{ fontWeight: 500, marginBottom: 8 }}>
+                          <AudioOutlined /> {t('setting.voiceCloneTitle')}
+                        </div>
+                        <div style={{ marginBottom: 8, fontSize: 12, color: '#666' }}>
+                          {t('setting.voiceCloneUploadDesc')}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                          <Input
+                            value={voiceCloneName}
+                            onChange={(e) => setVoiceCloneName(e.target.value)}
+                            placeholder={t('setting.voiceCloneNamePlaceholder')}
+                            style={{ flex: 1 }}
+                            size="small"
+                          />
+                          <Upload
+                            accept=".mp3,.wav"
+                            showUploadList={false}
+                            beforeUpload={handleVoiceCloneUpload}
+                          >
+                            <Button
+                              type="primary"
+                              size="small"
+                              icon={<UploadOutlined />}
+                              loading={voiceCloneUploading}
+                              disabled={!voiceCloneName.trim()}
+                            >
+                              {voiceCloneUploading ? t('setting.voiceCloneUploading') : t('setting.voiceCloneUpload')}
+                            </Button>
+                          </Upload>
+                        </div>
+                        <div style={{ marginBottom: 8 }}>
+                          <Input
+                            size="small"
+                            value={voiceCloneTestText}
+                            onChange={(e) => setVoiceCloneTestText(e.target.value)}
+                            placeholder={t('setting.voiceCloneTestTextPlaceholder')}
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+                        {loadingVoiceClones ? (
+                          <div style={{ textAlign: 'center', padding: 12 }}><Spin size="small" /></div>
+                        ) : voiceClones.length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: 12, color: '#999', fontSize: 13 }}>
+                            {t('setting.voiceCloneEmpty')}
+                          </div>
+                        ) : (
+                          <List
+                            size="small"
+                            dataSource={voiceClones}
+                            renderItem={(item) => (
+                              <List.Item
+                                actions={[
+                                  <Button
+                                    key="test"
+                                    type="link"
+                                    size="small"
+                                    icon={<SoundOutlined />}
+                                    loading={voiceCloneTesting}
+                                    onClick={() => handleVoiceCloneTest(item.id)}
+                                  >
+                                    {t('setting.voiceCloneTest')}
+                                  </Button>,
+                                  <Popconfirm
+                                    key="delete"
+                                    title={t('setting.voiceCloneDeleteConfirm')}
+                                    onConfirm={() => handleVoiceCloneDelete(item.id)}
+                                  >
+                                    <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                                      {t('setting.voiceCloneDelete')}
+                                    </Button>
+                                  </Popconfirm>
+                                ]}
+                              >
+                                <List.Item.Meta
+                                  title={item.voice_name}
+                                  description={`${item.mime_type} - ${new Date(item.created_at * 1000).toLocaleString()}`}
+                                />
+                              </List.Item>
+                            )}
+                          />
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
                 <div className={styles.settingItem} style={{ borderBottom: 'none' }}>

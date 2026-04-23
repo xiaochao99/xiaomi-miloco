@@ -217,6 +217,8 @@ class BridgeManager:
             audio_format=self._config.tts.audio_format,
             stream=self._config.tts.stream,
             speed=self._config.tts.speed,
+            mimo_tts_model=self._config.tts.mimo_tts_model,
+            voice_design_description=self._config.tts.voice_design_description,
         )
         await self._tts.initialize()
         # Set singleton instance for global access

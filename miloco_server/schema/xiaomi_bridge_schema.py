@@ -45,6 +45,8 @@ class TTSConfigSchema(BaseModel):
     audio_format: str = Field("pcm", description="音频格式: pcm / mp3")
     stream: bool = Field(True, description="流式播放")
     speed: float = Field(1.0, ge=0.5, le=2.0, description="语速 (0.5-2.0)")
+    mimo_tts_model: str = Field("mimo-v2.5-tts", description="MiMo TTS模型: mimo-v2.5-tts / mimo-v2.5-tts-voicedesign / mimo-v2.5-tts-voiceclone")
+    voice_design_description: str = Field("", description="音色设计描述文本")
 
 
 class AudioInputConfigSchema(BaseModel):
@@ -88,3 +90,34 @@ class BridgeRestartResponse(BaseModel):
     code: int = Field(0)
     message: str = Field("success")
     data: Optional[dict] = None
+
+
+class VoiceCloneUploadRequest(BaseModel):
+    """Request model for uploading voice clone sample."""
+    voice_name: str = Field(..., description="复刻音色名称")
+    audio_base64: str = Field(..., description="音频文件的Base64编码")
+    mime_type: str = Field("audio/wav", description="音频MIME类型: audio/mpeg 或 audio/wav")
+
+
+class VoiceCloneItem(BaseModel):
+    """Voice clone item stored in library."""
+    id: str = Field(..., description="音色复刻ID")
+    voice_name: str = Field(..., description="复刻音色名称")
+    audio_base64: str = Field(..., description="音频Base64编码（含MIME前缀）")
+    mime_type: str = Field("audio/wav", description="音频MIME类型")
+    created_at: float = Field(..., description="创建时间戳")
+
+
+class VoiceDesignRequest(BaseModel):
+    """Request model for voice design via text description."""
+    description: str = Field(..., description="音色描述文本")
+    text: str = Field(..., description="要合成的文本内容")
+
+
+class MimoTTSRequest(BaseModel):
+    """Request model for MiMo-V2.5-TTS synthesis."""
+    text: str = Field(..., description="要合成的文本内容")
+    mimo_model: str = Field("mimo-v2.5-tts", description="MiMo TTS模型ID")
+    voice: str = Field("mimo_default", description="音色ID或Base64编码的音色样本")
+    style_instruction: Optional[str] = Field(None, description="风格控制指令（放在user消息中）")
+    client_ids: Optional[List[str]] = Field(None, description="目标设备ID列表")

@@ -3,10 +3,16 @@
 
 """
 TTS (Text-to-Speech) module for Xiaomi Bridge.
-Supports Doubao TTS and Xiaomi native TTS.
+Supports Doubao TTS, Xiaomi native TTS, and MiMo-V2.5-TTS series.
+
+MiMo-V2.5-TTS models:
+  - mimo-v2.5-tts:            Preset voice synthesis
+  - mimo-v2.5-tts-voicedesign: Voice design via text description
+  - mimo-v2.5-tts-voiceclone:  Voice clone via audio sample
 
 Reference: open-xiaoai-bridge/core/services/tts/doubao.py
            open-xiaoai-bridge/core/services/tts/xiaoai.py
+           https://platform.xiaomimimo.com/docs/usage-guide/speech-synthesis-v2.5
 """
 
 from __future__ import annotations
@@ -49,6 +55,8 @@ class TTSService:
         audio_format: str = "pcm",
         stream: bool = False,
         speed: float = 1.0,
+        mimo_tts_model: str = "mimo-v2.5-tts",
+        voice_design_description: str = "",
     ):
         self._engine = engine
         self._app_id = app_id
@@ -59,6 +67,8 @@ class TTSService:
         self._audio_format = audio_format
         self._stream = stream
         self._speed = speed
+        self._mimo_tts_model = mimo_tts_model  # "mimo-v2.5-tts" / "mimo-v2.5-tts-voicedesign" / "mimo-v2.5-tts-voiceclone"
+        self._voice_design_description = voice_design_description
         self._initialized = False
         self._client = None
         self._playback_session = 0
@@ -101,7 +111,7 @@ class TTSService:
             
             self._client = httpx.AsyncClient(timeout=30)
             self._initialized = True
-            logger.info("TTS service initialized: %s", self._engine)
+            logger.info("TTS service initialized: %s (model=%s)", self._engine, self._mimo_tts_model)
             return True
         
         logger.warning("Unsupported TTS engine: %s", self._engine)
@@ -273,27 +283,32 @@ class TTSService:
         return None
 
     async def _synthesize_mimo(self, text: str, speaker: str = None) -> bytes:
-        """Synthesize using MiMo TTS API."""
-        voice = speaker or self._default_speaker
+        """Synthesize using MiMo-V2.5-TTS API."""
+        voice = self._resolve_mimo_voice(speaker)
         headers = self._build_mimo_headers()
 
-        # 兼容两种非流式请求体，避免某些网关返回 200 但不含 audio 字段。
-        payload_candidates = [
-            self._build_mimo_payload_legacy(text, voice, stream=False),
-            self._build_mimo_payload_openai_style(text, voice, stream=False),
-        ]
-        for payload in payload_candidates:
-            audio_data = await self._request_mimo_non_stream(payload, headers)
-            if audio_data:
-                return audio_data
+        payload = self._build_mimo_v25_payload(text, voice=voice, stream=False)
+        audio_data = await self._request_mimo_non_stream(payload, headers)
+        if audio_data:
+            return audio_data
+
+        if voice:
+            payload_candidates = [
+                self._build_mimo_payload_legacy(text, voice, stream=False),
+                self._build_mimo_payload_openai_style(text, voice, stream=False),
+            ]
+            for payload in payload_candidates:
+                audio_data = await self._request_mimo_non_stream(payload, headers)
+                if audio_data:
+                    return audio_data
 
         logger.error("MiMo TTS returned empty audio data")
         return b""
 
     async def _synthesize_mimo_stream(self, text: str, speaker: str = None) -> AsyncIterator[bytes]:
-        """Stream audio chunks from MiMo TTS API."""
+        """Stream audio chunks from MiMo-V2.5-TTS API."""
         url = f"{self._api_base_url}/v1/chat/completions"
-        voice = speaker or self._default_speaker
+        voice = self._resolve_mimo_voice(speaker)
 
         headers = self._build_mimo_headers()
 
@@ -304,21 +319,19 @@ class TTSService:
         max_retries = 3
         retry_delay = 1.0
 
-        # 兼容两种请求体：旧格式 + OpenAI audio 风格格式
-        payload_candidates = [
-            self._build_mimo_payload_legacy(text, voice, stream=True),
-            self._build_mimo_payload_openai_style(text, voice, stream=True),
-        ]
+        payload_candidates = [self._build_mimo_v25_payload(text, voice=voice, stream=True)]
+        if voice:
+            payload_candidates.append(self._build_mimo_payload_legacy(text, voice, stream=True))
+            payload_candidates.append(self._build_mimo_payload_openai_style(text, voice, stream=True))
 
         for payload in payload_candidates:
             for attempt in range(max_retries):
                 async with self._client.stream("POST", url, json=payload, headers=headers) as response:
                     if response.status_code == 200:
                         got_any = False
-                        # 成功获取响应，开始处理流式数据
                         async for line in response.aiter_lines():
                             if line.startswith("data: "):
-                                line = line[5:]  # Remove "data: " prefix
+                                line = line[5:]
                             if line.strip() == "[DONE]":
                                 break
                             if not line.strip():
@@ -335,7 +348,7 @@ class TTSService:
                                 yield audio_chunk
 
                         if got_any:
-                            return  # 成功完成
+                            return
                         logger.warning("MiMo stream response has no audio chunks, trying fallback payload")
                         break
 
@@ -360,6 +373,208 @@ class TTSService:
 
         logger.error("MiMo TTS stream failed after %d retries", max_retries)
 
+    async def synthesize_mimo_v25(
+        self,
+        text: str,
+        model: str = None,
+        voice: str = None,
+        style_instruction: str = None,
+    ) -> bytes:
+        model = model or self._mimo_tts_model
+        resolved_voice = self._resolve_mimo_voice(voice, model)
+        logger.info("[MiMo V2.5] synthesize_mimo_v25: model=%s, voice_len=%s",
+                    model, len(resolved_voice) if resolved_voice else 0)
+        headers = self._build_mimo_headers()
+
+        payload = self._build_mimo_v25_payload(
+            text,
+            voice=resolved_voice,
+            stream=False,
+            model=model,
+            style_instruction=style_instruction,
+        )
+        audio_data = await self._request_mimo_non_stream(payload, headers)
+        if audio_data:
+            return audio_data
+
+        logger.error("MiMo-V2.5 TTS (%s) returned empty audio data", model)
+        return b""
+
+    async def synthesize_mimo_v25_stream(
+        self,
+        text: str,
+        model: str = None,
+        voice: str = None,
+        style_instruction: str = None,
+    ) -> AsyncIterator[bytes]:
+        url = f"{self._api_base_url}/v1/chat/completions"
+        model = model or self._mimo_tts_model
+        resolved_voice = self._resolve_mimo_voice(voice, model)
+
+        headers = self._build_mimo_headers()
+
+        if not self._client:
+            logger.error("MiMo TTS client not initialized")
+            return
+
+        payload = self._build_mimo_v25_payload(
+            text,
+            voice=resolved_voice,
+            stream=True,
+            model=model,
+            style_instruction=style_instruction,
+        )
+
+        max_retries = 3
+        retry_delay = 1.0
+
+        for attempt in range(max_retries):
+            async with self._client.stream("POST", url, json=payload, headers=headers) as response:
+                if response.status_code == 200:
+                    got_any = False
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: "):
+                            line = line[5:]
+                        if line.strip() == "[DONE]":
+                            break
+                        if not line.strip():
+                            continue
+                        try:
+                            chunk_data = json.loads(line)
+                        except Exception:
+                            logger.debug("MiMo V2.5 stream parse skipped non-JSON line")
+                            continue
+
+                        audio_chunks = self._extract_mimo_audio_chunks(chunk_data)
+                        for audio_chunk in audio_chunks:
+                            got_any = True
+                            yield audio_chunk
+
+                    if got_any:
+                        return
+                    break
+
+                if response.status_code == 429:
+                    logger.warning(
+                        "MiMo V2.5 TTS stream rate limited (attempt %d/%d), retrying in %.1fs",
+                        attempt + 1,
+                        max_retries,
+                        retry_delay,
+                    )
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+
+                body = await response.aread()
+                logger.error(
+                    "MiMo V2.5 TTS stream API error: %d body=%s",
+                    response.status_code,
+                    body[:500],
+                )
+                break
+
+        logger.error("MiMo V2.5 TTS stream failed for model=%s", model)
+
+    async def speak_mimo_v25(
+        self,
+        text: str,
+        model: str = None,
+        voice: str = None,
+        style_instruction: str = None,
+        client_ids: Optional[list[str]] = None,
+    ) -> bool:
+        if self._engine != "mimo":
+            logger.warning("speak_mimo_v25 called but engine is %s", self._engine)
+            return False
+
+        if not self._initialized:
+            ok = await self.initialize()
+            if not ok:
+                return False
+
+        if self._stream:
+            streamed_ok = await self.speak_mimo_v25_stream(text, model, voice, style_instruction, client_ids)
+            if streamed_ok:
+                return True
+            logger.warning("MiMo V2.5 stream failed, fallback to non-stream")
+
+        audio_data = await self.synthesize_mimo_v25(text, model, voice, style_instruction)
+        if not audio_data:
+            return False
+
+        from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
+        stream_manager = get_audio_stream_manager()
+        token = self._begin_playback_session()
+        await stream_manager.restart_playback(client_ids=client_ids, force_reinit=True)
+        await self._send_pcm_with_throttle(stream_manager, audio_data, client_ids, token)
+        return True
+
+    async def speak_mimo_v25_stream(
+        self,
+        text: str,
+        model: str = None,
+        voice: str = None,
+        style_instruction: str = None,
+        client_ids: Optional[list[str]] = None,
+    ) -> bool:
+        if not self._initialized:
+            ok = await self.initialize()
+            if not ok:
+                return False
+
+        try:
+            from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
+            stream_manager = get_audio_stream_manager()
+            token = self._begin_playback_session()
+            sent_any = False
+            buffer = bytearray()
+            start_buffer_ms = int(os.getenv("MILOCO_TTS_STREAM_START_BUFFER_MS", "240"))
+            chunk_ms = int(os.getenv("MILOCO_TTS_STREAM_CHUNK_MS", "60"))
+            bytes_per_sec = self._STREAM_SAMPLE_RATE * self._STREAM_BYTES_PER_SAMPLE
+            startup_bytes = max(1, bytes_per_sec * start_buffer_ms // 1000)
+            chunk_bytes = max(1, bytes_per_sec * chunk_ms // 1000)
+            started = False
+            playback_initialized = False
+            sent_bytes = 0
+            playback_start = time.monotonic()
+
+            async for chunk in self.synthesize_mimo_v25_stream(text, model, voice, style_instruction):
+                if not self._is_playback_session_active(token):
+                    logger.debug("MiMo V2.5 stream TTS aborted by newer playback session")
+                    return sent_any
+                if not chunk:
+                    continue
+                buffer.extend(chunk)
+
+                if not started and len(buffer) < startup_bytes:
+                    continue
+                started = True
+
+                while len(buffer) >= chunk_bytes:
+                    if not playback_initialized:
+                        await stream_manager.restart_playback(client_ids, force_reinit=True)
+                        playback_initialized = True
+                        playback_start = time.monotonic()
+                    packet = bytes(buffer[:chunk_bytes])
+                    del buffer[:chunk_bytes]
+                    await stream_manager.send_audio_to_clients(packet, client_ids)
+                    sent_any = True
+                    sent_bytes += len(packet)
+                    await self._throttle_if_needed(sent_bytes, playback_start, token)
+
+            if buffer:
+                if not playback_initialized:
+                    await stream_manager.restart_playback(client_ids, force_reinit=True)
+                    playback_initialized = True
+                    playback_start = time.monotonic()
+                await stream_manager.send_audio_to_clients(bytes(buffer), client_ids)
+                sent_any = True
+
+            return sent_any
+        except Exception as e:
+            logger.error("MiMo V2.5 stream TTS speak failed: %s", e, exc_info=True)
+            return False
+
     def _normalize_mimo_audio_format(self) -> str:
         """Normalize local config audio format to MiMo supported format string."""
         fmt = (self._audio_format or "").lower().strip()
@@ -369,6 +584,40 @@ class TTSService:
             return fmt
         return "pcm16"
 
+    def _get_voice_clone_data(self, clone_name: str) -> str:
+        try:
+            from miloco_server.utils.database import get_db_connector
+            db = get_db_connector()
+            rows = db.execute_query("SELECT value FROM kv WHERE key = ?", ("MIMO_VOICE_CLONES",))
+            if not rows:
+                return None
+            clones = json.loads(rows[0].get("value", "[]"))
+            clone = next((c for c in clones if c.get("voice_name") == clone_name), None)
+            if clone:
+                return f"data:{clone['mime_type']};base64,{clone['audio_base64']}"
+        except Exception as e:
+            logger.error("Failed to get voice clone data: %s", e)
+        return None
+
+    def _resolve_mimo_voice(self, speaker: str = None, model: str = None) -> str | None:
+        model = model or self._mimo_tts_model
+        raw_voice = speaker or self._default_speaker
+
+        if model == "mimo-v2.5-tts-voicedesign":
+            return None
+
+        if model == "mimo-v2.5-tts-voiceclone":
+            if raw_voice and raw_voice.startswith("data:"):
+                return raw_voice
+            clone_data = self._get_voice_clone_data(raw_voice)
+            if clone_data:
+                logger.info("[MiMo V2.5] Resolved voice clone: %s", raw_voice)
+                return clone_data
+            logger.warning("[MiMo V2.5] Voice clone not found: %s", raw_voice)
+            return None
+
+        return raw_voice
+
     def _build_mimo_headers(self) -> dict[str, str]:
         return {
             "api-key": self._api_key,
@@ -376,11 +625,53 @@ class TTSService:
             "Content-Type": "application/json",
         }
 
+    def _build_mimo_v25_payload(
+        self,
+        text: str,
+        voice: str = None,
+        stream: bool = False,
+        model: str = None,
+        style_instruction: str = None,
+        audio_format: str = None,
+    ) -> dict[str, Any]:
+        model = model or self._mimo_tts_model
+        fmt = audio_format or self._normalize_mimo_audio_format()
+
+        messages: list[dict[str, str]] = []
+
+        if model == "mimo-v2.5-tts":
+            if style_instruction:
+                messages.append({"role": "user", "content": style_instruction})
+            messages.append({"role": "assistant", "content": text})
+
+        elif model == "mimo-v2.5-tts-voicedesign":
+            desc = style_instruction or self._voice_design_description or "Give me a clear, natural tone."
+            messages.append({"role": "user", "content": desc})
+            messages.append({"role": "assistant", "content": text})
+
+        elif model == "mimo-v2.5-tts-voiceclone":
+            messages.append({"role": "assistant", "content": text})
+
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "audio": {
+                "format": fmt,
+            },
+        }
+
+        if voice:
+            payload["audio"]["voice"] = voice
+
+        if stream:
+            payload["stream"] = True
+
+        return payload
+
     def _build_mimo_payload_legacy(self, text: str, voice: str, stream: bool) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "model": "mimo-v2-tts",
+            "model": "mimo-v2.5-tts",
             "messages": [
-                {"role": "user", "content": text},
                 {"role": "assistant", "content": text},
             ],
             "audio": {
@@ -394,9 +685,9 @@ class TTSService:
 
     def _build_mimo_payload_openai_style(self, text: str, voice: str, stream: bool) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "model": "mimo-v2-tts",
+            "model": "mimo-v2.5-tts",
             "messages": [
-                {"role": "user", "content": text},
+                {"role": "assistant", "content": text},
             ],
             "modalities": ["audio"],
             "audio": {
@@ -667,3 +958,19 @@ class TTSService:
     @property
     def engine(self) -> str:
         return self._engine
+
+    @property
+    def mimo_tts_model(self) -> str:
+        return self._mimo_tts_model
+
+    @mimo_tts_model.setter
+    def mimo_tts_model(self, model: str):
+        self._mimo_tts_model = model
+
+    @property
+    def voice_design_description(self) -> str:
+        return self._voice_design_description
+
+    @voice_design_description.setter
+    def voice_design_description(self, description: str):
+        self._voice_design_description = description

@@ -54,7 +54,11 @@ async def ws_query(
         logger.warning("[%s] Client disconnected", request_id)
     except Exception as err:  # pylint: disable=broad-exception-caught
         logger.error("[%s] WebSocket error: %s", request_id, err)
-        await websocket.close(code=1011, reason=f"Server error: {str(err)}")
+        try:
+            if websocket.client_state == websocket.client_state.CONNECTED:
+                await websocket.close(code=1011, reason=f"Server error: {str(err)}")
+        except Exception as close_err:
+            logger.warning("[%s] Failed to close WebSocket: %s", request_id, close_err)
     finally:
         logger.info("[%s] WebSocket connection closed", request_id)
         actor_system.tell(agent_transceiver, ActorExitRequest())

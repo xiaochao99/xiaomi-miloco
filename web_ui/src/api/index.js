@@ -110,3 +110,16 @@ export const updateXiaoAIDevice = (clientId, data) => putApi(`/api/xiaomi-bridge
 export const getXiaoAIConfig = () => getApi('/api/xiaomi-bridge/config');
 export const updateXiaoAIConfig = (data) => putApi('/api/xiaomi-bridge/config', data);
 export const restartXiaoAI = () => postApi('/api/xiaomi-bridge/config/restart');
+
+// MiMo V2.5 TTS API
+export const mimoV25TTS = (data) => postApi('/api/xiaomi-bridge/tts/mimo_v25', data);
+export const uploadVoiceClone = (file, voiceName) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('voice_name', voiceName);
+  return postApi('/api/xiaomi-bridge/tts/voice_clone/upload', formData);
+};
+export const listVoiceClones = () => getApi('/api/xiaomi-bridge/tts/voice_clone/list');
+export const deleteVoiceClone = (cloneId) => deleteApi(`/api/xiaomi-bridge/tts/voice_clone/${cloneId}`);
+export const synthesizeWithVoiceClone = (data) => postApi('/api/xiaomi-bridge/tts/voice_clone/synthesize', data);
+export const voiceDesignTTS = (data) => postApi('/api/xiaomi-bridge/tts/voice_design', data);

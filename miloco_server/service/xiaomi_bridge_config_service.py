@@ -121,6 +121,8 @@ class XiaomiBridgeConfigService:
                 audio_format=env_config.tts.audio_format,
                 stream=env_config.tts.stream,
                 speed=env_config.tts.speed,
+                mimo_tts_model=env_config.tts.mimo_tts_model,
+                voice_design_description=env_config.tts.voice_design_description,
             ),
             audio_input=AudioInputConfigSchema(
                 gain=env_config.audio_input.gain,
@@ -175,6 +177,8 @@ class XiaomiBridgeConfigService:
                 audio_format=schema.tts.audio_format,
                 stream=schema.tts.stream,
                 speed=schema.tts.speed,
+                mimo_tts_model=schema.tts.mimo_tts_model,
+                voice_design_description=schema.tts.voice_design_description,
             ),
             audio_input=AudioInputConfig(
                 gain=schema.audio_input.gain,

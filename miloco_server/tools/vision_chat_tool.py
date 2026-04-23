@@ -83,29 +83,42 @@ class VisionChatTool(Actor):
             if self._camera_images:
                 camera_img_seqs = self._camera_images
             else:
-                device_chooser = DeviceChooser(
-                    request_id=self._request_id,
-                    location=self._location_info,
-                    choose_camera_device_ids=self._user_choosed_camera_dids)
-                camera_list, all_cameras, _, _ = await device_chooser.run()
+                camera_dids = self._user_choosed_camera_dids
+                if not camera_dids:
+                    device_chooser = DeviceChooser(
+                        request_id=self._request_id,
+                        location=self._location_info,
+                        choose_camera_device_ids=self._user_choosed_camera_dids)
+                    camera_list, all_cameras, _, _ = await device_chooser.run()
 
-                if len(camera_list) == 0:
-                    camera_list = all_cameras
+                    if len(camera_list) == 0:
+                        camera_list = all_cameras
 
-                camera_dids = [camera.did for camera in camera_list]
+                    camera_dids = [camera.did for camera in camera_list]
+
                 camera_img_seqs = await self._manager.miot_service.get_miot_cameras_img(
                     camera_dids, self._vision_use_img_count)
+
+                camera_img_seqs = [
+                    camera_img_seq for camera_img_seq in camera_img_seqs
+                    if camera_img_seq.camera_info.online and len(camera_img_seq.img_list) > 0
+                ]
+
+                if not camera_img_seqs and self._user_choosed_camera_dids:
+                    all_cameras = await self._manager.miot_service.get_miot_camera_list()
+                    fallback_dids = [camera.did for camera in all_cameras]
+                    camera_img_seqs = await self._manager.miot_service.get_miot_cameras_img(
+                        fallback_dids, self._vision_use_img_count)
+                    camera_img_seqs = [
+                        camera_img_seq for camera_img_seq in camera_img_seqs
+                        if camera_img_seq.camera_info.online and len(camera_img_seq.img_list) > 0
+                    ]
 
                 logger.info("[%s] Got %d camera image sequences, camera_infos: %s, img_counts: %s",
                         self._request_id,
                         len(camera_img_seqs),
                         [camera_img_seq.camera_info for camera_img_seq in camera_img_seqs],
                         [len(camera_img_seq.img_list) for camera_img_seq in camera_img_seqs])
-
-                camera_img_seqs = [
-                    camera_img_seq for camera_img_seq in camera_img_seqs
-                    if camera_img_seq.camera_info.online and len(camera_img_seq.img_list) > 0
-                ]
 
             if len(camera_img_seqs) == 0:
                 self._future.set_result({"error": "No camera images found, please check cameras are working"})

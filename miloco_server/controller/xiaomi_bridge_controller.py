@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import logging
 import os
+import json
+import base64
 from typing import List, Optional, Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, File, UploadFile, Request, Depends, HTTPException, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, File, UploadFile, Form, Request, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from miloco_server.middleware import verify_token, verify_websocket_token
@@ -20,6 +22,10 @@ from miloco_server.schema.xiaomi_bridge_schema import (
     BridgeConfigSchema,
     BridgeConfigResponse,
     BridgeRestartResponse,
+    VoiceCloneUploadRequest,
+    VoiceCloneItem,
+    VoiceDesignRequest,
+    MimoTTSRequest,
 )
 from miloco_server.service.xiaomi_bridge_config_service import XiaomiBridgeConfigService
 from miloco_server.xiaomi_bridge.audio_stream import get_audio_stream_manager
@@ -529,3 +535,222 @@ async def restart_bridge(_current_user: str = Depends(_verify_xiaomi_bridge_http
     except Exception as e:
         logger.error(f"Failed to restart bridge: {e}")
         return {"code": -1, "message": str(e), "data": None}
+
+
+# ==================== MiMo-V2.5-TTS Voice Clone & Voice Design API ====================
+
+VOICE_CLONE_STORAGE_KEY = "MIMO_VOICE_CLONES"
+
+
+def _get_voice_clones_from_storage() -> list[dict]:
+    try:
+        from miloco_server.dao.kv_dao import KVDao
+        kv_dao = KVDao()
+        data = kv_dao.get(VOICE_CLONE_STORAGE_KEY)
+        if data:
+            return json.loads(data)
+    except Exception as e:
+        logger.error("Failed to load voice clones: %s", e)
+    return []
+
+
+def _save_voice_clones_to_storage(clones: list[dict]) -> bool:
+    try:
+        from miloco_server.dao.kv_dao import KVDao
+        kv_dao = KVDao()
+        return kv_dao.set(VOICE_CLONE_STORAGE_KEY, json.dumps(clones, ensure_ascii=False))
+    except Exception as e:
+        logger.error("Failed to save voice clones: %s", e)
+        return False
+
+
+@router.post("/tts/mimo_v25")
+async def mimo_v25_tts(request: MimoTTSRequest, _current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
+    if not request.text:
+        return {"code": -1, "message": "Text is required"}
+
+    try:
+        from miloco_server.xiaomi_bridge.tts import TTSService
+
+        tts_service = TTSService.instance()
+        if not tts_service.is_initialized:
+            ok = await tts_service.initialize()
+            if not ok:
+                return {"code": -1, "message": "TTS service not configured"}
+
+        ok = await tts_service.speak_mimo_v25(
+            text=request.text,
+            model=request.mimo_model,
+            voice=request.voice,
+            style_instruction=request.style_instruction,
+            client_ids=request.client_ids,
+        )
+        if not ok:
+            return {"code": -1, "message": f"MiMo V2.5 TTS ({request.mimo_model}) failed"}
+
+        return {"code": 0, "message": "ok", "model": request.mimo_model}
+    except Exception as e:
+        logger.error("MiMo V2.5 TTS failed: %s", e, exc_info=True)
+        return {"code": -1, "message": str(e)}
+
+
+@router.post("/tts/voice_clone/upload")
+async def upload_voice_clone(
+    file: UploadFile = File(...),
+    voice_name: str = Form(""),
+    _current_user: str = Depends(_verify_xiaomi_bridge_http_access),
+):
+    if not file:
+        return {"code": -1, "message": "Audio file is required"}
+    if not voice_name:
+        return {"code": -1, "message": "Voice name is required"}
+
+    allowed_types = {"audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav"}
+    content_type = file.content_type or ""
+    if content_type not in allowed_types:
+        return {"code": -1, "message": f"Unsupported audio format: {content_type}. Supported: mp3, wav"}
+
+    try:
+        audio_bytes = await file.read()
+        if len(audio_bytes) > 10 * 1024 * 1024:
+            return {"code": -1, "message": "Audio file too large (max 10MB)"}
+
+        audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+        import uuid
+        import time as _time
+        clone_id = str(uuid.uuid4())[:8]
+        mime_type = "audio/wav" if "wav" in content_type else "audio/mpeg"
+
+        clone_item = {
+            "id": clone_id,
+            "voice_name": voice_name.strip(),
+            "audio_base64": audio_base64,
+            "mime_type": mime_type,
+            "created_at": _time.time(),
+        }
+
+        clones = _get_voice_clones_from_storage()
+        clones.append(clone_item)
+        _save_voice_clones_to_storage(clones)
+
+        logger.info("[MiMo V2.5] Voice clone uploaded: id=%s name=%s mime=%s", clone_id, voice_name, mime_type)
+        return {
+            "code": 0,
+            "message": "Voice clone uploaded successfully",
+            "data": {
+                "id": clone_id,
+                "voice_name": voice_name.strip(),
+                "mime_type": mime_type,
+            },
+        }
+    except Exception as e:
+        logger.error("Voice clone upload failed: %s", e, exc_info=True)
+        return {"code": -1, "message": str(e)}
+
+
+@router.get("/tts/voice_clone/list")
+async def list_voice_clones(_current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
+    try:
+        clones = _get_voice_clones_from_storage()
+        result = [
+            {
+                "id": c["id"],
+                "voice_name": c["voice_name"],
+                "mime_type": c["mime_type"],
+                "created_at": c["created_at"],
+            }
+            for c in clones
+        ]
+        return {"code": 0, "data": result, "message": "success"}
+    except Exception as e:
+        logger.error("List voice clones failed: %s", e)
+        return {"code": -1, "message": str(e), "data": []}
+
+
+@router.delete("/tts/voice_clone/{clone_id}")
+async def delete_voice_clone(clone_id: str, _current_user: str = Depends(_verify_xiaomi_bridge_http_access)):
+    try:
+        clones = _get_voice_clones_from_storage()
+        new_clones = [c for c in clones if c["id"] != clone_id]
+        if len(new_clones) == len(clones):
+            return {"code": -1, "message": "Voice clone not found"}
+        _save_voice_clones_to_storage(new_clones)
+        logger.info("[MiMo V2.5] Voice clone deleted: id=%s", clone_id)
+        return {"code": 0, "message": "Voice clone deleted"}
+    except Exception as e:
+        logger.error("Delete voice clone failed: %s", e)
+        return {"code": -1, "message": str(e)}
+
+
+@router.post("/tts/voice_clone/synthesize")
+async def synthesize_with_voice_clone(
+    request: MimoTTSRequest,
+    _current_user: str = Depends(_verify_xiaomi_bridge_http_access),
+):
+    if not request.text:
+        return {"code": -1, "message": "Text is required"}
+
+    try:
+        clones = _get_voice_clones_from_storage()
+        clone = next((c for c in clones if c["id"] == request.voice), None)
+        if not clone:
+            return {"code": -1, "message": f"Voice clone not found: {request.voice}"}
+
+        voice_data = f"data:{clone['mime_type']};base64,{clone['audio_base64']}"
+
+        from miloco_server.xiaomi_bridge.tts import TTSService
+        tts_service = TTSService.instance()
+        if not tts_service.is_initialized:
+            ok = await tts_service.initialize()
+            if not ok:
+                return {"code": -1, "message": "TTS service not configured"}
+
+        ok = await tts_service.speak_mimo_v25(
+            text=request.text,
+            model="mimo-v2.5-tts-voiceclone",
+            voice=voice_data,
+            style_instruction=request.style_instruction,
+            client_ids=request.client_ids,
+        )
+        if not ok:
+            return {"code": -1, "message": "Voice clone TTS failed"}
+
+        return {"code": 0, "message": "ok", "model": "mimo-v2.5-tts-voiceclone"}
+    except Exception as e:
+        logger.error("Voice clone TTS failed: %s", e, exc_info=True)
+        return {"code": -1, "message": str(e)}
+
+
+@router.post("/tts/voice_design")
+async def voice_design_tts(
+    request: VoiceDesignRequest,
+    _current_user: str = Depends(_verify_xiaomi_bridge_http_access),
+):
+    if not request.text:
+        return {"code": -1, "message": "Text is required"}
+    if not request.description:
+        return {"code": -1, "message": "Voice description is required"}
+
+    try:
+        from miloco_server.xiaomi_bridge.tts import TTSService
+        tts_service = TTSService.instance()
+        if not tts_service.is_initialized:
+            ok = await tts_service.initialize()
+            if not ok:
+                return {"code": -1, "message": "TTS service not configured"}
+
+        ok = await tts_service.speak_mimo_v25(
+            text=request.text,
+            model="mimo-v2.5-tts-voicedesign",
+            voice=None,
+            style_instruction=request.description,
+            client_ids=None,
+        )
+        if not ok:
+            return {"code": -1, "message": "Voice design TTS failed"}
+
+        return {"code": 0, "message": "ok", "model": "mimo-v2.5-tts-voicedesign"}
+    except Exception as e:
+        logger.error("Voice design TTS failed: %s", e, exc_info=True)
+        return {"code": -1, "message": str(e)}

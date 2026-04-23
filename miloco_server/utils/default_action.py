@@ -27,7 +27,10 @@ class DefaultPresetActionManager:
 
     def __init__(self, tool_executor: ToolExecutor):
         self._tool_executor = tool_executor
-        self._mcp_client_manager = tool_executor.mcp_client_manager
+
+    @property
+    def _mcp_client_manager(self):
+        return self._tool_executor.mcp_client_manager
 
     async def get_all_default_actions(self, mcp_ids: Optional[list[str]] = None) -> dict[str, dict[str, Action]]:
         """

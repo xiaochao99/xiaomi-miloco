@@ -54,6 +54,8 @@ class TTSConfig:
     audio_format: str = "pcm"  # "pcm" or "mp3"
     stream: bool = True
     speed: float = 1.0
+    mimo_tts_model: str = "mimo-v2.5-tts"  # "mimo-v2.5-tts", "mimo-v2.5-tts-voicedesign", "mimo-v2.5-tts-voiceclone"
+    voice_design_description: str = ""  # Text description for voice design
 
 
 @dataclass
@@ -128,6 +130,8 @@ class BridgeConfig:
                 audio_format=os.getenv("MILOCO_TTS_FORMAT", "pcm"),
                 stream=os.getenv("MILOCO_TTS_STREAM", "1").lower() in ("1", "true"),
                 speed=float(os.getenv("MILOCO_TTS_SPEED", "1.0")),
+                mimo_tts_model=os.getenv("MILOCO_MIMO_TTS_MODEL", "mimo-v2.5-tts"),
+                voice_design_description=os.getenv("MILOCO_MIMO_VOICE_DESIGN_DESC", ""),
             ),
             
             audio_input=AudioInputConfig(

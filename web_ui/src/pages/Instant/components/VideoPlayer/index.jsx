@@ -361,23 +361,6 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
       }
 
       /**
-       * Check if a codec configuration is supported
-       * @param {string} codecString - Codec string to check
-       * @returns {boolean} Whether the configuration is supported
-       */
-      const isCodecSupported = async (codecString) => {
-        try {
-          const support = await window.VideoDecoder.isConfigSupported({
-            codec: codecString
-          });
-          return support.supported;
-        } catch (e) {
-          console.warn('isConfigSupported check failed:', e);
-          return false;
-        }
-      }
-
-      /**
        * Get fallback codecs for a given codec type
        * @param {string} targetCodec - Original codec
        * @returns {string[]} List of fallback codecs to try
@@ -426,67 +409,6 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
 
         // Remove duplicates and the original codec
         return [...new Set(fallbacks.filter(c => c !== targetCodec))];
-      }
-
-      /**
-       * Configure decoder with fallback options
-       * @param {string} targetCodec - Codec to configure
-       * @param {Uint8Array} [description] - H.264 SPS/PPS data for AVC format
-       * @returns {boolean} Whether configuration succeeded
-       */
-      const configureDecoder = async (targetCodec, description = null) => {
-        if (!decoderRef.current) return false;
-
-        // Build list of codecs to try: original + fallbacks
-        const fallbackCodecs = getFallbackCodecs(targetCodec);
-        const codecsToTry = [targetCodec, ...fallbackCodecs];
-
-        console.log(`Attempting to configure decoder with codecs:`, codecsToTry);
-
-        for (const codec of codecsToTry) {
-          // For Edge, prefer software decoding first as hardware acceleration may have issues
-          const configOptions = isEdge() ? [
-            { codec },
-            { codec, hardwareAcceleration: 'prefer-software' },
-            { codec, hardwareAcceleration: 'prefer-hardware' },
-          ] : [
-            { codec },
-            { codec, hardwareAcceleration: 'prefer-hardware' },
-            { codec, hardwareAcceleration: 'prefer-software' },
-          ];
-
-          // For H.264 codecs, also try with description if available
-          if (codec.startsWith('avc1') && description) {
-            configOptions.unshift({ codec, description });
-            configOptions.unshift({ codec, description, hardwareAcceleration: 'prefer-software' });
-          }
-
-          for (const config of configOptions) {
-            try {
-              // Check if supported before configuring
-              if (typeof window.VideoDecoder.isConfigSupported === 'function') {
-                const support = await window.VideoDecoder.isConfigSupported(config);
-                if (!support.supported) {
-                  console.log(`Codec config not supported:`, config);
-                  continue;
-                }
-              }
-
-              decoderRef.current.configure(config);
-              console.log('Decoder configured successfully with:', config);
-              return true;
-            } catch (e) {
-              console.log(`Failed to configure with ${JSON.stringify(config)}:`, e.message);
-            }
-          }
-        }
-
-        console.error(`Failed to configure decoder with any codec. Tried: ${codecsToTry.join(', ')}`);
-        console.error('Possible reasons:');
-        console.error('1. Browser does not support the video codec (H.265/HEVC may not be supported)');
-        console.error('2. WebCodecs API is not enabled');
-        console.error('3. Video stream format is incompatible');
-        return false;
       }
 
       decoderRef.current = new window.VideoDecoder({
@@ -549,18 +471,87 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
         error: (e) => {
           console.error('VideoDecoder error:', e);
           if (e.message?.includes('Unsupported configuration')) {
-            console.error('Decoder configuration issue - trying fallback');
+            console.error('Decoder configuration issue - trying to reset decoder');
           }
-          setError(t('instant.deviceList.deviceDecodeFailed'))
-          message.error(t('instant.deviceList.deviceDecodeFailed'))
         }
       })
 
       let lastConfiguredCodec = codec;
-      let h264Description = null; // Store H.264 SPS/PPS description
-      let pendingData = []; // Buffer for data before decoder is configured
+      let h264Description = null;
+      let pendingData = [];
       let decoderConfigured = false;
-      let detectedCodecType = null; // Store detected codec type ('h264' or 'h265')
+      let detectedCodecType = null;
+      let decoderErrorCount = 0;
+      const MAX_DECODER_ERRORS = 3;
+
+      const resetDecoder = () => {
+        if (decoderRef.current) {
+          try {
+            decoderRef.current.close();
+          } catch (e) {
+            if (e.name !== 'InvalidStateError') {
+              console.error('Close decoder on reset error:', e);
+            }
+          }
+        }
+
+        decoderRef.current = new window.VideoDecoder({
+          output: frame => {
+            createImageBitmap(frame).then(bitmap => {
+              const containerWidth = canvas.clientWidth || frame.codedWidth
+              const containerHeight = canvas.clientHeight || frame.codedHeight
+              const frameWidth = frame.codedWidth
+              const frameHeight = frame.codedHeight
+              const frameAspect = frameWidth / frameHeight
+              const containerAspect = containerWidth / containerHeight
+
+              let renderWidth, renderHeight
+              if (frameAspect > containerAspect) {
+                renderWidth = containerWidth
+                renderHeight = containerWidth / frameAspect
+              } else {
+                renderHeight = containerHeight
+                renderWidth = containerHeight * frameAspect
+              }
+              renderWidth = Math.min(renderWidth, containerWidth)
+              renderHeight = Math.min(renderHeight, containerHeight)
+
+              canvas.width = containerWidth
+              canvas.height = containerHeight
+
+              ctx.fillStyle = '#000'
+              ctx.fillRect(0, 0, containerWidth, containerHeight)
+
+              const x = (containerWidth - renderWidth) / 2
+              const y = (containerHeight - renderHeight) / 2
+              ctx.drawImage(bitmap, x, y, renderWidth, renderHeight)
+
+              frame.close()
+              bitmap.close && bitmap.close()
+              if (!ready) {
+                setLoading(false)
+                setShow(true)
+                if (onCanvasRef && canvasRef.current) {
+                  onCanvasRef(canvasRef)
+                }
+                ready = true
+              }
+            })
+          },
+          error: (e) => {
+            console.error('VideoDecoder error (recovered):', e);
+          }
+        });
+
+        decoderConfigured = false;
+        detectedCodecRef.current = null;
+        detectedCodecType = null;
+        h264Description = null;
+        pendingData = [];
+
+        console.log('Decoder reset complete, waiting for next key frame to reconfigure');
+        return true;
+      };
 
       /**
        * Check if a codec type is supported by the browser
@@ -593,18 +584,21 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
       }
 
       /**
-       * Configure decoder with detected codec and description
+       * Configure decoder with detected codec
+       * Note: We intentionally do NOT pass `description` for Annex-B streams.
+       * When `description` is provided, WebCodecs expects AVCC format (length-prefixed),
+       * but our WebSocket sends Annex-B format (start-code prefixed).
+       * Omitting `description` lets the decoder handle Annex-B natively.
+       *
        * @param {string} detectedCodec - Detected codec string
        * @param {string} detectedCodecType - Detected codec type ('h264' or 'h265')
-       * @param {Uint8Array} description - H.264 SPS/PPS data
        * @returns {boolean} Whether configuration succeeded
        */
-      const configureDecoderWithData = async (detectedCodec, detectedCodecType, description) => {
+      const configureDecoderWithData = async (detectedCodec, detectedCodecType) => {
         if (!decoderRef.current) return false;
 
-        console.log(`Configuring decoder with codec: ${detectedCodec}, type: ${detectedCodecType}, description: ${description ? `${description.length} bytes` : 'none'}`);
+        console.log(`Configuring decoder with codec: ${detectedCodec}, type: ${detectedCodecType}`);
 
-        // Check if the detected codec type is supported
         const typeSupported = await isCodecTypeSupported(detectedCodecType);
         if (!typeSupported) {
           console.error(`Codec type ${detectedCodecType} is not supported in this browser.`);
@@ -618,13 +612,15 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
         const codecsToTry = [detectedCodec, ...fallbackCodecs];
 
         for (const codecToTry of codecsToTry) {
-          // Skip H.264 codecs if detected type is H.265 - they're incompatible
           if (detectedCodecType === 'h265' && codecToTry.startsWith('avc1')) {
             console.log(`Skipping H.264 codec ${codecToTry} for H.265 stream`);
             continue;
           }
+          if (detectedCodecType === 'h264' && (codecToTry.startsWith('hev1') || codecToTry.startsWith('hvc1'))) {
+            console.log(`Skipping H.265 codec ${codecToTry} for H.264 stream`);
+            continue;
+          }
 
-          // Build config options
           const baseOptions = isEdge() ? [
             { codec: codecToTry },
             { codec: codecToTry, hardwareAcceleration: 'prefer-software' },
@@ -635,16 +631,8 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
             { codec: codecToTry, hardwareAcceleration: 'prefer-software' },
           ];
 
-          // For H.264 codecs, prepend options with description if available
-          const configOptions = codecToTry.startsWith('avc1') && description ? [
-            { codec: codecToTry, description, hardwareAcceleration: 'prefer-software' },
-            { codec: codecToTry, description },
-            ...baseOptions
-          ] : baseOptions;
-
-          for (const config of configOptions) {
+          for (const config of baseOptions) {
             try {
-              // Check if supported before configuring
               if (typeof window.VideoDecoder.isConfigSupported === 'function') {
                 const support = await window.VideoDecoder.isConfigSupported(config);
                 if (!support.supported) {
@@ -658,10 +646,9 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
               lastConfiguredCodec = codecToTry;
               detectedCodecRef.current = codecToTry;
               decoderConfigured = true;
-              
-              // Process pending data now that decoder is configured
+
               processPendingData();
-              
+
               return true;
             } catch (e) {
               console.log(`Failed to configure with ${JSON.stringify(config)}:`, e.message);
@@ -722,8 +709,7 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
               }
               detectedCodecRef.current = currentCodec;
               
-              // Now try to configure decoder with detected codec, type and description
-              configureDecoderWithData(currentCodec, detectedCodecType, h264Description);
+              configureDecoderWithData(currentCodec, detectedCodecType);
             }
           }
 
@@ -740,9 +726,8 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
                h264Description = getH264Description(uint8);
                if (h264Description) {
                  console.log(`Extracted H.264 SPS/PPS description (${h264Description.length} bytes)`);
-                 // If decoder is not configured yet, try to configure now
                  if (!decoderConfigured && detectedCodecRef.current) {
-                   configureDecoderWithData(detectedCodecRef.current, detectedCodecType || 'h264', h264Description);
+                   configureDecoderWithData(detectedCodecRef.current, detectedCodecType || 'h264');
                  }
                }
              }
@@ -770,7 +755,11 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
           // Decoder is configured, decode the data
           try {
             if (!decoderRef.current || decoderRef.current.state === 'closed') {
-              console.warn('Decoder is closed, skipping decode');
+              console.warn('Decoder is closed, attempting recovery');
+              if (isKey && decoderErrorCount < MAX_DECODER_ERRORS) {
+                decoderErrorCount++;
+                resetDecoder();
+              }
               return;
             }
             decoderRef.current.decode(new EncodedVideoChunk({
@@ -778,9 +767,16 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
               timestamp: performance.now(),
               data: uint8
             }));
+            decoderErrorCount = 0;
           } catch (err) {
             console.error('Decode error:', err);
-            setError(t('instant.deviceList.deviceDecodeFailed'));
+            if (decoderErrorCount < MAX_DECODER_ERRORS) {
+              decoderErrorCount++;
+              console.log(`Attempting decoder recovery (${decoderErrorCount}/${MAX_DECODER_ERRORS})`);
+              resetDecoder();
+            } else {
+              setError(t('instant.deviceList.deviceDecodeFailed'));
+            }
           }
         }
       }

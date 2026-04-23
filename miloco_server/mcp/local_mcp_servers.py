@@ -95,7 +95,15 @@ class LocalDefaultMcp(LocalMCPBase):
         vision_tool = Tool.from_function(
             fn=self.vision_understand,
             name="vision_understand",
-            description="Tool for understanding images, used when users want to understand the home cameras displayed.")
+            description=(
+                "摄像头画面理解工具。当用户询问家中摄像头画面内容时使用此工具。"
+                "此工具会返回对画面的完整描述，你可以直接将返回内容作为最终答案输出。"
+                "每个问题只需调用一次此工具，收到结果后不要再重复调用，"
+                "请直接基于返回内容整理后输出 <final_answer>。"
+                "Tool for understanding camera images. Returns a complete description of the scene."
+                "Use the returned content directly as your final answer. "
+                "Only call this tool ONCE per query - do NOT call it again after receiving the result."
+            ))
         self.mcp.add_tool(tool=vision_tool)
 
         who_am_i_tool = Tool.from_function(
@@ -121,6 +129,10 @@ class LocalDefaultMcp(LocalMCPBase):
         notify: Annotated[Optional[str], "Notification content, such as 'someone fell', can be empty"] = None
     ) -> dict[str, Any]:
         """Create rule"""
+        if location is not None and location.lower() in ("none", "null", ""):
+            location = None
+        if notify is not None and notify.lower() in ("none", "null", ""):
+            notify = None
         chat_data: ChatCachedData | None = self._manager.chat_companion.get_chat_data(request_id)
         if chat_data is None:
             return "error: request_id not found"
@@ -159,6 +171,8 @@ class LocalDefaultMcp(LocalMCPBase):
         location: Annotated[Optional[str], "Location, such as 'living room', empty if no specific location is described"] = None  # pylint: disable=line-too-long
     ) -> dict[str, Any]:
         """Understand image"""
+        if location is not None and location.lower() in ("none", "null", ""):
+            location = None
         chat_data: ChatCachedData | None = self._manager.chat_companion.get_chat_data(request_id)
         if chat_data is None:
             return "error: request_id not found"
@@ -198,6 +212,8 @@ class LocalDefaultMcp(LocalMCPBase):
         accept_threshold: Annotated[float, "人脸匹配阈值，默认0.35，越高越严格"] = 0.35,
     ) -> dict[str, Any]:
         """Detect face from camera snapshot and identify user from face library."""
+        if location is not None and location.lower() in ("none", "null", ""):
+            location = None
         chat_data: ChatCachedData | None = self._manager.chat_companion.get_chat_data(request_id)
         if chat_data is None:
             return {"success": False, "message": "request_id not found"}
@@ -206,16 +222,18 @@ class LocalDefaultMcp(LocalMCPBase):
         camera_img_seqs = chat_data.camera_images
 
         if not camera_img_seqs:
-            device_chooser = DeviceChooser(
-                request_id=request_id,
-                location=location,
-                choose_camera_device_ids=choose_camera_ids,
-            )
-            camera_list, all_cameras, _, _ = await device_chooser.run()
-            if len(camera_list) == 0:
-                camera_list = all_cameras
+            camera_dids = choose_camera_ids
+            if not camera_dids:
+                device_chooser = DeviceChooser(
+                    request_id=request_id,
+                    location=location,
+                    choose_camera_device_ids=choose_camera_ids,
+                )
+                camera_list, all_cameras, _, _ = await device_chooser.run()
+                if len(camera_list) == 0:
+                    camera_list = all_cameras
 
-            camera_dids = [camera.did for camera in camera_list]
+                camera_dids = [camera.did for camera in camera_list]
             if not camera_dids:
                 return {
                     "success": False,

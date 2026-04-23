@@ -135,35 +135,21 @@ class ToolExecutor:
         return converted_tools
 
     def parse_tool_call(self, tool_call: ChatCompletionMessageToolCall) -> tuple[str, str, dict[str, Any]]:
-        logger.info("ToolExecutor parse_tool_call: %s", tool_call)
-
         tool_name = tool_call.function.name
         parameters_str = tool_call.function.arguments
 
-        # Parse parameter string to dictionary - handle multiple escape situations
         try:
-            logger.info(
-                "ToolExecutor parse_tool_call parameters_str: %s type: %s",
-                parameters_str,
-                type(parameters_str))
             if parameters_str:
                 parameters = parameters_str
-                # Loop parse until get dictionary type or cannot continue parsing
                 parse_count = 0
-                while isinstance(parameters, str) and parse_count < 5:  # Parse at most 5 times to prevent infinite loop
+                while isinstance(parameters, str) and parse_count < 5:
                     try:
                         parameters = json.loads(parameters)
                         parse_count += 1
-                        logger.info(
-                            "ToolExecutor parse_tool_call parameters after parse %d: %s type: %s",
-                            parse_count,
-                            parameters,
-                            type(parameters))
                     except json.JSONDecodeError as e:
                         logger.error("Parse attempt %d failed: %s, parameters: %s", parse_count + 1, e, parameters)
                         break
 
-                # If final result is still string, cannot parse as JSON, return empty dictionary
                 if isinstance(parameters, str):
                     logger.warning(
                         "Parameters cannot be parsed as dictionary, final result is still string: %s",
@@ -171,7 +157,7 @@ class ToolExecutor:
                     parameters = {}
             else:
                 parameters = {}
-            logger.info("ToolExecutor parse_tool_call final parameters: %s type: %s", parameters, type(parameters))
+            logger.info("ToolExecutor parse_tool_call: name=%s, parameters=%s", tool_name, parameters)
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error("Failed to parse tool call: %s, error: %s", tool_call, e)
             parameters = {}

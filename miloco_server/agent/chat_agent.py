@@ -108,8 +108,21 @@ class ChatAgent(Actor):
             mcp_list, exclude_tool_names=exclude_tool_names)
         self._all_mcp_tools_meta = self._local_default_mcp_tools_meta + self._other_mcp_tools_meta
 
-        logger.info("[%s] Initializing tool metadata: %s", self._request_id,
-                    self._all_mcp_tools_meta)
+        tool_names = []
+        for t in self._all_mcp_tools_meta:
+            try:
+                if isinstance(t, dict):
+                    name = t.get("function", {}).get("name", "?")
+                else:
+                    func = getattr(t, "function", None)
+                    name = getattr(func, "name", "?") if func else "?"
+                tool_names.append(name)
+            except Exception as e:
+                logger.warning("[%s] Failed to extract tool name from %s: %s", 
+                              self._request_id, type(t).__name__, e)
+                tool_names.append("?")
+        logger.info("[%s] Initialized %d tools: %s", self._request_id,
+                    len(self._all_mcp_tools_meta), tool_names)
 
     def _init_conversation(self, chat_history_messages: Optional[ChatHistoryMessages]) -> None:
         """Initialize conversation history.
@@ -252,6 +265,21 @@ class ChatAgent(Actor):
             finalized_tool_calls: list[
                 ChatCompletionMessageToolCall] = self._merge_delta_tool_calls(
                     delta_tool_call_list)
+
+            if not finalized_content and not finalized_tool_calls and finish_reason == "stop":
+                logger.info("[%s] Step %d: LLM returned empty content and no tool calls, trying fallback",
+                            self._request_id, step_number)
+                fallback = self._get_fallback_content_from_history()
+                if fallback:
+                    logger.info(
+                        "[%s] Step %d: Using fallback content from tool result, length: %d",
+                        self._request_id, step_number, len(fallback))
+                    finalized_content = fallback
+                    self._send_instruction(
+                        Template.ToastStream(stream=fallback))
+                else:
+                    logger.warning("[%s] Step %d: No fallback content found in history",
+                                   self._request_id, step_number)
 
             logger.info(
                 "[%s] ChatAgent step %d finalized_content: %s, finalized_tool_calls: %s, finish_reason: %s",
@@ -464,6 +492,155 @@ class ChatAgent(Actor):
     def _is_completion_step(self, finish_reason: Optional[str]) -> bool:
         """Check if this is a completion step."""
         return finish_reason == "stop"
+
+    def _get_fallback_content_from_history(self) -> Optional[str]:
+        """Extract and summarize tool results from chat history.
+
+        When the LLM returns empty content after receiving tool results,
+        this method extracts and summarizes the tool's response texts 
+        to provide a meaningful final answer to the user.
+        """
+        messages = self._chat_history_messages.get_messages()
+        logger.info("[%s] _get_fallback_content_from_history: checking %d messages", 
+                    self._request_id, len(messages))
+        
+        # Extract all tool results
+        device_list = []
+        device_status = {}
+        error_messages = []
+        other_results = []
+        
+        for msg in reversed(messages):
+            if isinstance(msg, dict) and msg.get("role") == "tool":
+                content = msg.get("content", "")
+                logger.info("[%s] Found tool message, content length: %d, content: %s", 
+                            self._request_id, len(content) if content else 0, content[:200] if content else "empty")
+                if not content:
+                    continue
+                try:
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict):
+                        result = parsed.get("content") or parsed.get("message")
+                        error = parsed.get("error")
+                        
+                        if error:
+                            error_messages.append(error)
+                        elif result:
+                            # Try to parse as dict
+                            if isinstance(result, dict):
+                                self._parse_tool_result_dict(result, device_list, device_status)
+                            elif isinstance(result, list):
+                                self._parse_tool_result_list(result, device_list, device_status)
+                            else:
+                                other_results.append(str(result))
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.warning("[%s] Failed to parse tool content as JSON: %s", 
+                                   self._request_id, str(e))
+        
+        # Generate summary
+        return self._generate_summary(device_list, device_status, error_messages, other_results)
+    
+    def _parse_tool_result_dict(self, result: dict, device_list: list, device_status: dict):
+        """Parse a dictionary tool result."""
+        # Check for device list format
+        if 'result' in result:
+            inner = result['result']
+            if isinstance(inner, list):
+                self._parse_tool_result_list(inner, device_list, device_status)
+            elif isinstance(inner, dict):
+                # Check if it's device info
+                if 'did' in inner or 'name' in inner:
+                    device_list.append(inner)
+                # Check if it's a property value
+                elif isinstance(result.get('result'), (int, str, bool)):
+                    # This might be a status value, store with key
+                    if 'iid' in result:
+                        device_status[result['iid']] = result['result']
+        
+        # Check for device info directly
+        if 'did' in result or 'name' in result or 'online' in result:
+            device_list.append(result)
+    
+    def _parse_tool_result_list(self, result: list, device_list: list, device_status: dict):
+        """Parse a list tool result."""
+        for item in result:
+            if isinstance(item, dict):
+                if 'did' in item or 'name' in item:
+                    device_list.append(item)
+    
+    def _generate_summary(self, device_list: list, device_status: dict, 
+                          error_messages: list, other_results: list) -> Optional[str]:
+        """Generate a natural language summary from collected tool results."""
+        parts = []
+        
+        # Summarize device list
+        if device_list:
+            unique_devices = {}
+            for device in device_list:
+                did = device.get('did', device.get('entity_id', str(id(device))))
+                if did not in unique_devices:
+                    unique_devices[did] = device
+            
+            if len(unique_devices) == 1:
+                device = list(unique_devices.values())[0]
+                name = device.get('name', device.get('friendly_name', '未知设备'))
+                online = device.get('online', '未知')
+                home_info = device.get('home_info', device.get('area', ''))
+                
+                status_parts = [f"设备：{name}"]
+                if home_info:
+                    status_parts.append(f"位置：{home_info}")
+                if online is not None:
+                    status_parts.append(f"在线状态：{'在线' if online else '离线'}")
+                
+                parts.append("；".join(status_parts))
+            else:
+                device_summary = "找到以下设备：\n"
+                for i, (did, device) in enumerate(unique_devices.items(), 1):
+                    name = device.get('name', device.get('friendly_name', '未知设备'))
+                    online = device.get('online', '未知')
+                    home_info = device.get('home_info', '')
+                    line = f"{i}. {name}"
+                    if home_info:
+                        line += f"（{home_info}）"
+                    if online is not None:
+                        line += f" - {'在线' if online else '离线'}"
+                    device_summary += line + "\n"
+                parts.append(device_summary.strip())
+        
+        # Summarize device status
+        if device_status:
+            status_lines = []
+            for key, value in device_status.items():
+                # Try to interpret common properties
+                if 'battery' in key.lower() or 'power' in key.lower() or key == 'prop.0.4.1':
+                    status_lines.append(f"电量：{value}%")
+                elif 'lock' in key.lower() or 'status' in key.lower() or key == 'prop.0.3.1021':
+                    if isinstance(value, int):
+                        status_lines.append(f"锁状态：{'已上锁' if value == 1 else '已解锁'}")
+                    else:
+                        status_lines.append(f"状态：{value}")
+                else:
+                    status_lines.append(f"{key}：{value}")
+            
+            if status_lines:
+                parts.append("；".join(status_lines))
+        
+        # Add error messages
+        if error_messages:
+            parts.append(f"提示：{'；'.join(error_messages)}")
+        
+        # Add other results
+        if other_results:
+            parts.append("\n".join(other_results))
+        
+        if parts:
+            summary = "\n\n".join(parts)
+            logger.info("[%s] Generated fallback summary: %s", self._request_id, summary[:200])
+            return summary
+        
+        logger.info("[%s] No valid tool message found in history", self._request_id)
+        return None
 
     def _get_system_prompt(self) -> str:
         """Get system prompt."""
