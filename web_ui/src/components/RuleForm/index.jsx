@@ -641,65 +641,69 @@ useEffect(() => {
     // Use full form snapshot to avoid missing fields in step-by-step UI.
     const values = form.getFieldsValue(true);
 
-    if (!values?.name || !String(values.name).trim()) {
-      message.error(t('smartCenter.pleaseEnterRuleName'));
-      return false;
-    }
-    if (!Array.isArray(values.trigger_devices) || values.trigger_devices.length === 0) {
-      message.error(t('smartCenter.pleaseSelectTriggerDevices'));
-      return false;
-    }
-    if ((conditionType === 'direct' || conditionType === 'hybrid') && !String(values.ha_condition || '').trim()) {
-      message.error(t('smartCenter.pleaseEnterTriggerCondition'));
-      return false;
-    }
-    if (conditionType === 'direct' && !values.trigger_entity_id) {
-      message.error(t('smartCenter.pleaseSelectTriggerEntity') || '请选择用于判断状态的实体');
-      return false;
-    }
-    const selectedDeviceIds = values.trigger_devices || [];
-    const selectedHaCount = selectedDeviceIds.filter((id) => triggerDeviceTypeMap.get(id) === 'ha').length;
-    if (selectedHaCount > 1) {
-      message.error(t('smartCenter.onlyOneHaDeviceAllowed') || '仅支持选择一个 HA 设备作为生效设备');
-      return false;
-    }
-    if (conditionType !== 'direct' && conditionType !== 'detection' && conditionType !== 'face_recognition'
-      && !String(values.condition || '').trim()) {
-      message.error(t('smartCenter.pleaseEnterTriggerCondition'));
-      return false;
-    }
-
+    // Define these variables outside the condition block so they're accessible everywhere
     const hasActions = selectedActions.length > 0;
     const hasNotification = sendNotification && notificationText.trim();
     const hasXiaoAIBroadcast = enableXiaoAIBroadcast && xiaoaiBroadcastText.trim();
     const hasXiaoAIWakeup = enableXiaoAIProactiveInquiry;
-    // 小爱音箱播报验证
-    if (enableXiaoAIBroadcast) {
-      // 如果是文本模式，必须输入文本
-      if (xiaoaiBroadcastMode === 'text' && !xiaoaiBroadcastText.trim()) {
-        message.error(t('smartCenter.pleaseEnterXiaoAIBroadcastText'));
+
+    // Only validate on submit, not on cancel
+    if (type !== 'cancel') {
+      if (!values?.name || !String(values.name).trim()) {
+        message.error(t('smartCenter.pleaseEnterRuleName'));
         return false;
       }
-      // 如果是模型回复模式，可以不输入问题，但需要有指定实体或设备控制动作
-      if (xiaoaiBroadcastMode === 'model_reply' && !xiaoaiBroadcastText.trim()) {
-        const hasTargetEntities = selectedTargetEntities.length > 0;
-        const hasAutomationActions = selectedActions.length > 0;
-        const hasAiRecommendActions = aiRecommendActions.length > 0;
-        if (!hasTargetEntities && !hasAutomationActions && !hasAiRecommendActions) {
-          message.error('请输入问题内容，或选择指定实体，或配置设备控制动作');
+      if (!Array.isArray(values.trigger_devices) || values.trigger_devices.length === 0) {
+        message.error(t('smartCenter.pleaseSelectTriggerDevices'));
+        return false;
+      }
+      if ((conditionType === 'direct' || conditionType === 'hybrid') && !String(values.ha_condition || '').trim()) {
+        message.error(t('smartCenter.pleaseEnterTriggerCondition'));
+        return false;
+      }
+      if (conditionType === 'direct' && !values.trigger_entity_id) {
+        message.error(t('smartCenter.pleaseSelectTriggerEntity') || '请选择用于判断状态的实体');
+        return false;
+      }
+      const selectedDeviceIds = values.trigger_devices || [];
+      const selectedHaCount = selectedDeviceIds.filter((id) => triggerDeviceTypeMap.get(id) === 'ha').length;
+      if (selectedHaCount > 1) {
+        message.error(t('smartCenter.onlyOneHaDeviceAllowed') || '仅支持选择一个 HA 设备作为生效设备');
+        return false;
+      }
+      if (conditionType !== 'direct' && conditionType !== 'detection' && conditionType !== 'face_recognition'
+        && !String(values.condition || '').trim()) {
+        message.error(t('smartCenter.pleaseEnterTriggerCondition'));
+        return false;
+      }
+      // 小爱音箱播报验证
+      if (enableXiaoAIBroadcast) {
+        // 如果是文本模式，必须输入文本
+        if (xiaoaiBroadcastMode === 'text' && !xiaoaiBroadcastText.trim()) {
+          message.error(t('smartCenter.pleaseEnterXiaoAIBroadcastText'));
           return false;
         }
+        // 如果是模型回复模式，可以不输入问题，但需要有指定实体或设备控制动作
+        if (xiaoaiBroadcastMode === 'model_reply' && !xiaoaiBroadcastText.trim()) {
+          const hasTargetEntities = selectedTargetEntities.length > 0;
+          const hasAutomationActions = selectedActions.length > 0;
+          const hasAiRecommendActions = aiRecommendActions.length > 0;
+          if (!hasTargetEntities && !hasAutomationActions && !hasAiRecommendActions) {
+            message.error('请输入问题内容，或选择指定实体，或配置设备控制动作');
+            return false;
+          }
+        }
       }
-    }
 
-    if (type === 'submit') {
-      const hasAiRecommendActions = aiRecommendExecuteType === 'dynamic'
-        ? aiRecommendActionDescriptions.length > 0
-        : aiRecommendActions.length > 0;
+      if (type === 'submit') {
+        const hasAiRecommendActions = aiRecommendExecuteType === 'dynamic'
+          ? aiRecommendActionDescriptions.length > 0
+          : aiRecommendActions.length > 0;
 
-      if (!hasAiRecommendActions && !hasActions && !hasNotification && !hasXiaoAIBroadcast && !hasXiaoAIWakeup) {
-        message.error(t('common.pleaseSelectAction'));
-        return false;
+        if (!hasAiRecommendActions && !hasActions && !hasNotification && !hasXiaoAIBroadcast && !hasXiaoAIWakeup) {
+          message.error(t('common.pleaseSelectAction'));
+          return false;
+        }
       }
     }
 

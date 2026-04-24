@@ -262,6 +262,13 @@ class ChatAgent(Actor):
                     break
 
             finalized_content = "".join(chunk_content_cache)
+
+            # Check for final answer tag and force finish
+            if "<final_answer>" in finalized_content:
+                finish_reason = "stop"
+                logger.info("[%s] Step %d: Detected <final_answer> tag in response, forcing completion",
+                            self._request_id, step_number)
+
             finalized_tool_calls: list[
                 ChatCompletionMessageToolCall] = self._merge_delta_tool_calls(
                     delta_tool_call_list)

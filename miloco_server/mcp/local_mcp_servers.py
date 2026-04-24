@@ -8,6 +8,7 @@ Uses Tool.from_function() to automatically generate parameter definitions, more 
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Dict, Any, Optional, Annotated
 
 import numpy as np
@@ -24,6 +25,45 @@ from miloco_server.tools.vision_chat_tool import VisionChatTool, VisionUnderstan
 from thespian.actors import ActorExitRequest
 
 logger = logging.getLogger(__name__)
+
+
+def get_current_time(
+    timezone: Annotated[Optional[str], "时区，如 'Asia/Shanghai'、'UTC'，默认使用系统时区"] = None
+) -> dict[str, Any]:
+    """
+    获取当前时间的工具函数。
+    Tool function to get current time.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        
+        if timezone:
+            try:
+                tz = ZoneInfo(timezone)
+                now = datetime.now(tz)
+            except ValueError:
+                return {"success": False, "error": f"Unknown timezone: {timezone}"}
+        else:
+            now = datetime.now()
+
+        result = {
+            "success": True,
+            "datetime": now.isoformat(),
+            "year": now.year,
+            "month": now.month,
+            "day": now.day,
+            "hour": now.hour,
+            "minute": now.minute,
+            "second": now.second,
+            "weekday": now.isoweekday(),
+            "weekday_name": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][now.isoweekday() - 1],
+            "timezone": timezone or "system",
+            "formatted": now.strftime("%Y年%m月%d日 %H:%M:%S"),
+            "formatted_en": now.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 class LocalMCPBase:
@@ -115,6 +155,18 @@ class LocalDefaultMcp(LocalMCPBase):
             ),
         )
         self.mcp.add_tool(tool=who_am_i_tool)
+
+        current_time_tool = Tool.from_function(
+            fn=get_current_time,
+            name="get_current_time",
+            description=(
+                "获取当前时间的工具。适用于用户问“现在几点了”、“当前时间”、“今天几号”等请求。"
+                "可以选择指定时区，如 Asia/Shanghai（上海）、UTC 等。"
+                "Tool for getting current time. Use this when user asks about current time or date."
+                "Optional timezone parameter, e.g., Asia/Shanghai, UTC."
+            ),
+        )
+        self.mcp.add_tool(tool=current_time_tool)
 
         # Register cached HA state query tools
         await self._register_cached_ha_tools()
