@@ -32,6 +32,17 @@ jobs:
       version: ${{ steps.vars.outputs.VERSION }}
       lowercase-owner: ${{ steps.lowercase.outputs.LOWERCASE_OWNER }}
     steps:
+      - name: Install Node.js
+        run: |
+          if which apt-get; then
+            apt-get update && apt-get install -y curl ca-certificates
+            curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
+          elif which apk; then
+            apk add curl ca-certificates nodejs npm
+          elif which yum; then
+            yum install -y curl ca-certificates nodejs npm
+          fi
+
       - name: Checkout
         uses: actions/checkout@v3
         with:
