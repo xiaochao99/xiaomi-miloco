@@ -24,6 +24,11 @@ add_subdirectory(${LLAMA_THIRD_PARTY_PATH}/src  ${CMAKE_CURRENT_BINARY_DIR}/llam
 
 target_link_libraries(llama-mico PRIVATE llama ggml)
 
+# Link CUDA backend if enabled
+if (GGML_CUDA)
+    target_link_libraries(llama-mico PRIVATE ggml-cuda)
+endif()
+
 add_subdirectory(utils)
 add_subdirectory(cache_manager)
 add_subdirectory(batch_scheduling)

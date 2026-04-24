@@ -9,7 +9,8 @@ BUILD_TYPE=Release
 
 # Build CUDA architectures. Please modify it according to your own needs if necessary. 
 # For reference https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/#gpu-feature-list
-CUDA_ARCS="61;75;80;86;89;90" # added 61 for Pascal GPUs (Tesla P40, GTX 10xx series)
+# Note: Use spaces to separate architectures, not semicolons
+CUDA_ARCS="61 75 80 86 89 90" # added 61 for Pascal GPUs (Tesla P40, GTX 10xx series)
 
 # Build support native cpu architecture (ON)/ all cpu architectures (OFF)
 NATIVE_ARCS=OFF
