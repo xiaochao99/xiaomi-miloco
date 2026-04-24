@@ -1,7 +1,7 @@
 services:
   ai_engine:
     container_name: miloco-ai_engine
-    image: ${DOCKER_REPO}xiaomi/miloco-ai_engine:latest
+    image: ${DOCKER_REPO}xiaochao99/miloco-ai_engine:latest
     privileged: true
     ports:
       - ${AI_ENGINE_PORT:-8001}:${AI_ENGINE_PORT:-8001}

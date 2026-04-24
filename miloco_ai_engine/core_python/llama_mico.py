@@ -8,6 +8,7 @@ Directly calls LLaMA-MICO C API using ctypes
 
 import ctypes
 import json
+import os
 from typing import List, Optional, Dict, Any, Union, Iterator
 from miloco_ai_engine.schema.models_schema import ChatCompletionResponse, ChatCompletionChoice, ChatMessage, Role, FinishReason
 import threading
@@ -52,6 +53,18 @@ class LlamaMico:
         # to avoid GPU initialization error in GPU-less environments
         if config.get("n_gpu_layers", 0) == 0:
             config["main_gpu"] = -1
+        
+        # Ensure CUDA libraries are accessible for GPU mode
+        if config.get("device", "").lower() == "cuda":
+            prev_ld = os.environ.get("LD_LIBRARY_PATH", "")
+            cuda_paths = []
+            for cuda_path in ["/usr/local/cuda/lib64", "/usr/local/nvidia/lib", "/usr/local/nvidia/lib64"]:
+                if os.path.isdir(cuda_path) and cuda_path not in prev_ld:
+                    cuda_paths.append(cuda_path)
+            if cuda_paths:
+                new_ld_parts = cuda_paths + ([prev_ld] if prev_ld else [])
+                os.environ["LD_LIBRARY_PATH"] = ":".join(filter(None, new_ld_parts))
+                logger.debug("Set LD_LIBRARY_PATH for CUDA: %s", os.environ["LD_LIBRARY_PATH"])
 
         config_json = json.dumps(config, ensure_ascii=False)
         handle_ptr = ctypes.c_void_p()

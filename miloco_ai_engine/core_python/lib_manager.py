@@ -194,9 +194,19 @@ class LibraryManager:
                 logger.info("Attempting to load library from: %s", lib_path)
                 try:
                     # Ensure dependent .so resolve from the same directory first.
+                    # Include CUDA libraries path for GPU support
                     prev_ld = os.environ.get("LD_LIBRARY_PATH", "")
-                    if lib_dir and (not prev_ld.startswith(lib_dir)):
-                        os.environ["LD_LIBRARY_PATH"] = f"{lib_dir}:{prev_ld}" if prev_ld else lib_dir
+                    cuda_paths = []
+                    # Common CUDA library paths
+                    for cuda_path in ["/usr/local/cuda/lib64", "/usr/local/nvidia/lib", "/usr/local/nvidia/lib64"]:
+                        if os.path.isdir(cuda_path) and cuda_path not in prev_ld:
+                            cuda_paths.append(cuda_path)
+                    
+                    new_ld_parts = [lib_dir] + cuda_paths
+                    if prev_ld:
+                        new_ld_parts.append(prev_ld)
+                    os.environ["LD_LIBRARY_PATH"] = ":".join(filter(None, new_ld_parts))
+                    logger.debug("Set LD_LIBRARY_PATH to: %s", os.environ["LD_LIBRARY_PATH"])
 
                     # Load library using RTLD_GLOBAL mode with full path
                     self._library = ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
