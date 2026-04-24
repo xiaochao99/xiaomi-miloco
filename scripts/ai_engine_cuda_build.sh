@@ -28,7 +28,8 @@ cmake -S "${AI_ENGINE_DIR}" -B "${BUILD_DIR}" \
     -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
     -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCS} \
     -DGGML_CUDA=ON \
-    -DGGML_NATIVE=${NATIVE_ARCS}
+    -DGGML_NATIVE=${NATIVE_ARCS} \
+    -DCMAKE_CXX_FLAGS="-fno-gcse -fno-fat-lto-objects"
 
 cmake --build "${BUILD_DIR}" --target llama-mico -j"$(nproc)"
 cmake --install "${BUILD_DIR}" --prefix "${OUTPUT_DIR}"
