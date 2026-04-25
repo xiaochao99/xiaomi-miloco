@@ -160,9 +160,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 ################################################
 FROM ai_engine-base AS ai_engine
 
-ENV LD_LIBRARY_PATH=/app/output/lib/cpu:/app/output/lib/gpu:/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:${LD_LIBRARY_PATH}
-ENV LLAMA_MICO_LIB_MODE=auto
-
 WORKDIR /app
 
 COPY --from=ai_engine-builder /app/output_cpu /app/output_cpu
@@ -176,6 +173,11 @@ RUN set -eux; \
     # keep a "default" name for compatibility (GPU one)
     cp -a /app/output/lib/gpu/libllama-mico.so /app/output/lib/libllama-mico.so; \
     cp -a /app/output/lib/cpu/libllama-mico.so /app/output/lib/libllama-mico-cpu.so
+
+# Set environment variables after file operations to avoid cache invalidation
+# Priority: CUDA libs first, then GPU libs, then CPU libs
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/app/output/lib/gpu:/app/output/lib/cpu
+ENV LLAMA_MICO_LIB_MODE=auto
 COPY config/ai_engine_config.yaml /app/config/ai_engine_config.yaml
 COPY config/prompt_config.yaml /app/config/prompt_config.yaml
 COPY miloco_ai_engine /app/miloco_ai_engine
