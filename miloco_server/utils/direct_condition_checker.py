@@ -78,6 +78,8 @@ class DirectConditionChecker:
             field = match.group(1).strip()
             operator = match.group(2).strip()
             value = match.group(3).strip().strip('"\'')
+            if field.startswith('attributes.'):
+                field = field[len('attributes.'):]
             return {
                 'type': 'comparison',
                 'field': field,
@@ -93,6 +95,8 @@ class DirectConditionChecker:
             operator = match.group(2).strip().lower()
             value_str = match.group(3).strip()
             values = [v.strip().strip('"\'') for v in value_str.split(',')]
+            if field.startswith('attributes.'):
+                field = field[len('attributes.'):]
             return {
                 'type': 'list',
                 'field': field,
@@ -107,6 +111,8 @@ class DirectConditionChecker:
             field = match.group(1).strip()
             operator = match.group(2).strip().lower()
             value = match.group(3).strip().strip('"\'')
+            if field.startswith('attributes.'):
+                field = field[len('attributes.'):]
             return {
                 'type': 'regex',
                 'field': field,
@@ -231,11 +237,11 @@ class DirectConditionChecker:
                     )
                 elif condition_type == 'list':
                     result = DirectConditionChecker._check_list(
-                        state_value, operator, expected_value
+                        state_value, operator, expected_value, state_attributes, field
                     )
                 elif condition_type == 'regex':
                     result = DirectConditionChecker._check_regex(
-                        state_value, operator, expected_value
+                        state_value, operator, expected_value, state_attributes, field
                     )
                 elif condition_type == 'natural':
                     result = DirectConditionChecker._check_comparison(
@@ -319,9 +325,15 @@ class DirectConditionChecker:
         return False
 
     @staticmethod
-    def _check_list(state_value: str, operator: str, expected_values: List[str]) -> bool:
+    def _check_list(state_value: str, operator: str, expected_values: List[str], attributes: Dict[str, Any] = None, field: str = 'state') -> bool:
         """Check list membership condition."""
-        state_str = str(state_value).lower()
+        # Use attribute value if field is not 'state' and attribute exists
+        if field != 'state' and attributes and field in attributes:
+            value_to_check = attributes[field]
+        else:
+            value_to_check = state_value
+            
+        state_str = str(value_to_check).lower()
         expected_list = [str(v).lower() for v in expected_values]
 
         if operator == 'in':
@@ -332,14 +344,20 @@ class DirectConditionChecker:
         return False
 
     @staticmethod
-    def _check_regex(state_value: str, operator: str, pattern: str) -> bool:
+    def _check_regex(state_value: str, operator: str, pattern: str, attributes: Dict[str, Any] = None, field: str = 'state') -> bool:
         """Check regex match condition."""
+        # Use attribute value if field is not 'state' and attribute exists
+        if field != 'state' and attributes and field in attributes:
+            value_to_check = attributes[field]
+        else:
+            value_to_check = state_value
+            
         try:
             flags = re.IGNORECASE
             if operator == 'matches':
-                return bool(re.search(pattern, str(state_value), flags))
+                return bool(re.search(pattern, str(value_to_check), flags))
             elif operator == 'not matches':
-                return not bool(re.search(pattern, str(state_value), flags))
+                return not bool(re.search(pattern, str(value_to_check), flags))
         except re.error as e:
             logger.error("Invalid regex pattern: %s, error: %s", pattern, e)
 

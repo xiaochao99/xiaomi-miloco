@@ -126,10 +126,15 @@ class TriggerRuleRunner:
         for rule in self.trigger_rules.values():
             if rule.ha_devices:
                 for dev_id in rule.ha_devices:
-                    all_watched.update(self._ha_device_map.get(dev_id, []))
+                    if dev_id == 'helpers_virtual_device':
+                        # 辅助元素实体需要从规则的trigger_entity_id获取
+                        if rule.trigger_entity_id:
+                            all_watched.add(rule.trigger_entity_id)
+                    else:
+                        all_watched.update(self._ha_device_map.get(dev_id, []))
 
         if all_watched:
-            logger.info("Updating watched entities (%d)", len(all_watched))
+            logger.info("Updating watched entities (%d): %s", len(all_watched), all_watched)
             self._ha_listener.update_watched_entities(list(all_watched))
 
     async def _refresh_ha_device_map(self):
@@ -165,7 +170,25 @@ class TriggerRuleRunner:
                     for rule in self.trigger_rules.values():
                         if rule.ha_devices:
                             for dev_id in rule.ha_devices:
-                                all_entities.update(self._ha_device_map.get(dev_id, []))
+                                if dev_id == 'helpers_virtual_device':
+                                    # 获取所有辅助元素实体（不属于任何设备的实体）
+                                    helper_domains = {
+                                        'input_boolean', 'input_number', 'input_text', 'input_select',
+                                        'input_datetime', 'input_time', 'input_date',
+                                        'toggle', 'datetime', 'time', 'date', 'number', 'text', 'select',
+                                        'sun', 'zone', 'person', 'device_tracker', 'proximity', 'calendar',
+                                        'weather', 'geo_location', 'group', 'counter', 'timer'
+                                    }
+                                    # 从HA获取所有状态
+                                    all_states = await self.ha_proxy.get_states()
+                                    if all_states:
+                                        for state_obj in all_states:
+                                            entity_id = state_obj.get('entity_id', '')
+                                            entity_domain = entity_id.split('.')[0] if '.' in entity_id else ''
+                                            if entity_domain in helper_domains:
+                                                all_entities.add(entity_id)
+                                else:
+                                    all_entities.update(self._ha_device_map.get(dev_id, []))
 
                     watched_list = list(all_entities)
                     logger.info("Updating watched entities (%d): %s", len(watched_list), watched_list)
@@ -252,8 +275,18 @@ class TriggerRuleRunner:
                 if is_detection_mode:
                     continue
 
-                # If rule cares about any of the parent devices of this entity
+                # 检查规则是否关心这个实体
+                rule_cares_about_entity = False
+                
+                # 检查是否是普通HA设备的实体
                 if any(dev_id in rule.ha_devices for dev_id in parent_device_ids):
+                    rule_cares_about_entity = True
+                
+                # 检查是否是辅助元素实体
+                elif 'helpers_virtual_device' in rule.ha_devices and getattr(rule, "trigger_entity_id", None) == entity_id:
+                    rule_cares_about_entity = True
+
+                if rule_cares_about_entity:
                     # Direct mode with selected entity: use edge-trigger logic to avoid stale dedupe state.
                     is_direct_mode = (
                         not rule.cameras and
@@ -346,10 +379,15 @@ class TriggerRuleRunner:
             rule_device_states = {}
 
             for dev_id in rule.ha_devices:
-                entities = self._ha_device_map.get(dev_id, [])
-                for entity in entities:
-                    if entity in all_states:
-                        rule_device_states[entity] = all_states[entity]
+                if dev_id == 'helpers_virtual_device':
+                    # 辅助元素实体需要从规则的trigger_entity_id获取
+                    if rule.trigger_entity_id and rule.trigger_entity_id in all_states:
+                        rule_device_states[rule.trigger_entity_id] = all_states[rule.trigger_entity_id]
+                else:
+                    entities = self._ha_device_map.get(dev_id, [])
+                    for entity in entities:
+                        if entity in all_states:
+                            rule_device_states[entity] = all_states[entity]
 
             if not rule_device_states:
                 continue
@@ -529,14 +567,22 @@ class TriggerRuleRunner:
             # Add entities from selected devices
             if rule.ha_devices:
                 for dev_id in rule.ha_devices:
-                    entities = self._ha_device_map.get(dev_id, [])
-                    for entity in entities:
-                        if entity in device_states:
-                            # Clone state info and mark if it was the trigger source
-                            state_info = device_states[entity].copy()
-                            if entity in trigger_sources:
+                    if dev_id == 'helpers_virtual_device':
+                        # 辅助元素实体需要从规则的trigger_entity_id获取
+                        if rule.trigger_entity_id and rule.trigger_entity_id in device_states:
+                            state_info = device_states[rule.trigger_entity_id].copy()
+                            if rule.trigger_entity_id in trigger_sources:
                                 state_info["_is_trigger_source"] = True
-                            rule_device_states[entity] = state_info
+                            rule_device_states[rule.trigger_entity_id] = state_info
+                    else:
+                        entities = self._ha_device_map.get(dev_id, [])
+                        for entity in entities:
+                            if entity in device_states:
+                                # Clone state info and mark if it was the trigger source
+                                state_info = device_states[entity].copy()
+                                if entity in trigger_sources:
+                                    state_info["_is_trigger_source"] = True
+                                rule_device_states[entity] = state_info
 
             debug_states = {k: v.get("state") for k, v in rule_device_states.items()}
             logger.info(

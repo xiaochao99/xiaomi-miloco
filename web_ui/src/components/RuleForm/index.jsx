@@ -106,6 +106,9 @@ const [form] = Form.useForm();
   
   // 用于快速数据获取的目标实体
   const [selectedTargetEntities, setSelectedTargetEntities] = useState([]);
+  
+  // 属性选择状态
+  const [selectedTriggerAttribute, setSelectedTriggerAttribute] = useState(null);
 
   useEffect(() => {
     if (passedHaDeviceOptions?.length === 0 && !globalHaFetched) {
@@ -193,6 +196,13 @@ const [form] = Form.useForm();
         });
 
     if (haOptions?.length > 0) {
+      // 添加辅助元素虚拟设备
+      haOptions.push({
+        label: '辅助元素',
+        value: 'helpers_virtual_device',
+        _type: 'ha'
+      });
+      
       newOptions.push({
         label: t('smartCenter.haDevices') || 'HA Devices',
         options: haOptions
@@ -213,31 +223,71 @@ const [form] = Form.useForm();
   }, [triggerDeviceOptions]);
 
   const triggerEntityOptions = useMemo(() => {
-    const allowedDomains = new Set(['switch', 'light', 'sensor', 'binary_sensor']);
+    const allowedDomains = new Set([
+      'switch', 'light', 'sensor', 'binary_sensor', 'event', 'button', 'input_button', 'scene',
+      'climate', 'automation', 'cover', 'fan', 'lock', 'vacuum', 'alarm_control_panel', 'media_player',
+      'humidifier', 'thermostat', 'water_heater',
+      'input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_time', 'input_date',
+      'toggle', 'datetime', 'time', 'date', 'number', 'text', 'select',
+      'sun', 'zone', 'person', 'device_tracker', 'proximity', 'calendar',
+      'weather', 'geo_location', 'group', 'counter', 'timer'
+    ]);
     const selectedDevices = form.getFieldValue('trigger_devices') || [];
     const entities = [];
     const seen = new Set();
     selectedDevices.forEach((did) => {
-      const deviceEntities = haDeviceEntitiesMap[did] || [];
-      deviceEntities.forEach((entityId) => {
-        const domain = typeof entityId === 'string' ? entityId.split('.')[0] : '';
-        if (!allowedDomains.has(domain)) {
-          return;
-        }
-        if (!seen.has(entityId)) {
-          seen.add(entityId);
-          const friendly = haEntityNameMap?.[entityId];
-          const label = friendly ? `${friendly}（${entityId}）` : entityId;
-          entities.push({ label, value: entityId });
-        }
-      });
+      // 处理辅助元素虚拟设备
+      if (did === 'helpers_virtual_device') {
+        // 辅助元素实体类型
+        const helperDomains = new Set([
+          'input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_time', 'input_date',
+          'toggle', 'datetime', 'time', 'date', 'number', 'text', 'select',
+          'sun', 'zone', 'person', 'device_tracker', 'proximity', 'calendar',
+          'weather', 'geo_location', 'group', 'counter', 'timer'
+        ]);
+        // 从haEntityStateMetaMap中获取所有辅助元素实体
+        Object.keys(haEntityStateMetaMap || {}).forEach((entityId) => {
+          const domain = typeof entityId === 'string' ? entityId.split('.')[0] : '';
+          if (helperDomains.has(domain)) {
+            if (!seen.has(entityId)) {
+              seen.add(entityId);
+              const friendly = haEntityNameMap?.[entityId];
+              const label = friendly ? `${friendly}（${entityId}）` : entityId;
+              entities.push({ label, value: entityId });
+            }
+          }
+        });
+      } else {
+        // 处理普通设备
+        const deviceEntities = haDeviceEntitiesMap[did] || [];
+        deviceEntities.forEach((entityId) => {
+          const domain = typeof entityId === 'string' ? entityId.split('.')[0] : '';
+          if (!allowedDomains.has(domain)) {
+            return;
+          }
+          if (!seen.has(entityId)) {
+            seen.add(entityId);
+            const friendly = haEntityNameMap?.[entityId];
+            const label = friendly ? `${friendly}（${entityId}）` : entityId;
+            entities.push({ label, value: entityId });
+          }
+        });
+      }
     });
     return entities;
-  }, [form, haDeviceEntitiesMap, triggerDeviceOptions, haEntityNameMap]);
+  }, [form, haDeviceEntitiesMap, triggerDeviceOptions, haEntityNameMap, haEntityStateMetaMap]);
 
   // 用于快速数据获取的所有可用HA实体选项
   const haEntityOptions = useMemo(() => {
-    const allowedDomains = new Set(['switch', 'light', 'sensor', 'binary_sensor', 'climate']);
+    const allowedDomains = new Set([
+      'switch', 'light', 'sensor', 'binary_sensor', 'event', 'button', 'input_button', 'scene',
+      'climate', 'automation', 'cover', 'fan', 'lock', 'vacuum', 'alarm_control_panel', 'media_player',
+      'humidifier', 'thermostat', 'water_heater',
+      'input_boolean', 'input_number', 'input_text', 'input_select', 'input_datetime', 'input_time', 'input_date',
+      'toggle', 'datetime', 'time', 'date', 'number', 'text', 'select',
+      'sun', 'zone', 'person', 'device_tracker', 'proximity', 'calendar',
+      'weather', 'geo_location', 'group', 'counter', 'timer'
+    ]);
     const entities = [];
     const seen = new Set();
     Object.values(haDeviceEntitiesMap).forEach((deviceEntities) => {
@@ -264,15 +314,42 @@ const [form] = Form.useForm();
     }
     return selectedTriggerEntityId.split('.')[0] || null;
   }, [selectedTriggerEntityId]);
+  
+  // 获取所选实体的可用属性选项
+  const triggerEntityAttributeOptions = useMemo(() => {
+    if (!selectedTriggerEntityId) {
+      return [];
+    }
+    const meta = haEntityStateMetaMap?.[selectedTriggerEntityId];
+    if (!meta || !meta.attributes) {
+      return [];
+    }
+    const attrs = meta.attributes;
+    return Object.keys(attrs).map(key => ({
+      label: `${key} (${typeof attrs[key] === 'object' ? JSON.stringify(attrs[key]) : attrs[key]})`,
+      value: key,
+    }));
+  }, [selectedTriggerEntityId, haEntityStateMetaMap]);
+  
   // 判断是否为数值型实体：根据 ha_condition 的格式来判断
-  // 如果 ha_condition 匹配数值条件格式（如 state > 25），则显示数值输入框
+  // 如果 ha_condition 匹配数值条件格式（如 state > 25 或 attributes.temperature > 25），则显示数值输入框
   // 否则显示状态选择框
   const isNumericTriggerEntity = useMemo(() => {
     const haConditionValue = form.getFieldValue('ha_condition') || formData?.ha_condition;
     if (haConditionValue && typeof haConditionValue === 'string') {
-      // 检查是否匹配数值条件格式
-      const numericPattern = /^\s*state\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/;
-      if (numericPattern.test(haConditionValue)) {
+      // 检查是否匹配数值条件格式（包括attributes.xxx格式）
+      const numericPattern = /^\s*(state|attributes\.\w+)\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/;
+      const matched = haConditionValue.match(numericPattern);
+      if (matched) {
+        // 如果是属性条件，检查属性值是否为数值
+        if (matched[1].startsWith('attributes.')) {
+          const attrKey = matched[1].replace('attributes.', '');
+          const attrMeta = haEntityStateMetaMap?.[selectedTriggerEntityId]?.attributes?.[attrKey];
+          if (attrMeta !== undefined && !isNaN(Number(attrMeta))) {
+            return true;
+          }
+          return false;
+        }
         return true;
       }
       // 如果是纯字符串状态值（如"已开锁"）或状态条件格式（如'state == "已开锁"'），则不是数值型
@@ -280,7 +357,7 @@ const [form] = Form.useForm();
     }
     // 默认情况下，如果是 sensor 类型，假设是数值型
     return triggerEntityDomain === 'sensor';
-  }, [triggerEntityDomain, formData?.ha_condition, form]);
+  }, [triggerEntityDomain, formData?.ha_condition, form, selectedTriggerEntityId, haEntityStateMetaMap]);
   const [numericOperator, setNumericOperator] = useState('>');
   const [numericThreshold, setNumericThreshold] = useState(null);
 
@@ -289,11 +366,24 @@ const [form] = Form.useForm();
     const timer = setTimeout(() => {
       const haConditionValue = form.getFieldValue('ha_condition');
       if (haConditionValue && typeof haConditionValue === 'string') {
-        const matched = haConditionValue.match(/^\s*state\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/);
+        // 支持state和attributes格式的数值条件解析
+        const matched = haConditionValue.match(/^\s*(state|attributes\.\w+)\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$/);
         if (matched) {
-          setNumericOperator(matched[1]);
-          setNumericThreshold(parseFloat(matched[2]));
+          setNumericOperator(matched[2]);
+          setNumericThreshold(parseFloat(matched[3]));
+          // 如果是attributes格式，提取属性名并设置
+          if (matched[1].startsWith('attributes.')) {
+            const attrKey = matched[1].replace('attributes.', '');
+            setSelectedTriggerAttribute(attrKey);
+          } else {
+            setSelectedTriggerAttribute(null);
+          }
           return;
+        }
+        // 如果不是数值条件格式，也尝试解析attributes.xxx格式的等值条件
+        const attrMatched = haConditionValue.match(/^\s*attributes\.(\w+)\s*(==|!=)\s*(.+?)\s*$/);
+        if (attrMatched) {
+          setSelectedTriggerAttribute(attrMatched[1]);
         }
       }
       setNumericOperator('>');
@@ -378,8 +468,36 @@ const [form] = Form.useForm();
 
   const buildStateCondition = (stateValue) => {
     const safeValue = String(stateValue).replace(/"/g, '\\"');
+    // 如果选择了属性，使用attributes格式；否则使用state格式
+    if (selectedTriggerAttribute) {
+      return `attributes.${selectedTriggerAttribute} == "${safeValue}"`;
+    }
     return `state == "${safeValue}"`;
   };
+  
+  const buildAttributeCondition = (attrValue) => {
+    const safeValue = String(attrValue).replace(/"/g, '\\"');
+    return `attributes.${selectedTriggerAttribute} == "${safeValue}"`;
+  };
+  
+  // 属性值的选项（当选择了特定属性时使用）
+  const attributeConditionOptions = useMemo(() => {
+    if (!selectedTriggerAttribute || !selectedTriggerEntityId) {
+      return [];
+    }
+    const meta = haEntityStateMetaMap?.[selectedTriggerEntityId];
+    if (!meta || !meta.attributes) {
+      return [];
+    }
+    const attrValue = meta.attributes[selectedTriggerAttribute];
+    if (attrValue === undefined || attrValue === null) {
+      return [];
+    }
+    return [{
+      label: String(attrValue),
+      value: buildAttributeCondition(attrValue),
+    }];
+  }, [selectedTriggerAttribute, selectedTriggerEntityId, haEntityStateMetaMap]);
   const haConditionOptions = useMemo(
     () => selectableStateValues.map((stateValue) => ({
       label: stateValue,
@@ -413,7 +531,18 @@ const [form] = Form.useForm();
       form.setFieldsValue({ ha_condition: '' });
       return;
     }
-    form.setFieldsValue({ ha_condition: `state ${nextOperator} ${nextThreshold}` });
+    // 如果选择了属性，使用attributes格式；否则使用state格式
+    const fieldPrefix = selectedTriggerAttribute ? `attributes.${selectedTriggerAttribute}` : 'state';
+    form.setFieldsValue({ ha_condition: `${fieldPrefix} ${nextOperator} ${nextThreshold}` });
+  };
+  
+  // 处理属性选择变化
+  const handleAttributeChange = (attributeKey) => {
+    setSelectedTriggerAttribute(attributeKey);
+    // 清除之前的ha_condition值，因为属性变了，之前的条件不再适用
+    form.setFieldsValue({ ha_condition: '' });
+    setNumericOperator('>');
+    setNumericThreshold(null);
   };
 
   const [checkedMcpServices, setCheckedMcpServices] = useState([]);
@@ -482,10 +611,17 @@ useEffect(() => {
       // 处理 ha_condition 的格式转换：如果是纯字符串状态值（如"已开锁"），转换为条件格式（如"state == \"已开锁\""）
       let haConditionValue = formData.ha_condition || '';
       if (haConditionValue && typeof haConditionValue === 'string') {
-        // 检查是否已经是条件格式（以 "state " 开头）
-        if (!haConditionValue.startsWith('state ') && !haConditionValue.startsWith('numeric ')) {
+        // 检查是否已经是条件格式（以 "state " 或 "attributes." 开头）
+        if (!haConditionValue.startsWith('state ') && !haConditionValue.startsWith('attributes.') && !haConditionValue.startsWith('numeric ')) {
           // 转换为条件格式
           haConditionValue = `state == "${haConditionValue}"`;
+        }
+        // 从ha_condition中提取属性名
+        const attrMatch = haConditionValue.match(/^\s*attributes\.(\w+)\s*(==|!=)/);
+        if (attrMatch) {
+          setSelectedTriggerAttribute(attrMatch[1]);
+        } else {
+          setSelectedTriggerAttribute(null);
         }
       }
 
@@ -995,6 +1131,33 @@ useEffect(() => {
         </Form.Item>
       )}
 
+      {/* 属性选择器 - 在选择触发实体后显示 */}
+      {(conditionType === 'direct' || conditionType === 'hybrid') && selectedTriggerEntityId && (
+        <Form.Item
+          className={styles.customFormLabel}
+          label="选择属性"
+          name="trigger_attribute"
+        >
+          <Select
+            allowClear
+            placeholder="选择实体属性（可选，默认使用state）"
+            disabled={isReadonly || loading}
+            options={[
+              { label: '使用state值', value: '__state__' },
+              ...triggerEntityAttributeOptions
+            ]}
+            value={selectedTriggerAttribute ? selectedTriggerAttribute : '__state__'}
+            onChange={(value) => {
+              if (value === '__state__' || value === null || value === undefined) {
+                handleAttributeChange(null);
+              } else {
+                handleAttributeChange(value);
+              }
+            }}
+          />
+        </Form.Item>
+      )}
+
       {/* 混合模式：先显示HA设备状态条件（Step 1） */}
       {conditionType === 'hybrid' && (
         <Form.Item
@@ -1053,6 +1216,15 @@ useEffect(() => {
                 }}
               />
             </div>
+          ) : selectedTriggerAttribute && attributeConditionOptions.length > 0 ? (
+            <Select
+              allowClear
+              showSearch
+              placeholder={`请选择 ${selectedTriggerAttribute} 的值`}
+              disabled={isReadonly || loading || !selectedTriggerEntityId}
+              options={attributeConditionOptions}
+              optionFilterProp="label"
+            />
           ) : (
             <Select
               allowClear
@@ -1124,6 +1296,15 @@ useEffect(() => {
                 }}
               />
             </div>
+          ) : selectedTriggerAttribute && attributeConditionOptions.length > 0 ? (
+            <Select
+              allowClear
+              showSearch
+              placeholder={`请选择 ${selectedTriggerAttribute} 的值`}
+              disabled={isReadonly || loading || !selectedTriggerEntityId}
+              options={attributeConditionOptions}
+              optionFilterProp="label"
+            />
           ) : (
             <Select
               allowClear

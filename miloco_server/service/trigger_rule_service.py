@@ -185,7 +185,8 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
         ha_devices_grouped = await self._ha_service.get_ha_devices_grouped() if self._ha_service else {}
         if ha_device_ids:
             valid_ha_dids = set(ha_devices_grouped.keys())
-            invalid_ha = [did for did in ha_device_ids if did not in valid_ha_dids]
+            # 排除辅助元素虚拟设备
+            invalid_ha = [did for did in ha_device_ids if did not in valid_ha_dids and did != 'helpers_virtual_device']
             if invalid_ha:
                 raise ValidationException(f"Invalid HA device IDs: {', '.join(invalid_ha)}")
 
@@ -217,11 +218,17 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
 
         trigger_entity_id = trigger_rule.targets.trigger_entity_id
         if trigger_entity_id and ha_device_ids:
-            valid_entities = set()
-            for did in ha_device_ids:
-                valid_entities.update(ha_devices_grouped.get(did, {}).get("entities", []))
-            if trigger_entity_id not in valid_entities:
-                raise ValidationException(f"Invalid trigger_entity_id '{trigger_entity_id}' for selected HA devices")
+            # 检查是否包含辅助元素虚拟设备
+            if 'helpers_virtual_device' in ha_device_ids:
+                # 辅助元素虚拟设备的实体验证由前端处理，后端跳过验证
+                pass
+            else:
+                # 验证普通HA设备的实体
+                valid_entities = set()
+                for did in ha_device_ids:
+                    valid_entities.update(ha_devices_grouped.get(did, {}).get("entities", []))
+                if trigger_entity_id not in valid_entities:
+                    raise ValidationException(f"Invalid trigger_entity_id '{trigger_entity_id}' for selected HA devices")
 
     async def get_trigger_rule_logs(self, limit: int = 10) -> tuple[List[TriggerRuleLog], int]:
         """
