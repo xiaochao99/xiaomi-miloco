@@ -1,0 +1,42 @@
+.container {
+  padding: 20px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+}
+
+.tableCard {
+  :global {
+    .ant-table-wrapper {
+      .ant-table {
+        border-radius: 8px;
+      }
+    }
+  }
+}
+
+.contentCell {
+  cursor: pointer;
+  color: #1677ff;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.detailContent {
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+}

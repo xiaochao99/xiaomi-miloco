@@ -86,9 +86,17 @@ LOCAL_MODEL_CONFIG = {
 
 # Chat configuration
 CHAT_CONFIG = {
-    "agent_max_steps": _config["chat"]["agent_max_steps"],
-    "vision_use_img_count": _config["chat"]["vision_use_img_count"],
-    "chat_history_ttl": _config["chat"]["chat_history_ttl"],
+    "agent_max_steps": _config.get("chat", {}).get("agent_max_steps", 10),
+    "vision_use_img_count": _config.get("chat", {}).get("vision_use_img_count", 5),
+    "chat_history_ttl": _config.get("chat", {}).get("chat_history_ttl", 86400),
+    # OpenClaw framework configuration
+    "use_openclaw": _config.get("chat", {}).get("use_openclaw", True),
+    "openclaw": {
+        "default_role": _config.get("chat", {}).get("openclaw", {}).get("default_role", "smart_home_assistant"),
+        "enable_auto_role_selection": _config.get("chat", {}).get("openclaw", {}).get("enable_auto_role_selection", True),
+        "enable_intelligent_tool_selection": _config.get("chat", {}).get("openclaw", {}).get("enable_intelligent_tool_selection", True),
+        "enable_adaptive_learning": _config.get("chat", {}).get("openclaw", {}).get("enable_adaptive_learning", True),
+    }
 }
 
 # Trigger rule runner configuration

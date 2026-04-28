@@ -15,7 +15,15 @@ from fastapi.websockets import WebSocketDisconnect
 from thespian.actors import ActorExitRequest
 
 from miloco_server import actor_system
-from miloco_server.service.chat_agent_dispatcher import ChatAgentDispatcher
+from miloco_server.config import CHAT_CONFIG
+
+# Use OpenClaw enhanced dispatcher if enabled
+_use_openclaw = CHAT_CONFIG.get("use_openclaw", True)
+if _use_openclaw:
+    from miloco_server.service.chat_agent_dispatcher_enhanced import ChatAgentDispatcherEnhanced as ChatAgentDispatcher
+else:
+    from miloco_server.service.chat_agent_dispatcher import ChatAgentDispatcher
+
 from miloco_server.schema.chat_schema import Event
 from miloco_server.schema.common_schema import NormalResponse
 from miloco_server.service.manager import get_manager
@@ -26,6 +34,7 @@ router = APIRouter(prefix="/chat", tags=["Instant Query"])
 manager = get_manager()
 
 logger = logging.getLogger(name=__name__)
+logger.info("ChatController initialized, use_openclaw=%s", _use_openclaw)
 
 @router.websocket("/ws/query")
 async def ws_query(

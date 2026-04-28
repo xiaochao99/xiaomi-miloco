@@ -115,6 +115,13 @@ export const MENU_ITEMS = [
     icon: 'menuDevice',
     selectedIcon: 'menuDeviceSelected',
     path: '/home/faceLibrary',
+  },
+  {
+    key: '10',
+    label: 'home.menu.memoryManage',
+    icon: 'menuDevice',
+    selectedIcon: 'menuDeviceSelected',
+    path: '/home/memoryManage',
   }
 ];
 

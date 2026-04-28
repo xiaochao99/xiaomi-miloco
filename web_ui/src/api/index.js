@@ -123,3 +123,19 @@ export const listVoiceClones = () => getApi('/api/xiaomi-bridge/tts/voice_clone/
 export const deleteVoiceClone = (cloneId) => deleteApi(`/api/xiaomi-bridge/tts/voice_clone/${cloneId}`);
 export const synthesizeWithVoiceClone = (data) => postApi('/api/xiaomi-bridge/tts/voice_clone/synthesize', data);
 export const voiceDesignTTS = (data) => postApi('/api/xiaomi-bridge/tts/voice_design', data);
+
+// Memory Management API
+export const addMemory = (data) => postApi('/api/memory/add', data);
+export const searchMemory = (data) => postApi('/api/memory/search', data);
+export const listMemories = (params = {}) => {
+  const query = Object.entries(params)
+    .filter(([, v]) => v != null)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&');
+  return getApi(`/api/memory/list${query ? `?${query}` : ''}`);
+};
+export const getMemory = (memoryId) => getApi(`/api/memory/${memoryId}`);
+export const updateMemory = (memoryId, data) => putApi(`/api/memory/${memoryId}`, data);
+export const deleteMemory = (memoryId) => deleteApi(`/api/memory/${memoryId}`);
+export const getMemoryStats = () => getApi('/api/memory/stats');
+export const getMemoryContext = (query, params) => getApi(`/api/memory/context/${query}`, params);

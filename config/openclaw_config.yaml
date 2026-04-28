@@ -1,0 +1,324 @@
+# OpenClaw Agent Framework Configuration
+# OpenClaw 智能代理框架配置
+
+# ============================================
+# Role Configuration / 角色配置
+# ============================================
+roles:
+  # Default role settings / 默认角色设置
+  default_role: "smart_home_assistant"
+  
+  # Role definitions / 角色定义
+  definitions:
+    smart_home_assistant:
+      name: "智能家居助手"
+      description: "专业的智能家居管理助手，擅长设备控制、场景管理和自动化规则创建"
+      personality: "专业、高效、贴心"
+      tone: "友好但有专业度"
+      language_style: "简洁明了，避免冗长"
+      capabilities:
+        - CHAT
+        - DEVICE_CONTROL
+        - SCENE_MANAGEMENT
+        - VISION_ANALYSIS
+        - RULE_CREATION
+        - CONTEXT_AWARE
+        - MULTI_TURN
+      preferred_tools:
+        - create_rule
+        - vision_understand
+        - cached_get_device_state
+        - cached_get_room_environment
+        - cached_search_devices
+      max_steps: 10
+      temperature: 0.0
+      context_window: 10
+      
+    security_guardian:
+      name: "家庭安全卫士"
+      description: "专注于家庭安全监控，擅长异常检测、人脸识别和安全预警"
+      personality: "警觉、可靠、保护性强"
+      tone: "严肃但不失礼貌"
+      language_style: "准确、及时、重要信息优先"
+      capabilities:
+        - VISION_ANALYSIS
+        - FACE_RECOGNITION
+        - CONDITION_EVAL
+        - PROACTIVE
+      preferred_tools:
+        - vision_understand
+        - who_am_i
+        - cached_get_device_state
+      max_steps: 5
+      temperature: 0.0
+      context_window: 5
+      
+    lifestyle_companion:
+      name: "生活伴侣"
+      description: "贴心的生活助手，擅长日常对话、生活建议和环境优化"
+      personality: "温暖、幽默、善解人意"
+      tone: "轻松、亲切"
+      language_style: "口语化、自然、有温度"
+      capabilities:
+        - CHAT
+        - CONTEXT_AWARE
+        - MULTI_TURN
+        - PROACTIVE
+      preferred_tools:
+        - get_current_time
+        - cached_get_room_environment
+      max_steps: 5
+      temperature: 0.3
+      context_window: 15
+      
+    automation_expert:
+      name: "自动化专家"
+      description: "专业的智能家居自动化顾问，擅长复杂规则设计和场景优化"
+      personality: "严谨、逻辑性强、注重细节"
+      tone: "专业、有条理"
+      language_style: "结构化、逻辑清晰"
+      capabilities:
+        - RULE_CREATION
+        - SCENE_MANAGEMENT
+        - CONDITION_EVAL
+        - CONTEXT_AWARE
+      preferred_tools:
+        - create_rule
+        - cached_search_devices
+        - cached_get_multiple_states
+      max_steps: 15
+      temperature: 0.0
+      context_window: 12
+
+# ============================================
+# Prompt Template Configuration / 提示词模板配置
+# ============================================
+prompt_templates:
+  # Template engine settings / 模板引擎设置
+  engine:
+    max_template_nesting: 5
+    enable_caching: true
+    cache_ttl_seconds: 3600
+  
+  # Default templates / 默认模板
+  defaults:
+    system_base:
+      section: "system"
+      priority: 100
+      content: |
+        # 角色与目标
+        你是一个高度智能的AI代理，专门负责通过分解任务和调用工具来精确满足用户的请求。
+        
+        # 核心原则
+        - 任务分解 (Decomposition): 对于任何非单一操作的请求，你必须将其分解为逻辑清晰的子步骤
+        - 工具依赖 (Tool-Reliant): 你不能从先前的知识中编造任何实时状态信息
+        - 循序渐进 (Step-by-Step): 严格遵循"思考->行动->观察"的循环来解决问题
+        - 思考优先 (Think-First): 在决定调用任何工具之前，你必须先进行深度思考
+        
+        当前时间: {{current_time}}
+        用户语言: {{user_language}}
+    
+    role_context:
+      section: "role"
+      priority: 95
+      content: |
+        # 角色设定
+        {{role_description}}
+        
+        你的能力范围: {{capabilities}}
+        语气风格: {{tone}}
+        语言风格: {{language_style}}
+    
+    conversation_context:
+      section: "context"
+      priority: 80
+      content: |
+        # 对话上下文
+        {% if conversation_history %}
+        最近的对话记录:
+        {% for msg in conversation_history %}
+        {{msg.role}}: {{msg.content}}
+        {% endfor %}
+        {% endif %}
+        
+        {% if device_states %}
+        当前设备状态:
+        {{device_states}}
+        {% endif %}
+    
+    available_tools:
+      section: "tools"
+      priority: 70
+      content: |
+        # 可用工具
+        {% if available_tools %}
+        你可以使用以下工具:
+        {% for tool in available_tools %}
+        - {{tool.name}}: {{tool.description}}
+        {% endfor %}
+        {% endif %}
+        
+        {% if preferred_tools %}
+        推荐优先使用的工具: {{preferred_tools}}
+        {% endif %}
+    
+    output_format:
+      section: "output_format"
+      priority: 60
+      content: |
+        # 输出格式
+        - 思考过程必须包裹在 <reflect> 和 </reflect> 标签内
+        - 最终答案必须包裹在 <final_answer> 和 </final_answer> 标签内
+        - 工具调用必须遵循 OpenAI Tool Calling 格式
+        - 所有输出使用 Markdown 格式
+
+# ============================================
+# Tool Selector Configuration / 工具选择器配置
+# ============================================
+tool_selector:
+  # Default strategy / 默认策略
+  default_strategy: "HYBRID"
+  
+  # Strategy weights (for HYBRID mode) / 策略权重（混合模式）
+  strategy_weights:
+    rule_based: 0.3
+    semantic: 0.3
+    intent_based: 0.4
+  
+  # Minimum confidence threshold / 最低置信度阈值
+  min_confidence: 0.3
+  
+  # Maximum recommendations / 最大推荐数量
+  max_recommendations: 5
+  
+  # Enable adaptive learning / 启用自适应学习
+  enable_adaptive: true
+  
+  # Keyword mappings / 关键词映射
+  keyword_mappings:
+    # Device control / 设备控制
+    开: ["cached_get_device_state", "set_prop"]
+    关: ["cached_get_device_state", "set_prop"]
+    打开: ["cached_get_device_state", "set_prop"]
+    关闭: ["cached_get_device_state", "set_prop"]
+    调: ["cached_get_device_state", "set_prop"]
+    设置: ["cached_get_device_state", "set_prop"]
+    
+    # Query / 查询
+    状态: ["cached_get_device_state", "cached_get_multiple_states"]
+    怎么样: ["cached_get_device_state", "cached_get_room_environment"]
+    多少: ["cached_get_device_state", "cached_get_room_environment"]
+    
+    # Camera / 摄像头
+    摄像头: ["vision_understand"]
+    画面: ["vision_understand"]
+    看: ["vision_understand"]
+    监控: ["vision_understand"]
+    
+    # Face recognition / 人脸识别
+    谁: ["who_am_i"]
+    身份: ["who_am_i"]
+    认识: ["who_am_i"]
+    
+    # Rule / 规则
+    规则: ["create_rule"]
+    自动化: ["create_rule"]
+    场景: ["trigger_manual_scene", "trigger_automation"]
+    
+    # Time / 时间
+    时间: ["get_current_time"]
+    几点: ["get_current_time"]
+
+# ============================================
+# Context Manager Configuration / 上下文管理器配置
+# ============================================
+context_manager:
+  # Maximum concurrent contexts / 最大并发上下文数
+  max_contexts: 100
+  
+  # Context TTL in seconds / 上下文过期时间（秒）
+  context_ttl_seconds: 3600
+  
+  # Maximum messages per context / 每个上下文最大消息数
+  max_messages_per_context: 50
+  
+  # Enable persistence / 启用持久化
+  enable_persistence: false
+  
+  # Persistence path / 持久化路径
+  persistence_path: "./data/contexts"
+
+# ============================================
+# Adaptive Learner Configuration / 自适应学习器配置
+# ============================================
+adaptive_learner:
+  # Learning rate / 学习率
+  learning_rate: 0.1
+  
+  # Minimum samples for suggestions / 生成建议的最小样本数
+  min_samples_for_suggestions: 10
+  
+  # Maximum history size / 最大历史记录数
+  max_history_size: 10000
+  
+  # Enable automatic optimization / 启用自动优化
+  enable_auto_optimization: true
+  
+  # Optimization interval (minutes) / 优化间隔（分钟）
+  optimization_interval_minutes: 60
+  
+  # Data export path / 数据导出路径
+  data_export_path: "./data/learning"
+
+# ============================================
+# Error Handler Configuration / 错误处理器配置
+# ============================================
+error_handler:
+  # Maximum retry attempts / 最大重试次数
+  max_retries: 3
+  
+  # Enable detailed logging / 启用详细日志
+  enable_detailed_logging: true
+  
+  # Default fallback messages / 默认回退消息
+  fallback_messages:
+    llm_error: "抱歉，我暂时无法处理您的请求，请稍后再试。"
+    tool_error: "工具执行出现问题，我将尝试其他方式帮助您。"
+    network_error: "网络连接不稳定，请检查网络后重试。"
+    timeout_error: "处理超时，让我简化一下再试。"
+    resource_error: "所需资源暂时不可用。"
+    unknown_error: "发生了意外错误，请稍后再试。"
+  
+  # Retry delays (seconds) / 重试延迟（秒）
+  retry_delays:
+    - 1.0
+    - 2.0
+    - 4.0
+  
+  # Enable graceful degradation / 启用优雅降级
+  enable_graceful_degradation: true
+
+# ============================================
+# Enhanced Agent Configuration / 增强代理配置
+# ============================================
+enhanced_agent:
+  # Enable auto role selection / 启用自动角色选择
+  enable_auto_role_selection: true
+  
+  # Enable intelligent tool selection / 启用智能工具选择
+  enable_intelligent_tool_selection: true
+  
+  # Enable adaptive learning / 启用自适应学习
+  enable_adaptive_learning: true
+  
+  # Enable comprehensive error handling / 启用综合错误处理
+  enable_comprehensive_error_handling: true
+  
+  # Maximum execution steps / 最大执行步数
+  max_execution_steps: 10
+  
+  # Response streaming / 响应流式输出
+  enable_streaming: true
+  
+  # Context preservation / 上下文保持
+  preserve_context: true

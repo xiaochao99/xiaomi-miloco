@@ -32,10 +32,10 @@ PROJECT_ROOT = get_project_root()
 SERVER_CONFIG_FILE = PROJECT_ROOT.parent / "config" / "server_config.yaml"
 _server_config = load_yaml_config(SERVER_CONFIG_FILE)
 
-# Get configuration values for template variables
-CAMERA_IMG_FRAME_INTERVAL = _server_config["camera"]["frame_interval"]
-TRIGGER_RULE_RUNNER_VISION_USE_IMG_COUNT = _server_config["trigger_rule_runner"]["vision_use_img_count"]
-CHAT_VISION_USE_IMG_COUNT = _server_config["chat"]["vision_use_img_count"]
+# Get configuration values for template variables (with defaults)
+CAMERA_IMG_FRAME_INTERVAL = _server_config.get("camera", {}).get("frame_interval", 5)
+TRIGGER_RULE_RUNNER_VISION_USE_IMG_COUNT = _server_config.get("trigger_rule_runner", {}).get("vision_use_img_count", 5)
+CHAT_VISION_USE_IMG_COUNT = _server_config.get("chat", {}).get("vision_use_img_count", 5)
 
 # Load prompt configuration
 PROMPT_CONFIG_FILE = PROJECT_ROOT.parent / "config" / "prompt_config.yaml"

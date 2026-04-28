@@ -25,6 +25,7 @@ from miloco_server.controller import (
     face_recognition_router,
     ha_router,
     mcp_router,
+    memory_router,
     miot_router,
     model_router,
     openai_compat_router,
@@ -71,6 +72,7 @@ app.include_router(detection_router, prefix="/api")
 app.include_router(face_recognition_router, prefix="/api")
 app.include_router(openai_compat_router)
 app.include_router(xiaomi_bridge_router, prefix="/api")
+app.include_router(memory_router, prefix="/api")
 
 
 @app.get("/{full_path:path}")
@@ -110,6 +112,9 @@ async def startup_event():
     # Initialize detection service
     await _init_detection_service()
 
+    # Initialize memory service
+    await _init_memory_service()
+
     # Initialize Xiaomi bridge
     await _init_xiaomi_bridge()
 
@@ -134,6 +139,23 @@ async def _init_detection_service():
 
     except Exception as e:
         logger.error(f"Detection service initialization error: {e}")
+
+
+async def _init_memory_service():
+    """Initialize the memory management service."""
+    try:
+        from miloco_server.service.memory_service import MemoryService, set_memory_service
+
+        service = MemoryService()
+        success = await service.initialize()
+        if success:
+            set_memory_service(service)
+            logger.info("Memory service initialized successfully")
+        else:
+            logger.warning("Memory service initialization failed - memory features will be unavailable")
+
+    except Exception as e:
+        logger.error(f"Memory service initialization error: {e}")
 
 
 async def _init_xiaomi_bridge():
@@ -216,6 +238,16 @@ async def shutdown_event():
         logger.info("Xiaomi bridge shutdown completed")
     except Exception as e:
         logger.error(f"Xiaomi bridge shutdown error: {e}")
+
+    # Shutdown memory service
+    try:
+        from miloco_server.memory.memory_manager import get_memory_manager
+        memory_manager = get_memory_manager()
+        if memory_manager:
+            await memory_manager.shutdown()
+            logger.info("Memory service shutdown completed")
+    except Exception as e:
+        logger.error(f"Memory service shutdown error: {e}")
 
     # Shutdown detection service
     try:

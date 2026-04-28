@@ -21,6 +21,7 @@ import ExecutionManage from './pages/ExecutionManage'
 import ModelManage from './pages/ModelManage'
 import DeviceManage from './pages/DeviceManage'
 import FaceLibrary from './pages/FaceLibrary'
+import MemoryManage from './pages/MemoryManage'
 
 function App() {
   return (
@@ -43,6 +44,7 @@ function App() {
             <Route path="logManage" element={<LogManage />} />
             <Route path="setting" element={<Setting />} />
             <Route path="faceLibrary" element={<FaceLibrary />} />
+            <Route path="memoryManage" element={<MemoryManage />} />
           </Route>
         </Routes>
         <LogViewerModal />

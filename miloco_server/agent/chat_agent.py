@@ -184,6 +184,12 @@ class ChatAgent(Actor):
         success = False
         error_message = None
         try:
+            memory_context = await self._retrieve_memory_context(query)
+            if memory_context:
+                self._chat_history_messages.add_content(
+                    "system",
+                    f"[长期记忆上下文] 以下是与当前对话相关的记忆信息，请在回答时参考：\n{memory_context}")
+
             self._chat_history_messages.add_content(
                 "user", f"request_id: {self._request_id}, query: {query}")
 
@@ -229,6 +235,9 @@ class ChatAgent(Actor):
             msg = (error_message or "").strip() or "处理未完成或已中断"
             self._send_instruction(Dialog.Exception(message=msg))
         self._send_dialog_finish(success)
+
+        if success:
+            await self._extract_and_store_memory()
 
 
     async def _execute_step(self, step_number: int) -> Optional[str]:
@@ -648,6 +657,41 @@ class ChatAgent(Actor):
         
         logger.info("[%s] No valid tool message found in history", self._request_id)
         return None
+
+    async def _retrieve_memory_context(self, query: str) -> Optional[str]:
+        """Retrieve relevant memories for the current query."""
+        try:
+            from miloco_server.service.memory_service import get_memory_service
+            service = get_memory_service()
+            if service is None:
+                return None
+            context = await service.get_context_for_query(
+                query=query, max_memories=5, min_importance=0.3)
+            if context and context.relevant_memories:
+                return context.summary
+            return None
+        except Exception as e:
+            logger.debug("[%s] Failed to retrieve memory context: %s", self._request_id, e)
+            return None
+
+    async def _extract_and_store_memory(self) -> None:
+        """Extract memories from the current conversation and store them."""
+        try:
+            from miloco_server.service.memory_service import get_memory_service
+            service = get_memory_service()
+            if service is None:
+                return
+            messages = []
+            for msg in self._chat_history_messages.get_messages():
+                role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+                content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
+                if role in ("user", "assistant") and content and isinstance(content, str):
+                    messages.append({"role": role, "content": content[:2000]})
+            if messages:
+                await service.process_conversation(messages, session_id=self._request_id)
+                logger.info("[%s] Memory extraction completed for session", self._request_id)
+        except Exception as e:
+            logger.debug("[%s] Failed to extract and store memory: %s", self._request_id, e)
 
     def _get_system_prompt(self) -> str:
         """Get system prompt."""
