@@ -174,6 +174,12 @@ class Manager:
         return self._trigger_rule_service
 
     @property
+    def ha_listener(self):
+        if self._trigger_rule_runner:
+            return self._trigger_rule_runner.ha_listener
+        return None
+
+    @property
     def model_service(self) -> ModelService:
         return self._model_service
 

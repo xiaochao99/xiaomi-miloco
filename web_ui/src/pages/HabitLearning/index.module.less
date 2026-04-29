@@ -1,0 +1,113 @@
+.habitContainer {
+  width: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: var(--spacing-lg);
+}
+
+.habitContent {
+  width: 912px;
+}
+
+.habitCard {
+  margin-bottom: 24px;
+  border-radius: 12px;
+  .habitCardContent {
+    padding: 0;
+  }
+  .habitCardTitle {
+    font-size: 16px;
+    font-weight: 500;
+    padding: 16px 22px;
+    color: var(--text-color-31);
+    border-bottom: 1px solid var(--border-color-240);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.habitCardItemList {
+  padding: 0 24px;
+}
+
+.habitItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-color-240);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  .habitLabel {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text-color-149);
+    font-weight: 500;
+
+    .anticon {
+      font-size: 16px;
+      color: var(--primary-color);
+    }
+  }
+
+  .habitValue {
+    font-size: 14px;
+    color: var(--text-color-31);
+    font-weight: 600;
+  }
+}
+
+.statusGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  padding: 20px 24px;
+}
+
+.statusItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background: var(--bg-color-secondary, #f5f5f5);
+  border-radius: 8px;
+
+  .statusLabel {
+    font-size: 12px;
+    color: var(--text-color-secondary);
+  }
+
+  .statusValue {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-color-31);
+  }
+}
+
+.description {
+  font-size: 12px;
+  color: var(--text-color-secondary);
+  font-weight: 400;
+  margin-top: 4px;
+}
+
+.trainBtn {
+  margin: 16px 24px;
+}
+
+.predictionsTable {
+  padding: 16px 24px;
+}
+
+.patternsTable {
+  padding: 16px 24px;
+}

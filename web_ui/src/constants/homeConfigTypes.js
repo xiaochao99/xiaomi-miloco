@@ -122,6 +122,13 @@ export const MENU_ITEMS = [
     icon: 'menuDevice',
     selectedIcon: 'menuDeviceSelected',
     path: '/home/memoryManage',
+  },
+  {
+    key: '11',
+    label: 'home.menu.habitLearning',
+    icon: 'menuSmart',
+    selectedIcon: 'menuSmartSelected',
+    path: '/home/habitLearning',
   }
 ];
 

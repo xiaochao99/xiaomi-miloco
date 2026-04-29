@@ -31,19 +31,23 @@ class HaStateListener:
 
     def __init__(self, ha_config: HAConfig,
                  on_state_changed: Optional[Callable[[str, Dict[str, Any], Dict[str, Any]], None]] = None,
-                 on_connected: Optional[Callable[[], Any]] = None):
+                 on_connected: Optional[Callable[[], Any]] = None,
+                 on_raw_state_changed: Optional[Callable[[str, Optional[Dict[str, Any]], Dict[str, Any]], None]] = None):
         """
         Initialize the HA Listener.
 
         Args:
             ha_config: Home Assistant configuration (url, token).
             on_state_changed: Callback function(entity_id, old_state, new_state)
-                              called when a state changes.
+                              called when a state changes (after watched filter).
             on_connected: Callback function called when connection is established and initialized.
+            on_raw_state_changed: Callback function(entity_id, old_state, new_state)
+                                  called for ALL state changes (before watched filter).
         """
         self._ha_config = ha_config
         self._on_state_changed = on_state_changed
         self._on_connected = on_connected
+        self._on_raw_state_changed = on_raw_state_changed
 
         # State Cache: {entity_id: state_obj}
         # We store the full state object from HA to avoid frequent re-fetching
@@ -262,8 +266,12 @@ class HaStateListener:
         # Update cache
         self._state_cache[entity_id] = new_state
 
-        # Log for debugging
-        # logger.info('HA State Changed: %s -> %s', entity_id, new_state.get('state'))
+        # Notify raw callback for ALL state changes (e.g., habit collector)
+        if self._on_raw_state_changed:
+            try:
+                self._on_raw_state_changed(entity_id, old_state, new_state)
+            except Exception as e:
+                logger.error('Error in raw state change callback: %s', e)
 
         # Filter noise: if we only care about specific entities
         if self._watched_entities and entity_id not in self._watched_entities:

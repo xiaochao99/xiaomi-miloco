@@ -328,7 +328,9 @@ class EnhancedChatAgent(Actor):
             base_prompt = persona_additions + "\n\n" + base_prompt
         
         # Add ReAct workflow instructions
-        react_instructions = """
+        env_section = self._build_env_context_section()
+        react_instructions = f"""
+{env_section}
 # ReAct工作流 (必须严格遵守)
 思考（Think）：首先分析当前的用户需求和已知信息，进行逻辑推理。**这是最重要的一步**。你需要判断：
 1. 用户的问题是什么？
@@ -347,6 +349,8 @@ class EnhancedChatAgent(Actor):
 - 优先考虑最直接、最高效的工具
 
 **何时使用工具：**
+- 用户询问环境相关信息（温度/湿度/天气/有人吗/空气质量等）→ 使用 `get_environment_context`（**最高优先级**）
+- 需要基于环境数据决定是否控制设备（天热开空调、没人关灯等）→ 先使用 `get_environment_context`
 - 用户明确要求控制设备（开/关/调节）→ 使用 `send_ctrl_rpc`
 - 用户查询设备状态 → 使用 `send_get_rpc`
 - 用户需要创建自动化规则 → 使用 `create_rule`
@@ -400,6 +404,60 @@ class EnhancedChatAgent(Actor):
 """
         
         return base_prompt + "\n\n" + react_instructions
+
+    def _build_env_context_section(self) -> str:
+        """Build environment context section for system prompt with highest priority."""
+        try:
+            from miloco_server.service.context_provider import ContextProvider
+            provider = ContextProvider.get_instance()
+            if not provider:
+                return "# 当前家庭环境上下文\n环境上下文服务暂未启用。\n"
+            ctx = provider.get_context()
+            parts = ["# 当前家庭环境上下文 (Highest Priority - 必须优先参考)"]
+            parts.append("以下是当前实时的家庭环境数据，在回答与环境、设备控制相关的问题时必须优先参考：")
+            if ctx.temperature is not None:
+                parts.append(f"- 室内温度: {ctx.temperature}°C")
+            else:
+                parts.append("- 室内温度: 未获取")
+            if ctx.weather_temperature is not None:
+                parts.append(f"- 室外温度: {ctx.weather_temperature}°C")
+            else:
+                parts.append("- 室外温度: 未获取")
+            if ctx.humidity is not None:
+                parts.append(f"- 湿度: {ctx.humidity}%")
+            else:
+                parts.append("- 湿度: 未获取")
+            if ctx.light_level is not None:
+                parts.append(f"- 光照强度: {ctx.light_level} lux")
+            parts.append(f"- 有人在家: {'是' if ctx.is_home else '否'}")
+            parts.append(f"- 有人在场: {'是' if ctx.is_anyone_present else '否'}")
+            if ctx.weather:
+                parts.append(f"- 天气: {ctx.weather}")
+            if ctx.wind_speed is not None:
+                parts.append(f"- 风速: {ctx.wind_speed}")
+            if ctx.air_quality is not None:
+                parts.append(f"- 空气质量指数(AQI): {ctx.air_quality}")
+                if ctx.air_quality <= 50:
+                    parts.append("  (优)")
+                elif ctx.air_quality <= 100:
+                    parts.append("  (良)")
+                elif ctx.air_quality <= 150:
+                    parts.append("  (轻度污染)")
+                else:
+                    parts.append("  (中度及以上污染)")
+            if ctx.time_period:
+                parts.append(f"- 当前时段: {ctx.time_period}")
+            parts.append("")
+            parts.append("基于环境数据的决策参考：")
+            parts.append("- 温度 > 28°C → 建议开空调制冷 | 温度 < 10°C → 建议开暖气")
+            parts.append("- 湿度 < 30% → 建议开加湿器 | 湿度 > 70% → 建议开除湿")
+            parts.append("- 有人在家 = 否 → 不应开灯、放音乐等 | 有人在场 = 否 → 可关灯节能")
+            parts.append("- AQI > 100 → 不建议开窗 | 下雨 → 不建议开窗")
+            parts.append("- 如需最新数据，可调用 get_environment_context 工具刷新")
+            return "\n".join(parts)
+        except Exception as e:
+            logger.debug("Failed to build env context section: %s", e)
+            return "# 当前家庭环境上下文\n环境上下文获取失败。\n"
 
     def receiveMessage(self, msg, sender):
         """Actor message receiving method."""

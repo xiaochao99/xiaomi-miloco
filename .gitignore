@@ -12,6 +12,7 @@ dist/
 downloads/
 eggs/
 .eggs/
+.trae/
 lib/
 lib64/
 parts/

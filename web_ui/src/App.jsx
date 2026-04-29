@@ -22,6 +22,7 @@ import ModelManage from './pages/ModelManage'
 import DeviceManage from './pages/DeviceManage'
 import FaceLibrary from './pages/FaceLibrary'
 import MemoryManage from './pages/MemoryManage'
+import HabitLearning from './pages/HabitLearning'
 
 function App() {
   return (
@@ -45,6 +46,7 @@ function App() {
             <Route path="setting" element={<Setting />} />
             <Route path="faceLibrary" element={<FaceLibrary />} />
             <Route path="memoryManage" element={<MemoryManage />} />
+            <Route path="habitLearning" element={<HabitLearning />} />
           </Route>
         </Routes>
         <LogViewerModal />

@@ -81,7 +81,8 @@ class TriggerRuleRunner:
         self._ha_listener = HaStateListener(
             ha_config,
             self._on_ha_state_changed,
-            on_connected=self._refresh_ha_device_map
+            on_connected=self._refresh_ha_device_map,
+            on_raw_state_changed=self._on_raw_state_changed,
         ) if ha_config else None
 
         # Register HA Listener to DeviceCacheManager for MCP tools
@@ -116,6 +117,10 @@ class TriggerRuleRunner:
         logger.info(
             "TriggerRuleRunner init success, trigger_rules: %s", self.trigger_rules
         )
+
+    @property
+    def ha_listener(self):
+        return self._ha_listener
 
     def _update_listener_watched_entities(self):
         """Extract all entity IDs from all rules and update the HA listener."""
@@ -179,11 +184,9 @@ class TriggerRuleRunner:
                                         'sun', 'zone', 'person', 'device_tracker', 'proximity', 'calendar',
                                         'weather', 'geo_location', 'group', 'counter', 'timer'
                                     }
-                                    # 从HA获取所有状态
                                     all_states = await self.ha_proxy.get_states()
                                     if all_states:
-                                        for state_obj in all_states:
-                                            entity_id = state_obj.get('entity_id', '')
+                                        for entity_id in all_states:
                                             entity_domain = entity_id.split('.')[0] if '.' in entity_id else ''
                                             if entity_domain in helper_domains:
                                                 all_entities.add(entity_id)
@@ -237,6 +240,16 @@ class TriggerRuleRunner:
                 logger.error(
                     "Error occurred while executing scheduled task: %s", e)
                 await asyncio.sleep(self._interval_seconds)
+
+    def _on_raw_state_changed(self, entity_id: str, old_state: Any, new_state: Dict[str, Any]):
+        """Callback for ALL HA state changes (before watched filter). Used by HabitCollector."""
+        try:
+            from miloco_server.service.habit_collector import HabitCollector
+            collector = HabitCollector.get_instance()
+            if collector:
+                asyncio.create_task(collector.on_state_changed(entity_id, old_state, new_state))
+        except Exception:
+            pass
 
     def _on_ha_state_changed(self, entity_id: str, old_state: Dict[str, Any], new_state: Dict[str, Any]):
         """Callback for HA state changes."""

@@ -20,7 +20,7 @@ class KVDao:
     def __init__(self):
         self.db_connector = get_db_connector()
         self.cache = self.get_all_as_dict()
-        logger.info("KVDao init, current: %s", self.cache)
+        logger.info("KVDao init, keys: %s", list(self.cache.keys()))
 
 
     def set(self, key: str, value: str) -> bool:

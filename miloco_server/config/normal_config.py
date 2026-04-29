@@ -7,10 +7,13 @@ Unified management of project paths and configuration information
 Load configuration from server_config.yaml
 """
 
+import logging
 import os
 from pathlib import Path
 from typing import Dict, Any, List
 from .config_loader import load_yaml_config, save_yaml_config, get_project_root
+
+logger = logging.getLogger(__name__)
 
 # Get project root directory
 PROJECT_ROOT = get_project_root()
@@ -131,6 +134,9 @@ MIOT_CONFIG = {
     "cloud_server": _config["miot"]["cloud_server"],
 }
 
+# Habit learning configuration
+HABIT_LEARNING_CONFIG = _config.get("habit_learning", {})
+
 
 def save_camera_config(video_quality: str, vision_img_resolution: int) -> None:
     """
@@ -172,3 +178,68 @@ def save_rtsp_server_config(enabled: bool, port: int) -> None:
     _config["camera"]["rtsp_server"]["port"] = int(port)
     RTSP_SERVER_CONFIG = _config["camera"]["rtsp_server"]
     save_yaml_config(CONFIG_FILE, _config)
+
+
+def update_habit_config(section: str, key: str, value) -> bool:
+    global _config, HABIT_LEARNING_CONFIG
+    try:
+        if "habit_learning" not in _config:
+            _config["habit_learning"] = {}
+        if section:
+            if section not in _config["habit_learning"]:
+                _config["habit_learning"][section] = {}
+            target = _config["habit_learning"][section]
+        else:
+            target = _config["habit_learning"]
+
+        if isinstance(value, str):
+            if value.lower() in ("true", "false"):
+                value = value.lower() == "true"
+            else:
+                try:
+                    value = int(value)
+                except ValueError:
+                    try:
+                        value = float(value)
+                    except ValueError:
+                        pass
+
+        target[key] = value
+        HABIT_LEARNING_CONFIG = _config["habit_learning"]
+        save_yaml_config(CONFIG_FILE, _config)
+        return True
+    except Exception as e:
+        logger.error("Failed to update habit config: %s", e)
+        return False
+
+
+def save_habit_config_enabled() -> None:
+    global _config, HABIT_LEARNING_CONFIG
+    try:
+        if "habit_learning" not in _config:
+            _config["habit_learning"] = {}
+        _config["habit_learning"]["enabled"] = True
+        HABIT_LEARNING_CONFIG = _config["habit_learning"]
+        save_yaml_config(CONFIG_FILE, _config)
+    except Exception as e:
+        logger.error("Failed to save habit config enabled: %s", e)
+
+
+def get_context_entities_config() -> Dict[str, Any]:
+    return HABIT_LEARNING_CONFIG.get("context_entities", {})
+
+
+def save_context_entities_config(entities: Dict[str, Any]) -> bool:
+    global _config, HABIT_LEARNING_CONFIG
+    try:
+        if "habit_learning" not in _config:
+            _config["habit_learning"] = {"enabled": True}
+        if "enabled" not in _config["habit_learning"]:
+            _config["habit_learning"]["enabled"] = True
+        _config["habit_learning"]["context_entities"] = entities
+        HABIT_LEARNING_CONFIG = _config["habit_learning"]
+        save_yaml_config(CONFIG_FILE, _config)
+        return True
+    except Exception as e:
+        logger.error("Failed to save context entities config: %s", e)
+        return False

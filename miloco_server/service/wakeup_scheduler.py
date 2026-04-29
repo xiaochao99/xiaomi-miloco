@@ -676,3 +676,19 @@ class WakeUpScheduler:
     def get_active_sessions(self) -> List[WakeUpSession]:
         """Get all active sessions"""
         return list(self._active_sessions.values())
+
+    async def broadcast_message(self, text: str, device_ids: Optional[List[str]] = None) -> bool:
+        """Broadcast a TTS message to XiaoAi speakers (used by DecisionEngine)."""
+        if not self._bridge_manager:
+            logger.warning("[WakeUpScheduler] Cannot broadcast: bridge_manager not set")
+            return False
+        try:
+            ok = await self._bridge_manager.play_tts(text, device_ids=device_ids)
+            if ok:
+                logger.info("[WakeUpScheduler] Broadcast sent: %s", text[:50])
+            else:
+                logger.warning("[WakeUpScheduler] Broadcast TTS failed")
+            return ok
+        except Exception as e:
+            logger.error("[WakeUpScheduler] Broadcast error: %s", e)
+            return False

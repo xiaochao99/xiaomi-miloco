@@ -139,3 +139,26 @@ export const updateMemory = (memoryId, data) => putApi(`/api/memory/${memoryId}`
 export const deleteMemory = (memoryId) => deleteApi(`/api/memory/${memoryId}`);
 export const getMemoryStats = () => getApi('/api/memory/stats');
 export const getMemoryContext = (query, params) => getApi(`/api/memory/context/${query}`, params);
+export const handleMemoryCommand = (data) => postApi('/api/memory/command', data);
+export const getMemoryTypes = () => getApi('/api/memory/types');
+
+// Habit Learning API
+export const getHabitStats = () => getApi('/api/habit/stats');
+export const getHabitPatterns = (params = {}) => {
+  const query = Object.entries(params)
+    .filter(([, v]) => v != null)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&');
+  return getApi(`/api/habit/patterns${query ? `?${query}` : ''}`);
+};
+export const getHabitPredictions = () => getApi('/api/habit/predictions');
+export const triggerHabitTraining = () => postApi('/api/habit/train');
+export const enableHabitCollector = () => postApi('/api/habit/collector/enable');
+export const disableHabitCollector = () => postApi('/api/habit/collector/disable');
+export const updateHabitConfig = (data) => postApi('/api/habit/config', data);
+export const enableHabitEngine = () => postApi('/api/habit/engine/enable');
+export const disableHabitEngine = () => postApi('/api/habit/engine/disable');
+export const getHabitContext = () => getApi('/api/habit/context');
+export const getHabitContextEntities = () => getApi('/api/habit/context/entities');
+export const saveHabitContextEntities = (entities) => postApi('/api/habit/context/entities', { entities });
+export const getHabitAllHaEntities = () => getApi('/api/habit/context/all_entities');

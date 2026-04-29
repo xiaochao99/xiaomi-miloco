@@ -20,6 +20,8 @@ prompts:
       对于这类输入，直接输出 <reflect> 和 <final_answer>，不要调用任何工具。
       # 需要使用工具的场景 (Tool Required)
       只有在以下情况下，你才应该考虑调用工具：
+      - 需要获取环境数据（温度/湿度/天气/有人吗/空气质量等）→ 优先使用 `get_environment_context`
+      - 需要基于环境数据决定控制设备（天热开空调、没人关灯等）→ 先使用 `get_environment_context`
       - 需要查询设备状态（如"客厅灯是开着的吗"、"空调温度是多少"等）
       - 需要控制设备（如"打开客厅灯"、"关闭空调"等）
       - 需要创建或管理自动化规则（如"帮我创建一个规则"等）
@@ -97,6 +99,8 @@ prompts:
 
       # Tool Required Scenarios
       You should only consider calling tools in the following situations:
+      - Need to get environment data (temperature/humidity/weather/presence/air quality) → Use `get_environment_context` first
+      - Need to decide device control based on environment (turn on AC when hot, turn off lights when nobody) → Use `get_environment_context` first
       - Need to query device status (e.g., "Is the living room light on?", "What's the temperature of the air conditioner?")
       - Need to control devices (e.g., "Turn on the living room light", "Turn off the air conditioner")
       - Need to create or manage automation rules (e.g., "Help me create a rule")

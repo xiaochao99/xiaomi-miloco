@@ -106,3 +106,27 @@ rtsp_cameras:
   # 'us': 'United States
 miot:
   cloud_server: "cn"
+
+# Habit learning configuration
+habit_learning:
+  enabled: true
+  collector:
+    flush_interval: 5
+    noise_filter:
+      ignore_states: ["unavailable", "unknown", "none"]
+      ignore_entities:
+        - "sensor.heartbeat"
+        - "sensor.storage_used"
+  learner:
+    learn_interval: 3600
+    min_occurrences: 3
+    time_bucket_minutes: 30
+  decision_engine:
+    enabled: false
+    cycle_interval: 60
+    confidence_threshold: 0.65
+    risk_level_limit: "HIGH"
+  data_retention:
+    events_days: 90  # 事件数据保留天数（默认90天）
+    patterns_days: 180  # 行为模式保留天数（默认180天）
+    cleanup_interval: 86400  # 清理间隔（秒），默认24小时

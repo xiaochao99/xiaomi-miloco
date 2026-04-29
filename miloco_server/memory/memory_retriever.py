@@ -2,12 +2,12 @@
 # This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
 
 """
-Memory Retriever - Advanced retrieval strategies for memory.
-记忆检索器 - 高级记忆检索策略
+Memory Retriever - Retrieve relevant memories for context injection.
+记忆检索器 - 检索相关记忆用于上下文注入
 """
 
 import logging
-from typing import List, Optional, Dict, Any
+from typing import Optional, List
 
 from miloco_server.schema.memory_schema import (
     Memory,
@@ -19,150 +19,230 @@ from miloco_server.memory.memory_manager import MemoryManager, get_memory_manage
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MAX_CONTEXT_MEMORIES = 5
-DEFAULT_MIN_RELEVANCE_SCORE = 0.3
-
 
 class MemoryRetriever:
-    """高级记忆检索器，支持多策略检索"""
+    """
+    记忆检索器
 
-    def __init__(self, manager: Optional[MemoryManager] = None):
-        self._manager = manager
+    负责从记忆存储中检索与当前对话相关的记忆。
+    支持：
+    - 语义相似度检索
+    - 按类型过滤
+    - 上下文格式化
+    """
 
-    @property
-    def manager(self) -> MemoryManager:
-        if self._manager is None:
-            mgr = get_memory_manager()
-            if mgr is None:
-                raise RuntimeError("记忆管理器未初始化")
-            self._manager = mgr
-        return self._manager
+    def __init__(self, memory_manager: Optional[MemoryManager] = None):
+        """
+        初始化记忆检索器
 
-    async def retrieve_for_context(
+        Args:
+            memory_manager: 记忆管理器实例
+        """
+        self._memory_manager = memory_manager or get_memory_manager()
+
+    async def retrieve_for_query(
         self,
         query: str,
-        max_memories: int = DEFAULT_MAX_CONTEXT_MEMORIES,
-        min_score: float = DEFAULT_MIN_RELEVANCE_SCORE,
+        user_id: str = "default",
+        limit: int = 5,
+        min_score: float = 0.3,
         memory_types: Optional[List[MemoryType]] = None,
     ) -> MemoryContext:
-        """为 LLM 对话检索相关记忆"""
-        all_results: List[MemorySearchResult] = []
+        """
+        为查询检索相关记忆
 
-        semantic_results = await self.manager.search_memories(
-            query=query,
-            limit=max_memories * 2,
-            min_importance=0.3,
-        )
-        all_results.extend(semantic_results)
+        Args:
+            query: 用户查询/消息
+            user_id: 用户ID
+            limit: 最大返回数量
+            min_score: 最小相关性分数
+            memory_types: 过滤的记忆类型
 
-        if memory_types:
-            for mtype in memory_types:
-                type_results = await self.manager.search_memories(
-                    query=query,
-                    limit=max_memories,
-                    memory_type=mtype,
-                    min_importance=0.3,
-                )
-                all_results.extend(type_results)
+        Returns:
+            MemoryContext: 记忆上下文
+        """
+        try:
+            search_results = await self._memory_manager.search_memories(
+                query=query,
+                user_id=user_id,
+                limit=limit * 2,
+                memory_types=memory_types,
+                include_inactive=False
+            )
 
-        deduplicated = self._deduplicate_results(all_results)
-        scored = self._score_results(deduplicated, query)
-        filtered = [r for r in scored if r.score >= min_score]
-        filtered.sort(key=lambda x: x.score, reverse=True)
-        top_results = filtered[:max_memories]
+            filtered_results = [
+                r for r in search_results
+                if r.score >= min_score
+            ][:limit]
 
-        memories = [r.memory for r in top_results]
-        summary = self._build_context_summary(memories)
+            context = MemoryContext(memories=filtered_results)
+            context.context_text = context.to_prompt_text()
 
-        return MemoryContext(
-            query=query,
-            relevant_memories=memories,
-            summary=summary,
-            total_count=len(memories),
-        )
+            logger.debug(
+                "Retrieved %d memories for query: '%s'",
+                len(filtered_results),
+                query[:50]
+            )
 
-    async def retrieve_recent(
+            return context
+
+        except Exception as e:
+            logger.error("Failed to retrieve memories: %s", e)
+            return MemoryContext()
+
+    async def retrieve_by_types(
         self,
+        user_id: str = "default",
+        memory_types: Optional[List[MemoryType]] = None,
         limit: int = 10,
-        memory_type: Optional[MemoryType] = None,
     ) -> List[Memory]:
-        """获取最近的记忆"""
-        results = await self.manager.search_memories(
-            query="",
-            limit=limit,
-            memory_type=memory_type,
-        )
-        return [r.memory for r in results]
+        """
+        按类型检索记忆
 
-    async def retrieve_important(
+        Args:
+            user_id: 用户ID
+            memory_types: 记忆类型列表
+            limit: 最大返回数量
+
+        Returns:
+            List[Memory]: 记忆列表
+        """
+        try:
+            all_memories = await self._memory_manager.get_all_memories(
+                user_id=user_id,
+                include_inactive=False,
+                limit=limit * 2
+            )
+
+            if memory_types:
+                all_memories = [
+                    m for m in all_memories
+                    if m.memory_type in memory_types
+                ]
+
+            return all_memories[:limit]
+
+        except Exception as e:
+            logger.error("Failed to retrieve memories by type: %s", e)
+            return []
+
+    async def retrieve_preferences(
         self,
+        user_id: str = "default",
         limit: int = 10,
-        min_importance: float = 0.7,
     ) -> List[Memory]:
-        """获取重要记忆"""
-        results = await self.manager.search_memories(
-            query="",
-            limit=limit,
-            min_importance=min_importance,
-        )
-        return [r.memory for r in results]
+        """
+        检索用户偏好
 
-    async def retrieve_by_type(
+        Args:
+            user_id: 用户ID
+            limit: 最大返回数量
+
+        Returns:
+            List[Memory]: 偏好记忆列表
+        """
+        return await self.retrieve_by_types(
+            user_id=user_id,
+            memory_types=[MemoryType.PREFERENCE, MemoryType.DEVICE_SETTING],
+            limit=limit
+        )
+
+    async def retrieve_facts(
         self,
-        memory_type: MemoryType,
-        limit: int = 50,
+        user_id: str = "default",
+        limit: int = 10,
     ) -> List[Memory]:
-        """按类型获取记忆"""
-        results = await self.manager.search_memories(
-            query="",
-            limit=limit,
-            memory_type=memory_type,
+        """
+        检索事实信息
+
+        Args:
+            user_id: 用户ID
+            limit: 最大返回数量
+
+        Returns:
+            List[Memory]: 事实记忆列表
+        """
+        return await self.retrieve_by_types(
+            user_id=user_id,
+            memory_types=[MemoryType.FACT, MemoryType.RELATIONSHIP],
+            limit=limit
         )
-        return [r.memory for r in results]
 
-    def _deduplicate_results(
+    async def retrieve_habits_and_schedules(
         self,
-        results: List[MemorySearchResult],
-    ) -> List[MemorySearchResult]:
-        seen_ids = set()
-        deduplicated = []
-        for r in results:
-            if r.memory.id not in seen_ids:
-                seen_ids.add(r.memory.id)
-                deduplicated.append(r)
-        return deduplicated
+        user_id: str = "default",
+        limit: int = 10,
+    ) -> List[Memory]:
+        """
+        检索习惯和日程
 
-    def _score_results(
+        Args:
+            user_id: 用户ID
+            limit: 最大返回数量
+
+        Returns:
+            List[Memory]: 习惯/日程记忆列表
+        """
+        return await self.retrieve_by_types(
+            user_id=user_id,
+            memory_types=[MemoryType.HABIT, MemoryType.SCHEDULE],
+            limit=limit
+        )
+
+    async def build_full_context(
         self,
-        results: List[MemorySearchResult],
         query: str,
-    ) -> List[MemorySearchResult]:
-        for r in results:
-            importance_bonus = r.memory.importance * 0.2
-            r.score = min(1.0, r.score + importance_bonus)
-        return results
+        user_id: str = "default",
+        max_memories: int = 5,
+        min_relevance: float = 0.35,
+    ) -> MemoryContext:
+        """
+        构建记忆上下文（基于语义相关性）
 
-    def _build_context_summary(self, memories: List[Memory]) -> str:
-        if not memories:
-            return "暂无相关记忆"
+        只获取与当前查询语义相关的记忆，避免注入无关内容：
+        - 使用向量相似度搜索，只返回相关性高于阈值的记忆
+        - 限制最大记忆数量，节省 Token
 
-        parts = []
-        for mem in memories:
-            parts.append(f"- {mem.content}")
+        Args:
+            query: 用户查询
+            user_id: 用户ID
+            max_memories: 最大记忆数量（默认5条，节省token）
+            min_relevance: 最小相关性分数（0-1，越高越严格）
 
-        return "相关记忆:\n" + "\n".join(parts)
+        Returns:
+            MemoryContext: 记忆上下文（只包含相关记忆）
+        """
+        try:
+            query_context = await self.retrieve_for_query(
+                query=query,
+                user_id=user_id,
+                limit=max_memories,
+                min_score=min_relevance
+            )
+
+            if query_context.memories:
+                logger.info(
+                    "Found %d relevant memories for query '%s' (scores: %s)",
+                    len(query_context.memories),
+                    query[:30],
+                    [f"{r.score:.2f}" for r in query_context.memories]
+                )
+            else:
+                logger.debug("No relevant memories found for query: %s", query[:30])
+
+            return query_context
+
+        except Exception as e:
+            logger.error("Failed to build memory context: %s", e, exc_info=True)
+            return MemoryContext()
 
 
 _memory_retriever: Optional[MemoryRetriever] = None
 
 
-def get_memory_retriever() -> Optional[MemoryRetriever]:
-    return _memory_retriever
-
-
-def initialize_memory_retriever(
-    manager: Optional[MemoryManager] = None,
-) -> MemoryRetriever:
+def get_memory_retriever() -> MemoryRetriever:
+    """获取全局记忆检索器实例"""
     global _memory_retriever
-    _memory_retriever = MemoryRetriever(manager)
+    if _memory_retriever is None:
+        _memory_retriever = MemoryRetriever()
     return _memory_retriever

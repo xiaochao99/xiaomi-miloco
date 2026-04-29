@@ -196,6 +196,31 @@ tool_selector:
   
   # Keyword mappings / 关键词映射
   keyword_mappings:
+    # Environment Context / 环境上下文 (HIGHEST PRIORITY)
+    温度: ["get_environment_context"]
+    湿度: ["get_environment_context"]
+    天气: ["get_environment_context"]
+    室内温度: ["get_environment_context"]
+    室外温度: ["get_environment_context"]
+    有人吗: ["get_environment_context"]
+    有人在家: ["get_environment_context"]
+    有人在场: ["get_environment_context"]
+    空气质量: ["get_environment_context"]
+    光照: ["get_environment_context"]
+    冷不冷: ["get_environment_context"]
+    热不热: ["get_environment_context"]
+    环境: ["get_environment_context"]
+    风速: ["get_environment_context"]
+    几度: ["get_environment_context"]
+    多少度: ["get_environment_context"]
+    现在温度: ["get_environment_context"]
+    现在湿度: ["get_environment_context"]
+    temperature: ["get_environment_context"]
+    humidity: ["get_environment_context"]
+    weather: ["get_environment_context"]
+    air_quality: ["get_environment_context"]
+    presence: ["get_environment_context"]
+    
     # Device control / 设备控制
     开: ["cached_get_device_state", "set_prop"]
     关: ["cached_get_device_state", "set_prop"]

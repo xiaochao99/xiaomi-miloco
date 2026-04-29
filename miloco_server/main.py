@@ -23,6 +23,7 @@ from miloco_server.controller import (
     chat_router,
     detection_router,
     face_recognition_router,
+    habit_router,
     ha_router,
     mcp_router,
     memory_router,
@@ -73,6 +74,7 @@ app.include_router(face_recognition_router, prefix="/api")
 app.include_router(openai_compat_router)
 app.include_router(xiaomi_bridge_router, prefix="/api")
 app.include_router(memory_router, prefix="/api")
+app.include_router(habit_router, prefix="/api")
 
 
 @app.get("/{full_path:path}")
@@ -120,6 +122,11 @@ async def startup_event():
 
     # Auto-initialize MIoT after startup (if logged in)
     await _init_miot_after_startup()
+
+    # Initialize habit learning system
+    await _init_habit_learning()
+
+    logger.info("=" * 50)
 
 
 async def _init_detection_service():
@@ -225,10 +232,127 @@ async def _init_miot_after_startup():
         logger.error("Auto-initialization failed: %s", e)
 
 
+async def _init_habit_learning():
+    """Initialize habit learning and decision engine."""
+    try:
+        from miloco_server.config.normal_config import HABIT_LEARNING_CONFIG, save_habit_config_enabled
+        if not HABIT_LEARNING_CONFIG:
+            logger.info("Habit learning config not found, skipping")
+            return
+        if not HABIT_LEARNING_CONFIG.get("enabled", False):
+            has_sub = any(HABIT_LEARNING_CONFIG.get(k) for k in ("context_entities", "collector", "learner", "decision_engine"))
+            if has_sub:
+                logger.info("Habit learning 'enabled' field missing but sub-configs exist, auto-enabling")
+                save_habit_config_enabled()
+            else:
+                logger.info("Habit learning disabled, skipping")
+                return
+
+        from miloco_server.utils.database import get_db_connector
+        from miloco_server.dao.habit_dao import HabitDAO
+        from miloco_server.service.habit_collector import HabitCollector
+        from miloco_server.service.behavior_learner import BehaviorLearner
+        from miloco_server.service.risk_assessor import RiskAssessor
+        from miloco_server.service.decision_engine import DecisionEngine
+        from miloco_server.service.model_trainer import ModelTrainer
+        from miloco_server.service.context_provider import ContextProvider
+
+        db = get_db_connector()
+        habit_dao = HabitDAO(db)
+        habit_dao.initialize()
+
+        from miloco_server.service.manager import get_manager
+        manager = get_manager()
+
+        ctx_entities = HABIT_LEARNING_CONFIG.get("context_entities", {})
+        ctx_provider = ContextProvider(ha_listener=manager.ha_listener, context_entities=ctx_entities)
+
+        collector_config = HABIT_LEARNING_CONFIG.get("collector", {})
+        collector = HabitCollector(
+            habit_dao=habit_dao,
+            flush_interval=collector_config.get("flush_interval", 5),
+            context_provider=ctx_provider,
+        )
+        await collector.start()
+
+        learner_config = HABIT_LEARNING_CONFIG.get("learner", {})
+        learner = BehaviorLearner(
+            habit_dao=habit_dao,
+            min_occurrences=learner_config.get("min_occurrences", 3),
+            time_bucket_minutes=learner_config.get("time_bucket_minutes", 30),
+        )
+        learner.set_context_provider(ctx_provider)
+
+        # Start model trainer (periodic re-learning and data cleanup)
+        trainer = ModelTrainer(behavior_learner=learner, habit_dao=habit_dao)
+        learn_interval = learner_config.get("learn_interval", 3600)
+        retention_config = HABIT_LEARNING_CONFIG.get("data_retention", {})
+        events_retention = retention_config.get("events_days", 90)
+        patterns_retention = retention_config.get("patterns_days", 180)
+        cleanup_interval = retention_config.get("cleanup_interval", 86400)
+        await trainer.start(
+            learn_interval=learn_interval,
+            events_retention_days=events_retention,
+            patterns_retention_days=patterns_retention,
+            cleanup_interval=cleanup_interval,
+        )
+
+        # Always create DecisionEngine (start loop only if enabled)
+        de_config = HABIT_LEARNING_CONFIG.get("decision_engine", {})
+        assessor = RiskAssessor()
+        engine = DecisionEngine(
+            behavior_learner=learner,
+            risk_assessor=assessor,
+            ha_proxy=manager.ha_proxy,
+            cycle_interval=de_config.get("cycle_interval", 60),
+            confidence_threshold=de_config.get("confidence_threshold", 0.65),
+            risk_level_limit=de_config.get("risk_level_limit", "HIGH"),
+            context_provider=ctx_provider,
+        )
+
+        try:
+            from miloco_server.xiaomi_bridge.manager import get_bridge_manager
+            engine.bridge_manager = get_bridge_manager()
+        except Exception:
+            pass
+
+        if hasattr(manager, 'wakeup_scheduler'):
+            engine.wakeup_scheduler = manager.wakeup_scheduler
+
+        if de_config.get("enabled", False):
+            await engine.start()
+            logger.info("Decision engine started")
+        else:
+            logger.info("Decision engine created (not started, waiting for enable)")
+
+        logger.info("Habit learning system initialized")
+
+    except Exception as e:
+        logger.error("Habit learning initialization error: %s", e)
+
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup operations when application shuts down"""
     logger.info("Application is shutting down...")
+
+    # Shutdown habit learning
+    try:
+        from miloco_server.service.habit_collector import HabitCollector
+        from miloco_server.service.decision_engine import DecisionEngine
+        from miloco_server.service.model_trainer import ModelTrainer
+
+        collector = HabitCollector.get_instance()
+        if collector:
+            await collector.stop()
+
+        engine = DecisionEngine.get_instance()
+        if engine:
+            await engine.stop()
+
+        logger.info("Habit learning shutdown completed")
+    except Exception as e:
+        logger.error(f"Habit learning shutdown error: {e}")
 
     # Shutdown Xiaomi bridge
     try:

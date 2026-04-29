@@ -38,398 +38,530 @@ from miloco_server.schema.memory_schema import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_COLLECTION_NAME = "miloco_memory"
-MEMORY_CHUNK_SIZE = 1000
-MEMORY_OVERLAP = 200
-
 
 class MemoryManager:
-    """核心记忆管理器，提供记忆的 CRUD 和检索功能"""
+    """
+    记忆管理器
 
-    def __init__(self, persist_directory: Optional[str] = None):
-        self.persist_directory = persist_directory or str(
-            Path.home() / ".miloco" / "memory"
+    使用 Mem0 进行智能记忆管理，ChromaDB 进行向量存储和检索。
+    支持：
+    - 自动记忆提取和存储
+    - 语义检索
+    - 记忆去重和更新
+    - 记忆失效管理
+    """
+
+    _instance: Optional["MemoryManager"] = None
+    _initialized: bool = False
+
+    def __new__(cls, *args, **kwargs):
+        """单例模式"""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(
+        self,
+        persist_directory: Optional[str] = None,
+        collection_name: str = "miloco_memories",
+        embedding_model: str = "all-MiniLM-L6-v2",
+    ):
+        """
+        初始化记忆管理器
+
+        Args:
+            persist_directory: ChromaDB 持久化目录
+            collection_name: 集合名称
+            embedding_model: 嵌入模型名称
+        """
+        if self._initialized:
+            return
+
+        self._persist_directory = persist_directory or str(
+            Path(__file__).parent.parent / ".temp" / "memory_db"
         )
-        self.collection_name = DEFAULT_COLLECTION_NAME
-        self._initialized = False
-        self._mem0 = None
-        self._collection = None
-        self._client = None
+        self._collection_name = collection_name
+        self._embedding_model = embedding_model
+
+        self._chroma_client: Optional[chromadb.PersistentClient] = None
+        self._collection: Optional[chromadb.Collection] = None
+
+        self._mem0: Optional[Mem0Memory] = None
+
+        self._initialized = True
+        logger.info("MemoryManager initialized with persist_directory: %s", self._persist_directory)
 
     async def initialize(self) -> bool:
-        """初始化记忆管理器"""
-        if self._initialized:
-            return True
+        """
+        异步初始化（连接数据库等）
+
+        Returns:
+            bool: 是否初始化成功
+        """
+        if not CHROMADB_AVAILABLE:
+            logger.error("ChromaDB not installed. Run: pip install chromadb")
+            return False
 
         try:
-            Path(self.persist_directory).mkdir(parents=True, exist_ok=True)
+            Path(self._persist_directory).mkdir(parents=True, exist_ok=True)
+            logger.info("Memory persist directory: %s", self._persist_directory)
+
+            self._chroma_client = chromadb.PersistentClient(
+                path=self._persist_directory,
+                settings=Settings(
+                    anonymized_telemetry=False,
+                    allow_reset=True,
+                )
+            )
+            logger.info("ChromaDB client initialized")
+
+            self._collection = self._chroma_client.get_or_create_collection(
+                name=self._collection_name,
+                metadata={"description": "Miloco smart home memory storage"}
+            )
+            logger.info("ChromaDB collection '%s' ready", self._collection_name)
 
             if MEM0_AVAILABLE:
-                config = {
-                    "version": "v1.1",
-                    "embedder": {
-                        "provider": "huggingface",
-                        "config": {
-                            "model": "sentence-transformers/all-MiniLM-L6-v2",
+                try:
+                    mem0_config = {
+                        "vector_store": {
+                            "provider": "chroma",
+                            "config": {
+                                "collection_name": f"{self._collection_name}_mem0",
+                                "path": self._persist_directory,
+                            }
                         },
-                    },
-                    "vector_store": {
-                        "provider": "chroma",
-                        "config": {
-                            "collection_name": self.collection_name,
-                            "path": self.persist_directory,
-                        },
-                    },
-                }
-                self._mem0 = Mem0Memory.from_config(config)
-                logger.info("使用 Mem0 初始化记忆管理器")
-            elif CHROMADB_AVAILABLE:
-                self._client = chromadb.PersistentClient(
-                    path=self.persist_directory,
-                    settings=Settings(anonymized_telemetry=False),
-                )
-                self._collection = self._client.get_or_create_collection(
-                    name=self.collection_name,
-                    metadata={"hnsw:space": "cosine"},
-                )
-                logger.info("使用 ChromaDB 初始化记忆管理器")
+                        "version": "v1.1"
+                    }
+                    self._mem0 = Mem0Memory.from_config(mem0_config)
+                    logger.info("Mem0 initialized successfully")
+                except Exception as mem0_error:
+                    logger.warning("Mem0 initialization failed (non-critical): %s", mem0_error)
+                    self._mem0 = None
             else:
-                logger.warning("未安装 mem0 或 chromadb，记忆功能将使用内存存储")
-                self._storage: Dict[str, MemoryModel] = {}
+                logger.warning("Mem0 not installed. Some advanced features disabled. Run: pip install mem0ai")
+                self._mem0 = None
 
-            self._initialized = True
-            logger.info(f"记忆管理器初始化完成，存储目录: {self.persist_directory}")
+            logger.info("MemoryManager initialized successfully")
             return True
 
         except Exception as e:
-            logger.error(f"记忆管理器初始化失败: {e}")
+            logger.error("Failed to initialize MemoryManager: %s", e, exc_info=True)
             return False
 
     async def add_memory(
         self,
         content: str,
-        memory_type: MemoryType = MemoryType.CONVERSATION,
+        user_id: str = "default",
+        memory_type: MemoryType = MemoryType.CUSTOM,
         metadata: Optional[Dict[str, Any]] = None,
-        session_id: Optional[str] = None,
-        importance: float = 0.5,
+        source: str = "auto",
     ) -> Optional[MemoryModel]:
-        """添加新记忆"""
-        await self.initialize()
+        """
+        添加记忆
 
-        memory_id = str(uuid.uuid4())
-        now = datetime.now()
+        Args:
+            content: 记忆内容
+            user_id: 用户ID
+            memory_type: 记忆类型
+            metadata: 元数据
+            source: 来源（auto/manual）
 
-        memory = MemoryModel(
-            id=memory_id,
-            content=content,
-            memory_type=memory_type,
-            metadata=metadata or {},
-            session_id=session_id,
-            importance=importance,
-            created_at=now,
-            updated_at=now,
-        )
-
+        Returns:
+            MemoryModel: 创建的记忆对象
+        """
         try:
+            if not self._collection:
+                logger.error("MemoryManager not initialized, cannot add memory")
+                return None
+                
+            memory_id = str(uuid.uuid4())
+            now = datetime.now()
+
+            full_metadata = {
+                "user_id": user_id,
+                "memory_type": memory_type.value,
+                "source": source,
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "is_active": True,
+                **(metadata or {})
+            }
+
+            self._collection.add(
+                ids=[memory_id],
+                documents=[content],
+                metadatas=[full_metadata]
+            )
+
             if self._mem0:
-                mem_metadata = {
-                    "memory_type": memory_type.value,
-                    "importance": str(importance),
-                    "created_at": now.isoformat(),
-                    **(metadata or {}),
-                }
-                if session_id:
-                    mem_metadata["session_id"] = session_id
+                try:
+                    self._mem0.add(
+                        messages=[{"role": "user", "content": content}],
+                        user_id=user_id,
+                        metadata={"memory_id": memory_id, "type": memory_type.value}
+                    )
+                except Exception as mem0_error:
+                    logger.warning("Mem0 add failed (non-critical): %s", mem0_error)
 
-                result = self._mem0.add(
-                    content,
-                    user_id="miloco_user",
-                    metadata=mem_metadata,
-                )
-                if result and "results" in result and result["results"]:
-                    memory.id = result["results"][0].get("id", memory_id)
-                logger.info(f"使用 Mem0 添加记忆: {memory.id}")
+            memory = MemoryModel(
+                id=memory_id,
+                user_id=user_id,
+                content=content,
+                memory_type=memory_type,
+                metadata=metadata or {},
+                created_at=now,
+                updated_at=now,
+                source=source,
+            )
 
-            elif self._collection:
-                self._collection.add(
-                    documents=[content],
-                    metadatas=[{
-                        "memory_type": memory_type.value,
-                        "importance": str(importance),
-                        "created_at": now.isoformat(),
-                        **(metadata or {}),
-                    }],
-                    ids=[memory_id],
-                )
-                logger.info(f"使用 ChromaDB 添加记忆: {memory_id}")
-
-            else:
-                self._storage[memory_id] = memory
-                logger.info(f"使用内存存储添加记忆: {memory_id}")
-
+            logger.info("Memory added: id=%s, type=%s, content=%s", memory_id, memory_type, content[:50])
             return memory
 
         except Exception as e:
-            logger.error(f"添加记忆失败: {e}")
+            logger.error("Failed to add memory: %s", e)
             return None
 
     async def search_memories(
         self,
         query: str,
-        limit: int = 10,
-        memory_type: Optional[MemoryType] = None,
-        min_importance: float = 0.0,
+        user_id: str = "default",
+        limit: int = 5,
+        memory_types: Optional[List[MemoryType]] = None,
+        include_inactive: bool = False,
     ) -> List[MemorySearchResult]:
-        """语义搜索记忆"""
-        await self.initialize()
+        """
+        搜索相关记忆
 
+        Args:
+            query: 搜索查询
+            user_id: 用户ID
+            limit: 返回数量
+            memory_types: 过滤的记忆类型
+            include_inactive: 是否包含无效记忆
+
+        Returns:
+            List[MemorySearchResult]: 搜索结果列表
+        """
         try:
-            results: List[MemorySearchResult] = []
+            if not self._collection:
+                logger.warning("MemoryManager not initialized, returning empty list")
+                return []
+                
+            conditions = [{"user_id": {"$eq": user_id}}]
+            if not include_inactive:
+                conditions.append({"is_active": {"$eq": True}})
 
-            if self._mem0:
-                search_results = self._mem0.search(
-                    query,
-                    user_id="miloco_user",
-                    limit=limit,
-                )
-                if search_results and "results" in search_results:
-                    for r in search_results["results"]:
-                        rtype = r.get("metadata", {}).get("memory_type", "conversation")
-                        if memory_type and rtype != memory_type.value:
-                            continue
-                        importance = float(r.get("metadata", {}).get("importance", "0.5"))
-                        if importance < min_importance:
-                            continue
-                        results.append(MemorySearchResult(
-                            memory=MemoryModel(
-                                id=r.get("id", ""),
-                                content=r.get("memory", ""),
-                                memory_type=MemoryType(rtype),
-                                metadata=r.get("metadata", {}),
-                                importance=importance,
-                            ),
-                            score=r.get("score", 0.0),
-                        ))
+            if memory_types:
+                type_values = [t.value for t in memory_types]
+                if len(type_values) == 1:
+                    conditions.append({"memory_type": {"$eq": type_values[0]}})
+                else:
+                    conditions.append({"memory_type": {"$in": type_values}})
 
-            elif self._collection:
-                where_filter = {}
-                if memory_type:
-                    where_filter["memory_type"] = memory_type.value
-                if min_importance > 0:
-                    where_filter["importance"] = {"$gte": str(min_importance)}
+            where_filter = {"$and": conditions} if len(conditions) > 1 else conditions[0]
 
-                query_params = {
-                    "query_texts": [query],
-                    "n_results": limit,
-                }
-                if where_filter:
-                    query_params["where"] = where_filter
+            results = self._collection.query(
+                query_texts=[query],
+                n_results=limit,
+                where=where_filter,
+                include=["documents", "metadatas", "distances"]
+            )
 
-                search_results = self._collection.query(**query_params)
+            search_results = []
+            if results and results.get("ids") and results["ids"][0]:
+                ids = results["ids"][0]
+                metadatas = results.get("metadatas", [])[0] if results.get("metadatas") else []
+                documents = results.get("documents", [])[0] if results.get("documents") else []
+                distances = results.get("distances", [])[0] if results.get("distances") else []
+                
+                for i, memory_id in enumerate(ids):
+                    metadata = metadatas[i] if i < len(metadatas) else {}
+                    content = documents[i] if i < len(documents) else ""
+                    distance = distances[i] if i < len(distances) else 0
 
-                if search_results and search_results["documents"]:
-                    for i, doc in enumerate(search_results["documents"][0]):
-                        meta = (search_results["metadatas"][0][i]
-                                if search_results.get("metadatas") else {})
-                        distance = (search_results["distances"][0][i]
-                                    if search_results.get("distances") else 0.0)
-                        score = max(0.0, 1.0 - distance)
-                        rid = (search_results["ids"][0][i]
-                               if search_results.get("ids") else str(uuid.uuid4()))
-                        rtype = meta.get("memory_type", "conversation")
-                        importance = float(meta.get("importance", "0.5"))
-                        results.append(MemorySearchResult(
-                            memory=MemoryModel(
-                                id=rid,
-                                content=doc,
-                                memory_type=MemoryType(rtype),
-                                metadata=meta,
-                                importance=importance,
-                            ),
-                            score=score,
-                        ))
+                    score = 1.0 / (1.0 + distance)
 
-            else:
-                for mem in self._storage.values():
-                    if memory_type and mem.memory_type != memory_type:
-                        continue
-                    if mem.importance < min_importance:
-                        continue
-                    results.append(MemorySearchResult(memory=mem, score=0.5))
-                results.sort(key=lambda x: x.score, reverse=True)
-                results = results[:limit]
+                    memory = MemoryModel(
+                        id=memory_id,
+                        user_id=metadata.get("user_id", user_id),
+                        content=content,
+                        memory_type=MemoryType(metadata.get("memory_type", "custom")),
+                        metadata={k: v for k, v in metadata.items()
+                                  if k not in ["user_id", "memory_type", "source", "created_at", "updated_at", "is_active"]},
+                        source=metadata.get("source", "auto"),
+                        is_active=metadata.get("is_active", True),
+                    )
 
-            results.sort(key=lambda x: x.score, reverse=True)
-            logger.info(f"搜索记忆 '{query}'，返回 {len(results)} 条结果")
-            return results
+                    search_results.append(MemorySearchResult(
+                        memory=memory,
+                        score=score,
+                        distance=distance
+                    ))
+
+            logger.debug("Memory search: query='%s', found %d results", query[:30], len(search_results))
+            return search_results
 
         except Exception as e:
-            logger.error(f"搜索记忆失败: {e}")
+            logger.error("Failed to search memories: %s", e)
             return []
 
-    async def get_memory(self, memory_id: str) -> Optional[MemoryModel]:
-        """获取单条记忆"""
-        await self.initialize()
+    async def get_memory_context(
+        self,
+        query: str,
+        user_id: str = "default",
+        limit: int = 5,
+    ) -> MemoryContext:
+        """
+        获取记忆上下文（用于注入Prompt）
 
-        try:
-            if self._collection:
-                result = self._collection.get(ids=[memory_id])
-                if result and result["documents"]:
-                    meta = result["metadatas"][0] if result["metadatas"] else {}
-                    return MemoryModel(
-                        id=memory_id,
-                        content=result["documents"][0],
-                        memory_type=MemoryType(meta.get("memory_type", "conversation")),
-                        metadata=meta,
-                        importance=float(meta.get("importance", "0.5")),
-                    )
-            elif hasattr(self, "_storage"):
-                return self._storage.get(memory_id)
-            return None
-        except Exception as e:
-            logger.error(f"获取记忆失败: {e}")
-            return None
+        Args:
+            query: 当前查询/对话内容
+            user_id: 用户ID
+            limit: 最大记忆数量
 
-    async def delete_memory(self, memory_id: str) -> bool:
-        """删除记忆"""
-        await self.initialize()
+        Returns:
+            MemoryContext: 记忆上下文
+        """
+        search_results = await self.search_memories(
+            query=query,
+            user_id=user_id,
+            limit=limit,
+            include_inactive=False
+        )
 
-        try:
-            if self._collection:
-                self._collection.delete(ids=[memory_id])
-                logger.info(f"删除记忆: {memory_id}")
-                return True
-            elif hasattr(self, "_storage"):
-                if memory_id in self._storage:
-                    del self._storage[memory_id]
-                    return True
-            return False
-        except Exception as e:
-            logger.error(f"删除记忆失败: {e}")
-            return False
+        filtered_results = [r for r in search_results if r.score > 0.3]
+
+        context = MemoryContext(memories=filtered_results)
+        context.context_text = context.to_prompt_text()
+
+        return context
 
     async def update_memory(
         self,
         memory_id: str,
         content: Optional[str] = None,
+        memory_type: Optional[MemoryType] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        importance: Optional[float] = None,
-    ) -> Optional[MemoryModel]:
-        """更新记忆"""
-        existing = await self.get_memory(memory_id)
-        if not existing:
-            return None
+        is_active: Optional[bool] = None,
+    ) -> bool:
+        """
+        更新记忆
 
-        new_content = content or existing.content
-        new_metadata = {**existing.metadata}
-        if metadata:
-            new_metadata.update(metadata)
-        if importance is not None:
-            new_metadata["importance"] = str(importance)
-        new_metadata["updated_at"] = datetime.now().isoformat()
+        Args:
+            memory_id: 记忆ID
+            content: 新内容
+            memory_type: 新类型
+            metadata: 新元数据
+            is_active: 是否有效
 
-        await self.delete_memory(memory_id)
-
-        new_memory = await self.add_memory(
-            content=new_content,
-            memory_type=existing.memory_type,
-            metadata=new_metadata,
-            session_id=existing.session_id,
-            importance=importance or existing.importance,
-        )
-
-        if new_memory:
-            logger.info(f"更新记忆: {memory_id} -> {new_memory.id}")
-
-        return new_memory
-
-    async def get_context(
-        self,
-        query: str,
-        max_memories: int = 5,
-        min_importance: float = 0.3,
-    ) -> MemoryContext:
-        """获取与查询相关的记忆上下文"""
-        search_results = await self.search_memories(
-            query=query,
-            limit=max_memories,
-            min_importance=min_importance,
-        )
-
-        relevant_memories = [r.memory for r in search_results]
-
-        summary_parts = []
-        for mem in relevant_memories:
-            summary_parts.append(f"- {mem.content}")
-        summary = "\n".join(summary_parts) if summary_parts else "暂无相关记忆"
-
-        return MemoryContext(
-            query=query,
-            relevant_memories=relevant_memories,
-            summary=summary,
-            total_count=len(relevant_memories),
-        )
-
-    async def get_stats(self) -> MemoryStats:
-        """获取记忆统计信息"""
-        await self.initialize()
-
-        total_count = 0
-        type_counts: Dict[str, int] = {}
-        avg_importance = 0.0
-
+        Returns:
+            bool: 是否更新成功
+        """
         try:
-            if self._collection:
-                result = self._collection.get()
-                if result and result["documents"]:
-                    total_count = len(result["documents"])
-                    for meta in (result["metadatas"] or []):
-                        mtype = meta.get("memory_type", "conversation")
-                        type_counts[mtype] = type_counts.get(mtype, 0) + 1
-                    importances = [
-                        float(meta.get("importance", "0.5"))
-                        for meta in (result["metadatas"] or [])
-                    ]
-                    if importances:
-                        avg_importance = sum(importances) / len(importances)
-            elif hasattr(self, "_storage"):
-                total_count = len(self._storage)
-                for mem in self._storage.values():
-                    mtype = mem.memory_type.value
-                    type_counts[mtype] = type_counts.get(mtype, 0) + 1
-                if self._storage:
-                    avg_importance = sum(
-                        m.importance for m in self._storage.values()
-                    ) / len(self._storage)
+            existing = self._collection.get(ids=[memory_id], include=["documents", "metadatas"])
+            if not existing or not existing["ids"]:
+                logger.warning("Memory not found: %s", memory_id)
+                return False
+
+            current_metadata = existing["metadatas"][0] if existing["metadatas"] else {}
+            current_content = existing["documents"][0] if existing["documents"] else ""
+
+            new_content = content if content is not None else current_content
+            new_metadata = {**current_metadata}
+
+            if memory_type is not None:
+                new_metadata["memory_type"] = memory_type.value
+            if metadata is not None:
+                new_metadata.update(metadata)
+            if is_active is not None:
+                new_metadata["is_active"] = is_active
+
+            new_metadata["updated_at"] = datetime.now().isoformat()
+
+            self._collection.update(
+                ids=[memory_id],
+                documents=[new_content],
+                metadatas=[new_metadata]
+            )
+
+            logger.info("Memory updated: id=%s", memory_id)
+            return True
 
         except Exception as e:
-            logger.error(f"获取统计信息失败: {e}")
+            logger.error("Failed to update memory: %s", e)
+            return False
 
-        return MemoryStats(
-            total_count=total_count,
-            type_counts=type_counts,
-            avg_importance=avg_importance,
+    async def delete_memory(self, memory_id: str, soft_delete: bool = True) -> bool:
+        """
+        删除记忆
+
+        Args:
+            memory_id: 记忆ID
+            soft_delete: 是否软删除（标记为无效）
+
+        Returns:
+            bool: 是否删除成功
+        """
+        try:
+            if soft_delete:
+                return await self.update_memory(memory_id, is_active=False)
+            else:
+                self._collection.delete(ids=[memory_id])
+                logger.info("Memory hard deleted: id=%s", memory_id)
+                return True
+
+        except Exception as e:
+            logger.error("Failed to delete memory: %s", e)
+            return False
+
+    async def get_all_memories(
+        self,
+        user_id: str = "default",
+        include_inactive: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[MemoryModel]:
+        """
+        获取所有记忆
+
+        Args:
+            user_id: 用户ID
+            include_inactive: 是否包含无效记忆
+            limit: 返回数量
+            offset: 偏移量
+
+        Returns:
+            List[MemoryModel]: 记忆列表
+        """
+        try:
+            if not self._collection:
+                logger.warning("MemoryManager not initialized, returning empty list")
+                return []
+                
+            conditions = [{"user_id": {"$eq": user_id}}]
+            if not include_inactive:
+                conditions.append({"is_active": {"$eq": True}})
+
+            where_filter = {"$and": conditions} if len(conditions) > 1 else conditions[0]
+
+            results = self._collection.get(
+                where=where_filter,
+                include=["documents", "metadatas"],
+                limit=limit,
+                offset=offset
+            )
+
+            memories = []
+            if results and results.get("ids"):
+                metadatas = results.get("metadatas") or []
+                documents = results.get("documents") or []
+                
+                for i, memory_id in enumerate(results["ids"]):
+                    metadata = metadatas[i] if i < len(metadatas) else {}
+                    content = documents[i] if i < len(documents) else ""
+
+                    memory = MemoryModel(
+                        id=memory_id,
+                        user_id=metadata.get("user_id", user_id),
+                        content=content,
+                        memory_type=MemoryType(metadata.get("memory_type", "custom")),
+                        metadata={k: v for k, v in metadata.items()
+                                  if k not in ["user_id", "memory_type", "source", "created_at", "updated_at", "is_active"]},
+                        source=metadata.get("source", "auto"),
+                        is_active=metadata.get("is_active", True),
+                    )
+                    memories.append(memory)
+
+            return memories
+
+        except Exception as e:
+            logger.error("Failed to get all memories: %s", e)
+            return []
+
+    async def get_stats(self, user_id: str = "default") -> MemoryStats:
+        """
+        获取记忆统计信息
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            MemoryStats: 统计信息
+        """
+        try:
+            all_memories = await self.get_all_memories(user_id=user_id, include_inactive=True, limit=10000)
+            active_memories = await self.get_all_memories(user_id=user_id, include_inactive=False, limit=10000)
+
+            by_type: Dict[str, int] = {}
+            by_source: Dict[str, int] = {}
+
+            for memory in active_memories:
+                type_key = memory.memory_type.value
+                by_type[type_key] = by_type.get(type_key, 0) + 1
+
+                source_key = memory.source
+                by_source[source_key] = by_source.get(source_key, 0) + 1
+
+            return MemoryStats(
+                total_count=len(active_memories),
+                by_type=by_type,
+                by_source=by_source,
+                active_count=len(active_memories)
+            )
+
+        except Exception as e:
+            logger.error("Failed to get memory stats: %s", e)
+            return MemoryStats()
+
+    async def find_similar_memories(
+        self,
+        content: str,
+        user_id: str = "default",
+        threshold: float = 0.8,
+    ) -> List[MemorySearchResult]:
+        """
+        查找相似记忆（用于去重）
+
+        Args:
+            content: 要查找的内容
+            user_id: 用户ID
+            threshold: 相似度阈值
+
+        Returns:
+            List[MemorySearchResult]: 相似的记忆列表
+        """
+        results = await self.search_memories(
+            query=content,
+            user_id=user_id,
+            limit=5,
+            include_inactive=True
         )
 
-    async def shutdown(self):
-        """关闭记忆管理器"""
-        self._client = None
-        self._collection = None
-        self._initialized = False
-        logger.info("记忆管理器已关闭")
+        return [r for r in results if r.score >= threshold]
+
+    async def cleanup(self):
+        """清理资源"""
+        try:
+            if self._chroma_client:
+                pass
+            logger.info("MemoryManager cleanup completed")
+        except Exception as e:
+            logger.error("Failed to cleanup MemoryManager: %s", e)
 
 
 _memory_manager: Optional[MemoryManager] = None
 
 
-def get_memory_manager() -> Optional[MemoryManager]:
-    return _memory_manager
-
-
-async def initialize_memory_manager(
-    persist_directory: Optional[str] = None,
-) -> MemoryManager:
+def get_memory_manager() -> MemoryManager:
+    """获取全局记忆管理器实例"""
     global _memory_manager
-    _memory_manager = MemoryManager(persist_directory)
-    await _memory_manager.initialize()
+    if _memory_manager is None:
+        _memory_manager = MemoryManager()
     return _memory_manager
+
+
+async def initialize_memory_manager() -> bool:
+    """初始化全局记忆管理器"""
+    manager = get_memory_manager()
+    return await manager.initialize()

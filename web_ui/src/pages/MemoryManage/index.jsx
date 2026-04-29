@@ -22,6 +22,8 @@ import {
   Empty,
   InputNumber,
   Descriptions,
+  Radio,
+  Divider,
 } from 'antd';
 import {
   PlusOutlined,
@@ -30,20 +32,32 @@ import {
   ReloadOutlined,
   EditOutlined,
   BarChartOutlined,
+  MessageOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { addMemory, searchMemory, listMemories, updateMemory, deleteMemory, getMemoryStats } from '@/api';
+import { addMemory, searchMemory, listMemories, updateMemory, deleteMemory, getMemoryStats, handleMemoryCommand, getMemoryTypes } from '@/api';
 import styles from './index.module.less';
 
 const MEMORY_TYPES = [
-  { value: 'conversation', color: 'blue', labelKey: 'memory.type.conversation' },
-  { value: 'user_preference', color: 'green', labelKey: 'memory.type.user_preference' },
-  { value: 'object_location', color: 'orange', labelKey: 'memory.type.object_location' },
-  { value: 'pet_behavior', color: 'purple', labelKey: 'memory.type.pet_behavior' },
-  { value: 'schedule', color: 'cyan', labelKey: 'memory.type.schedule' },
-  { value: 'personal', color: 'magenta', labelKey: 'memory.type.personal' },
-  { value: 'custom', color: 'default', labelKey: 'memory.type.custom' },
+  { value: 'preference', color: 'green', labelKey: 'memory.types.preference' },
+  { value: 'fact', color: 'blue', labelKey: 'memory.types.fact' },
+  { value: 'habit', color: 'orange', labelKey: 'memory.types.habit' },
+  { value: 'device_setting', color: 'purple', labelKey: 'memory.types.device_setting' },
+  { value: 'schedule', color: 'cyan', labelKey: 'memory.types.schedule' },
+  { value: 'relationship', color: 'magenta', labelKey: 'memory.types.relationship' },
+  { value: 'conversation', color: 'default', labelKey: 'memory.types.conversation' },
+  { value: 'user_preference', color: 'green', labelKey: 'memory.types.user_preference' },
+  { value: 'object_location', color: 'gold', labelKey: 'memory.types.object_location' },
+  { value: 'pet_behavior', color: 'pink', labelKey: 'memory.types.pet_behavior' },
+  { value: 'personal', color: 'red', labelKey: 'memory.types.personal' },
+  { value: 'custom', color: 'gray', labelKey: 'memory.types.custom' },
 ];
+
+const SOURCE_LABELS = {
+  auto: 'memory.sourceAuto',
+  manual: 'memory.sourceManual',
+};
 
 export default function MemoryManage() {
   const { t } = useTranslation();
@@ -54,6 +68,7 @@ export default function MemoryManage() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [commandModalVisible, setCommandModalVisible] = useState(false);
   const [currentMemory, setCurrentMemory] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -62,36 +77,51 @@ export default function MemoryManage() {
     pageSize: 10,
     total: 0,
   });
+  const [filterType, setFilterType] = useState('');
+  const [filterSource, setFilterSource] = useState('');
   const [addForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [searchForm] = Form.useForm();
+  const [commandForm] = Form.useForm();
 
   const fetchMemories = useCallback(async (page = 1, pageSize = 10) => {
     setLoading(true);
     try {
-      const res = await listMemories({ limit: 1000 });
-      if (res.success) {
-        const allMemories = res.memories || [];
-        setMemories(allMemories);
+      const res = await listMemories({ page, page_size: pageSize });
+      if (res && res.success !== false) {
+        const data = res.data || res;
+        const allMemories = data.memories || [];
+        let filteredMemories = allMemories;
+        
+        if (filterType) {
+          filteredMemories = filteredMemories.filter(m => m.memory_type === filterType);
+        }
+        if (filterSource) {
+          filteredMemories = filteredMemories.filter(m => m.source === filterSource);
+        }
+        
+        setMemories(filteredMemories);
         setPagination((prev) => ({
           ...prev,
           current: page,
           pageSize,
-          total: allMemories.length,
+          total: filteredMemories.length,
         }));
       }
     } catch (error) {
       console.error('获取记忆列表失败:', error);
+      message.error(t('memory.fetchFailed'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterType, filterSource]);
 
   const fetchStats = useCallback(async () => {
     try {
       const res = await getMemoryStats();
-      if (res.success) {
-        setStats(res.stats);
+      if (res && res.success !== false) {
+        const data = res.data || res;
+        setStats(data.stats || data);
       }
     } catch (error) {
       console.error('获取统计信息失败:', error);
@@ -108,14 +138,15 @@ export default function MemoryManage() {
       const res = await addMemory({
         content: values.content,
         memory_type: values.memory_type,
-        importance: values.importance / 100,
       });
-      if (res.success) {
+      if (res && res.success !== false) {
         message.success(t('memory.addSuccess'));
         setAddModalVisible(false);
         addForm.resetFields();
         fetchMemories();
         fetchStats();
+      } else {
+        message.error(t('memory.addFailed'));
       }
     } catch (error) {
       message.error(t('memory.addFailed'));
@@ -128,15 +159,16 @@ export default function MemoryManage() {
       const res = await updateMemory(currentMemory.id, {
         content: values.content,
         memory_type: values.memory_type,
-        importance: values.importance / 100,
       });
-      if (res.success) {
+      if (res && res.success !== false) {
         message.success(t('memory.editSuccess'));
         setEditModalVisible(false);
         setCurrentMemory(null);
         editForm.resetFields();
         fetchMemories();
         fetchStats();
+      } else {
+        message.error(t('memory.editFailed'));
       }
     } catch (error) {
       message.error(t('memory.editFailed'));
@@ -146,10 +178,12 @@ export default function MemoryManage() {
   const handleDelete = async (memoryId) => {
     try {
       const res = await deleteMemory(memoryId);
-      if (res.success) {
+      if (res && res.success !== false) {
         message.success(t('memory.deleteSuccess'));
         fetchMemories();
         fetchStats();
+      } else {
+        message.error(t('memory.deleteFailed'));
       }
     } catch (error) {
       message.error(t('memory.deleteFailed'));
@@ -162,10 +196,10 @@ export default function MemoryManage() {
       const res = await searchMemory({
         query: values.query,
         limit: values.limit || 10,
-        memory_type: values.memory_type || undefined,
       });
-      if (res.success) {
-        setSearchResults(res.results || []);
+      if (res && res.success !== false) {
+        const data = res.data || res;
+        setSearchResults(data || []);
       }
     } catch (error) {
       message.error(t('memory.searchFailed'));
@@ -174,12 +208,34 @@ export default function MemoryManage() {
     }
   };
 
+  const handleCommand = async (values) => {
+    try {
+      const res = await handleMemoryCommand({
+        command: values.command,
+      });
+      if (res && res.success !== false) {
+        const data = res.data || res;
+        if (data.success) {
+          message.success(data.message || t('memory.commandSuccess'));
+          fetchMemories();
+          fetchStats();
+        } else {
+          message.warning(data.message || t('memory.commandFailed'));
+        }
+      }
+    } catch (error) {
+      message.error(t('memory.commandFailed'));
+    } finally {
+      setCommandModalVisible(false);
+      commandForm.resetFields();
+    }
+  };
+
   const openEditModal = (record) => {
     setCurrentMemory(record);
     editForm.setFieldsValue({
       content: record.content,
       memory_type: record.memory_type,
-      importance: Math.round((record.importance || 0.5) * 100),
     });
     setEditModalVisible(true);
   };
@@ -193,15 +249,28 @@ export default function MemoryManage() {
     const typeConfig = MEMORY_TYPES.find((mt) => mt.value === type);
     return (
       <Tag color={typeConfig?.color || 'default'}>
-        {t(typeConfig?.labelKey || `memory.type.${type}`)}
+        {t(typeConfig?.labelKey || `memory.types.${type}`)}
       </Tag>
     );
   };
 
-  const getImportanceColor = (importance) => {
-    if (importance >= 0.7) return '#f5222d';
-    if (importance >= 0.4) return '#faad14';
-    return '#52c41a';
+  const getSourceTag = (source) => {
+    const color = source === 'auto' ? 'green' : 'blue';
+    return (
+      <Tag color={color}>
+        {t(SOURCE_LABELS[source] || `memory.sourceAuto`)}
+      </Tag>
+    );
+  };
+
+  const getStatusTag = (isActive) => {
+    if (isActive === undefined) return null;
+    const color = isActive ? 'green' : 'red';
+    return (
+      <Tag color={color}>
+        {isActive ? t('memory.statusActive') : t('memory.statusInactive')}
+      </Tag>
+    );
   };
 
   const columns = [
@@ -210,7 +279,7 @@ export default function MemoryManage() {
       dataIndex: 'content',
       key: 'content',
       ellipsis: true,
-      width: '40%',
+      width: '35%',
       render: (text, record) => (
         <Tooltip title={text}>
           <span
@@ -230,16 +299,18 @@ export default function MemoryManage() {
       render: (type) => getMemoryTypeTag(type),
     },
     {
-      title: t('memory.importance'),
-      dataIndex: 'importance',
-      key: 'importance',
-      width: 120,
-      sorter: (a, b) => (a.importance || 0) - (b.importance || 0),
-      render: (importance) => (
-        <span style={{ color: getImportanceColor(importance) }}>
-          {importance != null ? `${Math.round(importance * 100)}%` : '-'}
-        </span>
-      ),
+      title: t('memory.source'),
+      dataIndex: 'source',
+      key: 'source',
+      width: 100,
+      render: (source) => getSourceTag(source),
+    },
+    {
+      title: t('memory.status'),
+      dataIndex: 'is_active',
+      key: 'is_active',
+      width: 100,
+      render: (isActive) => getStatusTag(isActive),
     },
     {
       title: t('memory.createdAt'),
@@ -284,6 +355,14 @@ export default function MemoryManage() {
       dataIndex: ['memory', 'content'],
       key: 'content',
       ellipsis: true,
+      width: '50%',
+      render: (text, record) => (
+        <Tooltip title={text}>
+          <span onClick={() => openDetailModal(record.memory)} className={styles.contentCell}>
+            {text}
+          </span>
+        </Tooltip>
+      ),
     },
     {
       title: t('memory.type'),
@@ -293,12 +372,14 @@ export default function MemoryManage() {
       render: (type) => getMemoryTypeTag(type),
     },
     {
-      title: t('memory.score'),
+      title: t('memory.relevance'),
       dataIndex: 'score',
       key: 'score',
       width: 100,
       render: (score) => (
-        <span>{score != null ? (score * 100).toFixed(1) + '%' : '-'}</span>
+        <span>
+          {score != null ? (score * 100).toFixed(1) + '%' : '-'}
+        </span>
       ),
     },
   ];
@@ -323,26 +404,50 @@ export default function MemoryManage() {
               fetchStats();
               Modal.info({
                 title: t('memory.statsTitle'),
-                width: 400,
+                width: 500,
                 content: stats ? (
-                  <Descriptions column={1} bordered size="small">
-                    <Descriptions.Item label={t('memory.totalCount')}>
-                      {stats.total_count}
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('memory.avgImportance')}>
-                      {stats.avg_importance != null
-                        ? `${Math.round(stats.avg_importance * 100)}%`
-                        : '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label={t('memory.typeDistribution')}>
-                      {stats.type_counts &&
-                        Object.entries(stats.type_counts).map(([type, count]) => (
-                          <div key={type}>
-                            {getMemoryTypeTag(type)}: {count}
+                  <div>
+                    <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
+                      <Descriptions.Item label={t('memory.totalCount')}>
+                        {stats.total_count}
+                      </Descriptions.Item>
+                      <Descriptions.Item label={t('memory.activeCount')}>
+                        {stats.active_count || '-'}
+                      </Descriptions.Item>
+                      <Descriptions.Item label={t('memory.avgImportance')} span={2}>
+                        {stats.avg_importance != null
+                          ? `${Math.round(stats.avg_importance * 100)}%`
+                          : '-'}
+                      </Descriptions.Item>
+                    </Descriptions>
+                    <Divider style={{ margin: '12px 0' }} />
+                    <div>
+                      <Typography.Text strong>{t('memory.typeDistribution')}</Typography.Text>
+                      <div className={styles.typeDistribution}>
+                        {stats.by_type &&
+                          Object.entries(stats.by_type).map(([type, count]) => (
+                            <div key={type} className={styles.typeItem}>
+                              {getMemoryTypeTag(type)}: {count}
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                    {stats.by_source && (
+                      <>
+                        <Divider style={{ margin: '12px 0' }} />
+                        <div>
+                          <Typography.Text strong>{t('memory.sourceDistribution')}</Typography.Text>
+                          <div className={styles.sourceDistribution}>
+                            {Object.entries(stats.by_source).map(([source, count]) => (
+                              <div key={source} className={styles.sourceItem}>
+                                {getSourceTag(source)}: {count}
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                    </Descriptions.Item>
-                  </Descriptions>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 ) : (
                   <Empty description={t('memory.noStatsData')} />
                 ),
@@ -356,6 +461,12 @@ export default function MemoryManage() {
             onClick={() => setSearchModalVisible(true)}
           >
             {t('memory.search')}
+          </Button>
+          <Button
+            icon={<MessageOutlined />}
+            onClick={() => setCommandModalVisible(true)}
+          >
+            {t('memory.command')}
           </Button>
           <Button
             icon={<ReloadOutlined />}
@@ -374,6 +485,38 @@ export default function MemoryManage() {
             {t('memory.addMemory')}
           </Button>
         </Space>
+      </div>
+
+      <div className={styles.filterBar}>
+        <Select
+          placeholder={t('memory.filterType')}
+          style={{ width: 150 }}
+          allowClear
+          value={filterType}
+          onChange={(value) => {
+            setFilterType(value);
+            setPagination({ ...pagination, current: 1 });
+          }}
+        >
+          {MEMORY_TYPES.map((type) => (
+            <Select.Option key={type.value} value={type.value}>
+              {t(type.labelKey)}
+            </Select.Option>
+          ))}
+        </Select>
+        <Select
+          placeholder={t('memory.filterSource')}
+          style={{ width: 120 }}
+          allowClear
+          value={filterSource}
+          onChange={(value) => {
+            setFilterSource(value);
+            setPagination({ ...pagination, current: 1 });
+          }}
+        >
+          <Select.Option value="auto">{t('memory.sourceAuto')}</Select.Option>
+          <Select.Option value="manual">{t('memory.sourceManual')}</Select.Option>
+        </Select>
       </div>
 
       <Card className={styles.tableCard}>
@@ -414,7 +557,7 @@ export default function MemoryManage() {
           <Form.Item
             name="memory_type"
             label={t('memory.type')}
-            initialValue="personal"
+            initialValue="preference"
           >
             <Select>
               {MEMORY_TYPES.map((type) => (
@@ -423,13 +566,6 @@ export default function MemoryManage() {
                 </Select.Option>
               ))}
             </Select>
-          </Form.Item>
-          <Form.Item
-            name="importance"
-            label={t('memory.importance')}
-            initialValue={70}
-          >
-            <Slider min={0} max={100} marks={{ 0: '0', 50: '50', 100: '100' }} />
           </Form.Item>
           <Form.Item>
             <Space>
@@ -477,9 +613,6 @@ export default function MemoryManage() {
               ))}
             </Select>
           </Form.Item>
-          <Form.Item name="importance" label={t('memory.importance')}>
-            <Slider min={0} max={100} marks={{ 0: '0', 50: '50', 100: '100' }} />
-          </Form.Item>
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">
@@ -520,14 +653,11 @@ export default function MemoryManage() {
             <Descriptions.Item label={t('memory.type')}>
               {getMemoryTypeTag(currentMemory.memory_type)}
             </Descriptions.Item>
-            <Descriptions.Item label={t('memory.importance')}>
-              <span
-                style={{ color: getImportanceColor(currentMemory.importance) }}
-              >
-                {currentMemory.importance != null
-                  ? `${Math.round(currentMemory.importance * 100)}%`
-                  : '-'}
-              </span>
+            <Descriptions.Item label={t('memory.source')}>
+              {getSourceTag(currentMemory.source)}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('memory.status')}>
+              {getStatusTag(currentMemory.is_active)}
             </Descriptions.Item>
             <Descriptions.Item label={t('memory.createdAt')}>
               {currentMemory.created_at
@@ -566,15 +696,6 @@ export default function MemoryManage() {
           >
             <Input placeholder={t('memory.searchPlaceholder')} style={{ width: 300 }} />
           </Form.Item>
-          <Form.Item name="memory_type">
-            <Select allowClear placeholder={t('memory.type')} style={{ width: 150 }}>
-              {MEMORY_TYPES.map((type) => (
-                <Select.Option key={type.value} value={type.value}>
-                  {t(type.labelKey)}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
           <Form.Item name="limit" initialValue={10}>
             <InputNumber min={1} max={50} placeholder={t('memory.resultLimit')} style={{ width: 100 }} />
           </Form.Item>
@@ -592,6 +713,56 @@ export default function MemoryManage() {
           pagination={{ pageSize: 5 }}
           locale={{ emptyText: <Empty description={t('memory.noSearchResults')} /> }}
         />
+      </Modal>
+
+      <Modal
+        title={t('memory.commandTitle')}
+        open={commandModalVisible}
+        onCancel={() => {
+          setCommandModalVisible(false);
+          commandForm.resetFields();
+        }}
+        footer={null}
+        width={600}
+      >
+        <div className={styles.commandTip}>
+          <InfoCircleOutlined style={{ marginRight: 8, color: '#1890ff' }} />
+          <Typography.Text type="secondary">
+            {t('memory.commandTip')}
+          </Typography.Text>
+        </div>
+        <div className={styles.commandExamples}>
+          <Typography.Text strong>{t('memory.commandExamples')}</Typography.Text>
+          <ul>
+            <li>{t('memory.exampleAdd')}</li>
+            <li>{t('memory.exampleUpdate')}</li>
+            <li>{t('memory.exampleDelete')}</li>
+            <li>{t('memory.exampleQuery')}</li>
+          </ul>
+        </div>
+        <Form form={commandForm} layout="vertical" onFinish={handleCommand}>
+          <Form.Item
+            name="command"
+            rules={[{ required: true, message: t('memory.pleaseEnterCommand') }]}
+          >
+            <Input.TextArea rows={3} placeholder={t('memory.commandPlaceholder')} />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                {t('common.confirm')}
+              </Button>
+              <Button
+                onClick={() => {
+                  setCommandModalVisible(false);
+                  commandForm.resetFields();
+                }}
+              >
+                {t('common.cancel')}
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

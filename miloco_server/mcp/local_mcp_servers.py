@@ -160,7 +160,7 @@ class LocalDefaultMcp(LocalMCPBase):
             fn=get_current_time,
             name="get_current_time",
             description=(
-                "获取当前时间的工具。适用于用户问“现在几点了”、“当前时间”、“今天几号”等请求。"
+                '获取当前时间的工具。适用于用户问"现在几点了"、"当前时间"、"今天几号"等请求。'
                 "可以选择指定时区，如 Asia/Shanghai（上海）、UTC 等。"
                 "Tool for getting current time. Use this when user asks about current time or date."
                 "Optional timezone parameter, e.g., Asia/Shanghai, UTC."
@@ -168,7 +168,24 @@ class LocalDefaultMcp(LocalMCPBase):
         )
         self.mcp.add_tool(tool=current_time_tool)
 
-        # Register cached HA state query tools
+        env_context_tool = Tool.from_function(
+            fn=self.get_environment_context,
+            name="get_environment_context",
+            description=(
+                '【最高优先级】获取当前家庭环境上下文数据，包括：室内温度、室外温度、湿度、光照强度、'
+                '是否有人在家、是否有人在场、天气状况、室外温度、风速、空气质量、当前时段。'
+                '当用户询问与环境相关的问题（如"家里多少度"、"外面冷不冷"、"家里有人吗"、'
+                '"今天天气怎么样"、"空气质量如何"等）时，优先使用此工具获取实时环境数据。'
+                "此工具返回的数据可直接用于回答用户关于家庭环境的问题，"
+                "也可用于判断是否需要自动控制设备（如温度过高开空调、没人在家关灯等）。"
+                "【Highest Priority】Get current home environment context including: indoor/outdoor temperature, "
+                "humidity, light level, presence detection, weather, wind speed, air quality, time period. "
+                "Use this tool FIRST when users ask about home environment or when deciding whether "
+                "to auto-control devices based on environmental conditions."
+            ),
+        )
+        self.mcp.add_tool(tool=env_context_tool)
+
         await self._register_cached_ha_tools()
 
     async def create_rule(
@@ -393,9 +410,36 @@ class LocalDefaultMcp(LocalMCPBase):
 
     async def _register_cached_ha_tools(self):
         """Register cached Home Assistant state query tools"""
-        # Cached tools disabled to prevent unnecessary calls
         logger.info("Cached HA tools registration skipped (disabled)")
         return
+
+    async def get_environment_context(self) -> dict[str, Any]:
+        """获取当前家庭环境上下文数据"""
+        try:
+            from miloco_server.service.context_provider import ContextProvider
+            provider = ContextProvider.get_instance()
+            if not provider:
+                return {
+                    "success": False,
+                    "error": "环境上下文服务未初始化",
+                }
+            ctx = provider.get_context()
+            return {
+                "success": True,
+                "indoor_temperature": ctx.temperature,
+                "outdoor_temperature": ctx.weather_temperature,
+                "humidity": ctx.humidity,
+                "light_level": ctx.light_level,
+                "is_home": ctx.is_home,
+                "is_anyone_present": ctx.is_anyone_present,
+                "weather": ctx.weather,
+                "wind_speed": ctx.wind_speed,
+                "air_quality": ctx.air_quality,
+                "time_period": ctx.time_period,
+            }
+        except Exception as e:
+            logger.error("get_environment_context failed: %s", e)
+            return {"success": False, "error": str(e)}
 
     # Cached tool methods removed to prevent unnecessary calls
     # All cached_get_* methods have been disabled
