@@ -71,8 +71,26 @@ class MemoryService:
         return self._extractor
 
     async def _call_llm(self, messages: List[dict]) -> dict:
-        """LLM调用函数，需要在初始化时提供"""
-        raise NotImplementedError("需要提供 LLM 调用函数")
+        """LLM调用函数，通过项目Manager获取LLM代理"""
+        try:
+            from miloco_server.service.manager import get_manager
+            from miloco_server.utils.local_models import ModelPurpose
+
+            manager = get_manager()
+            llm_proxy = manager.get_llm_proxy_by_purpose(ModelPurpose.PLANNING)
+            if llm_proxy is None:
+                logger.warning("LLM proxy not available, cannot call LLM")
+                return {"content": "", "success": False}
+
+            result = await llm_proxy.async_call_llm(messages)
+            if result.get("success"):
+                return {"content": result.get("content", ""), "success": True}
+            else:
+                logger.warning("LLM call failed: %s", result.get("error"))
+                return {"content": "", "success": False}
+        except Exception as e:
+            logger.error("Failed to call LLM: %s", e)
+            return {"content": "", "success": False}
 
     async def initialize(self, persist_directory: Optional[str] = None) -> bool:
         """初始化记忆服务"""

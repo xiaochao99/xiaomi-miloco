@@ -117,6 +117,7 @@ class EnhancedChatAgent(Actor):
         self._local_default_mcp_tools_meta: List[ChatCompletionToolParam] = []
         self._other_mcp_tools_meta: List[ChatCompletionToolParam] = []
         self._all_mcp_tools_meta: List[ChatCompletionToolParam] = []
+        self._selected_tool_names: Optional[List[str]] = None
         
         # Track consecutive tool errors to prevent infinite loops
         self._consecutive_tool_errors = 0
@@ -354,7 +355,6 @@ class EnhancedChatAgent(Actor):
 - 用户明确要求控制设备（开/关/调节）→ 使用 `send_ctrl_rpc`
 - 用户查询设备状态 → 使用 `send_get_rpc`
 - 用户需要创建自动化规则 → 使用 `create_rule`
-- 用户询问时间 → 使用 `get_current_time`
 - 涉及图像分析 → 使用 `vision_understand`
 - 闲聊、设定角色、日常对话 → **不使用任何工具**
 
@@ -363,6 +363,13 @@ class EnhancedChatAgent(Actor):
 - 设定AI角色或用户偏好
 - 询问AI的身份或能力
 - 用户只是表达情感或想法
+- 记忆相关操作（"记住XXX"、"我叫什么"、"我的XXX"等）→ 已由记忆系统自动处理，**绝不调用任何工具**
+- 任何可以用已有信息（记忆上下文、对话历史）直接回答的问题 → **绝不调用任何工具**
+
+**关键原则：不必要的情况绝不要调用工具！** 以下情况绝对不要调工具：
+- 闲聊、记忆、日常对话
+- 已经有足够信息可以回答的问题
+- 用户没有明确需要外部数据或设备操作
 
 # 多平台设备查询策略 (Important - 备选方案)
 **系统支持两个设备平台：**
@@ -621,6 +628,11 @@ class EnhancedChatAgent(Actor):
                        self._request_id, 
                        [t.tool_name for t in selected_tools])
 
+            if self._tool_selector._tools:
+                self._selected_tool_names = [t.tool_name for t in selected_tools]
+            else:
+                self._selected_tool_names = None
+
             self._context_manager.update_state(self._request_id, ContextState.THINKING)
             success, error_message = await self._cyclic_execute()
 
@@ -820,13 +832,55 @@ class EnhancedChatAgent(Actor):
                     "Planning model not configured. Please configure on the Model Settings Page")
             
             chat_messages = self._chat_history_messages.get_messages()
-            logger.info("[%s] Calling LLM with %d messages", self._request_id, len(chat_messages))
+            tools_to_use = self._filter_tools_for_llm()
+            logger.info("[%s] Calling LLM with %d messages, %d tools",
+                       self._request_id, len(chat_messages), len(tools_to_use))
             
-            return self._llm_proxy.async_call_llm_stream(chat_messages, self._all_mcp_tools_meta)
+            return self._llm_proxy.async_call_llm_stream(chat_messages, tools_to_use)
             
         except Exception as e:
             logger.error("[%s] Error calling LLM: %s", self._request_id, str(e))
             raise
+
+    def _filter_tools_for_llm(self) -> list:
+        """Filter tools based on pre-flight check and tool selector recommendations."""
+        if self._selected_tool_names is not None and not self._selected_tool_names:
+            logger.info("[%s] Pre-flight: query needs no tools, passing empty list", self._request_id)
+            return []
+
+        if not self._selected_tool_names:
+            return self._all_mcp_tools_meta
+
+        selected_set = set(self._selected_tool_names)
+        filtered = []
+        for tool in self._all_mcp_tools_meta:
+            try:
+                func = None
+                if isinstance(tool, dict):
+                    func = tool.get("function")
+                else:
+                    func = getattr(tool, "function", None)
+
+                if func is None:
+                    filtered.append(tool)
+                    continue
+
+                if isinstance(func, dict):
+                    name = func.get("name", "")
+                else:
+                    name = getattr(func, "name", "") or ""
+
+                for selected_name in selected_set:
+                    if selected_name.endswith(name) or name in selected_name:
+                        filtered.append(tool)
+                        break
+            except Exception:
+                filtered.append(tool)
+
+        if not filtered:
+            return self._all_mcp_tools_meta
+
+        return filtered
 
     async def _process_llm_chunk(
         self, chunk: dict
@@ -1119,12 +1173,13 @@ class EnhancedChatAgent(Actor):
             if service is None:
                 return None
             context = await service.get_context_for_query(
-                query=query, max_memories=5, min_importance=0.3)
-            if context and context.relevant_memories:
-                return context.summary
+                query=query, limit=5)
+            if context and context.memories:
+                logger.info("[%s] Retrieved %d relevant memories for query", self._request_id, len(context.memories))
+                return context.context_text or context.to_prompt_text()
             return None
         except Exception as e:
-            logger.debug("[%s] Failed to retrieve memory context: %s", self._request_id, e)
+            logger.warning("[%s] Failed to retrieve memory context: %s", self._request_id, e)
             return None
 
     async def _extract_and_store_memory(self) -> None:
@@ -1134,17 +1189,25 @@ class EnhancedChatAgent(Actor):
             service = get_memory_service()
             if service is None:
                 return
-            messages = []
-            for msg in self._chat_history_messages.get_messages():
+            all_msgs = self._chat_history_messages.get_messages()
+            user_msg = None
+            for msg in all_msgs:
                 role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
                 content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
-                if role in ("user", "assistant") and content and isinstance(content, str):
-                    messages.append({"role": role, "content": content[:2000]})
-            if messages:
-                await service.process_conversation(messages, session_id=self._request_id)
-                logger.info("[%s] Memory extraction completed for session", self._request_id)
+                if not role or not content:
+                    continue
+                if role == "user":
+                    user_msg = content
+                elif role == "assistant" and user_msg:
+                    await service.process_conversation(
+                        user_message=user_msg,
+                        assistant_response=content,
+                        user_id="default",
+                    )
+                    user_msg = None
+            logger.info("[%s] Memory extraction completed for session", self._request_id)
         except Exception as e:
-            logger.debug("[%s] Failed to extract and store memory: %s", self._request_id, e)
+            logger.warning("[%s] Failed to extract and store memory: %s", self._request_id, e)
 
     def _handle_exit_request(self):
         """Handle Actor exit request."""

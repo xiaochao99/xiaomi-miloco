@@ -9,7 +9,7 @@ Memory Controller - REST API endpoints for memory management.
 import logging
 from typing import Optional, List
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Body
 
 from miloco_server.schema.memory_schema import (
     Memory,
@@ -74,9 +74,9 @@ async def get_memories(
 
 @router.post("/add", response_model=NormalResponse)
 async def add_memory(
-    content: str = Query(..., description="记忆内容"),
-    user_id: str = Query(default="default", description="用户ID"),
-    memory_type: str = Query(default="custom", description="记忆类型"),
+    content: str = Body(..., embed=True, description="记忆内容"),
+    user_id: str = Body(default="default", embed=True, description="用户ID"),
+    memory_type: str = Body(default="custom", embed=True, description="记忆类型"),
 ):
     """
     添加记忆
@@ -134,9 +134,9 @@ async def delete_memory(
 
 @router.post("/search", response_model=NormalResponse)
 async def search_memories(
-    query: str = Query(..., description="搜索查询"),
-    user_id: str = Query(default="default", description="用户ID"),
-    limit: int = Query(default=5, ge=1, le=20, description="返回数量"),
+    query: str = Body(..., embed=True, description="搜索查询"),
+    user_id: str = Body(default="default", embed=True, description="用户ID"),
+    limit: int = Body(default=5, embed=True, description="返回数量"),
 ):
     """
     搜索记忆
@@ -170,8 +170,8 @@ async def search_memories(
 
 @router.post("/command", response_model=NormalResponse)
 async def handle_command(
-    command: str = Query(..., description="自然语言命令"),
-    user_id: str = Query(default="default", description="用户ID"),
+    command: str = Body(..., embed=True, description="自然语言命令"),
+    user_id: str = Body(default="default", embed=True, description="用户ID"),
 ):
     """
     处理自然语言记忆管理指令

@@ -152,10 +152,6 @@ class ToolSelector:
         "规则": ["create_rule"],
         "自动化": ["create_rule"],
         "场景": ["trigger_manual_scene", "trigger_automation"],
-        
-        # Time
-        "时间": ["get_current_time"],
-        "几点": ["get_current_time"],
     }
     
     def __init__(self, strategy: ToolSelectionStrategy = ToolSelectionStrategy.HYBRID):

@@ -156,18 +156,6 @@ class LocalDefaultMcp(LocalMCPBase):
         )
         self.mcp.add_tool(tool=who_am_i_tool)
 
-        current_time_tool = Tool.from_function(
-            fn=get_current_time,
-            name="get_current_time",
-            description=(
-                '获取当前时间的工具。适用于用户问"现在几点了"、"当前时间"、"今天几号"等请求。'
-                "可以选择指定时区，如 Asia/Shanghai（上海）、UTC 等。"
-                "Tool for getting current time. Use this when user asks about current time or date."
-                "Optional timezone parameter, e.g., Asia/Shanghai, UTC."
-            ),
-        )
-        self.mcp.add_tool(tool=current_time_tool)
-
         env_context_tool = Tool.from_function(
             fn=self.get_environment_context,
             name="get_environment_context",
