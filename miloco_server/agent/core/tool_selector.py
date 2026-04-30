@@ -103,55 +103,52 @@ class ToolSelector:
     # Note: All cached tools removed to prevent unnecessary calls
     # Note: Use correct MIoT tool names (send_ctrl_rpc for control, send_get_rpc for query)
     INTENT_TOOL_MAP = {
-        # Device control intents - use MIoT send_ctrl_rpc
         "turn_on": ["send_ctrl_rpc"],
         "turn_off": ["send_ctrl_rpc"],
         "adjust": ["send_ctrl_rpc"],
-        
-        # Scene intents
         "activate_scene": ["trigger_manual_scene", "trigger_automation"],
         "create_rule": ["create_rule"],
         "modify_rule": ["create_rule"],
-        
-        # Vision intents
         "view_camera": ["vision_understand"],
         "recognize_face": ["who_am_i"],
         "monitor_security": ["vision_understand"],
-        
-        # Information intents
         "get_time": ["get_current_time"],
-        
-        # Default
+        "query_state": ["send_get_rpc", "get_devices"],
+        "query_environment": ["send_get_rpc", "get_devices", "get_environment_context"],
         "chat": [],
         "unknown": [],
     }
     
-    # Keyword to tool mapping - removed all cached tools
-    # Note: Use correct MIoT tool names
     KEYWORD_TOOL_MAP = {
-        # Device control - use MIoT send_ctrl_rpc
         "开": ["send_ctrl_rpc"],
         "关": ["send_ctrl_rpc"],
         "打开": ["send_ctrl_rpc"],
         "关闭": ["send_ctrl_rpc"],
         "调": ["send_ctrl_rpc"],
         "设置": ["send_ctrl_rpc"],
-        
-        # Camera
         "摄像头": ["vision_understand"],
         "画面": ["vision_understand"],
         "看": ["vision_understand"],
         "监控": ["vision_understand"],
-        
-        # Face recognition
         "谁": ["who_am_i"],
         "身份": ["who_am_i"],
         "认识": ["who_am_i"],
-        
-        # Rule
         "规则": ["create_rule"],
         "自动化": ["create_rule"],
         "场景": ["trigger_manual_scene", "trigger_automation"],
+        "温度": ["send_get_rpc", "get_devices", "get_environment_context"],
+        "湿度": ["send_get_rpc", "get_devices", "get_environment_context"],
+        "光照": ["send_get_rpc", "get_devices"],
+        "亮度": ["send_get_rpc", "get_devices"],
+        "查询": ["send_get_rpc", "get_devices"],
+        "查看": ["send_get_rpc", "get_devices"],
+        "状态": ["send_get_rpc", "get_devices"],
+        "环境": ["send_get_rpc", "get_devices", "get_environment_context"],
+        "空气质量": ["send_get_rpc", "get_devices", "get_environment_context"],
+        "机柜": ["send_get_rpc", "get_devices"],
+        "能耗": ["send_get_rpc", "get_devices"],
+        "电量": ["send_get_rpc", "get_devices"],
+        "功耗": ["send_get_rpc", "get_devices"],
     }
     
     def __init__(self, strategy: ToolSelectionStrategy = ToolSelectionStrategy.HYBRID):
@@ -304,30 +301,40 @@ class ToolSelector:
         
         return list(seen.values())
     
+    @staticmethod
+    def _extract_tokens(text: str) -> set:
+        tokens = set(re.findall(r'[\u4e00-\u9fff]', text))
+        tokens.update(re.findall(r'[a-z]+', text.lower()))
+        for match in re.finditer(r'[\u4e00-\u9fff]{2,}', text):
+            tokens.add(match.group())
+        return tokens
+
     def _semantic_selection(self, context: ToolContext) -> List[ToolSelection]:
-        """Semantic matching-based selection"""
         selections = []
         query = context.query.lower()
-        
+        query_tokens = self._extract_tokens(query)
+
         for tool_name, metadata in self._tools.items():
             score = 0.0
-            
-            # Check description similarity
-            desc_words = set(metadata.description.lower().split())
-            query_words = set(query.split())
-            if desc_words & query_words:
-                score += 0.3 * len(desc_words & query_words) / len(desc_words)
-            
-            # Check keyword matches
+
+            desc_tokens = self._extract_tokens(metadata.description.lower())
+            overlap = query_tokens & desc_tokens
+            if overlap:
+                score += 0.3 * len(overlap) / max(len(desc_tokens), 1)
+
             for keyword in metadata.keywords:
-                if keyword.lower() in query:
+                if keyword.lower() in query or keyword.lower() in query.replace(" ", ""):
                     score += 0.4
-            
-            # Check entity matches
+
+            desc_lower = metadata.description.lower()
+            for token in query_tokens:
+                if len(token) >= 2 and token in desc_lower:
+                    score += 0.15
+
             for entity in context.entities.values():
-                if isinstance(entity, str) and entity.lower() in metadata.description.lower():
+                if isinstance(entity, str) and entity.lower() in desc_lower:
                     score += 0.2
-            
+
             if score > 0.3:
                 selections.append(ToolSelection(
                     tool_name=tool_name,
@@ -335,7 +342,7 @@ class ToolSelector:
                     reasoning=f"Semantic similarity score: {score:.2f}",
                     strategy_used=ToolSelectionStrategy.SEMANTIC,
                 ))
-        
+
         return selections
     
     def _intent_based_selection(self, context: ToolContext) -> List[ToolSelection]:

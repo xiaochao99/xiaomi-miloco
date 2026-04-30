@@ -389,6 +389,8 @@ class HabitDAO:
 
         for table_name in tables:
             try:
+                if not self._table_exists(table_name):
+                    continue
                 rows = self.db.execute_update(
                     f"DELETE FROM {table_name} WHERE timestamp < ?", (cutoff_ts,)
                 )

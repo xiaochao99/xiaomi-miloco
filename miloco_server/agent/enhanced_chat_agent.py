@@ -628,9 +628,11 @@ class EnhancedChatAgent(Actor):
                        self._request_id, 
                        [t.tool_name for t in selected_tools])
 
-            if self._tool_selector._tools:
+            if self._tool_selector._tools and selected_tools:
                 self._selected_tool_names = [t.tool_name for t in selected_tools]
             else:
+                if self._tool_selector._tools and not selected_tools:
+                    logger.info("[%s] Tool selector found no match, falling back to all tools", self._request_id)
                 self._selected_tool_names = None
 
             self._context_manager.update_state(self._request_id, ContextState.THINKING)
@@ -1086,84 +1088,117 @@ class EnhancedChatAgent(Actor):
     def _get_intelligent_fallback(self) -> Optional[str]:
         """Get intelligent fallback content based on context."""
         messages = self._chat_history_messages.get_messages()
-        
-        # Extract recent tool results
-        recent_results = []
-        for msg in reversed(messages[-5:]):
+
+        tool_results = []
+        for msg in messages:
             if isinstance(msg, dict) and msg.get("role") == "tool":
+                tool_name = msg.get("name", "")
                 content = msg.get("content", "")
                 try:
                     parsed = json.loads(content)
-                    recent_results.append(parsed)
-                except:
-                    recent_results.append(content)
-        
-        if recent_results:
-            # Generate summary based on results
-            return self._generate_result_summary(recent_results)
-        
+                except (json.JSONDecodeError, TypeError):
+                    parsed = content
+                tool_results.append({"tool_name": tool_name, "data": parsed})
+
+        if tool_results:
+            return self._generate_result_summary(tool_results)
+
         return None
 
-    def _generate_result_summary(self, results: List[Any]) -> str:
+    def _generate_result_summary(self, results: List[dict]) -> str:
         """Generate natural language summary from tool results."""
         if not results:
             return "处理完成。"
-        
-        # Find the most recent successful result
-        # Iterate in reverse to find the last successful result first
-        for result in reversed(results):
-            if isinstance(result, dict):
-                # Check if result has explicit success field
-                if "success" in result:
-                    if result.get("success"):
-                        # Successful result - return immediately
-                        if "content" in result:
-                            return str(result["content"])
-                        elif "message" in result:
-                            return str(result["message"])
-                        elif "tool_response" in result:
-                            # Parse tool_response if it's JSON
-                            try:
-                                tr = json.loads(result["tool_response"])
-                                if isinstance(tr, dict):
-                                    if "state" in tr:
-                                        return f"设备状态: {tr['state']}"
-                                    elif "result" in tr:
-                                        return f"查询结果: {tr['result']}"
-                                    else:
-                                        return str(tr)
-                                return str(tr)
-                            except:
-                                return str(result["tool_response"])
-                        else:
-                            return "操作成功完成。"
-                    else:
-                        # Failed result - continue to check if there's a later success
-                        continue
-                else:
-                    # No success field - treat as successful result
-                    if "result" in result:
-                        return f"查询结果: {result['result']}"
-                    elif "state" in result:
-                        return f"设备状态: {result['state']}"
-                    elif "content" in result:
-                        return str(result["content"])
-                    else:
-                        # Show all non-metadata fields
-                        display_data = {k: v for k, v in result.items() if not k.startswith('_')}
-                        if display_data:
-                            return str(display_data)
-            else:
-                # Non-dict result
-                return str(result)
-        
-        # If no successful result found, show the last error
-        last_result = results[-1]
-        if isinstance(last_result, dict) and "success" in last_result and not last_result.get("success"):
-            error = last_result.get("error", "未知错误")
-            return f"操作遇到问题: {error}"
-        
-        return "处理完成。"
+
+        numeric_values = []
+        descriptive_parts = []
+        has_error = False
+        error_msg = ""
+
+        for entry in results:
+            tool_name = entry.get("tool_name", "")
+            data = entry.get("data")
+
+            if isinstance(data, dict):
+                if data.get("success") is False:
+                    has_error = True
+                    error_msg = data.get("error", data.get("error_message", ""))
+                    continue
+
+                inner = data.get("content") or data.get("message") or data.get("tool_response")
+                if isinstance(inner, str):
+                    try:
+                        inner = json.loads(inner)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                if isinstance(inner, dict):
+                    data = inner
+
+                if isinstance(data, dict):
+                    for k, v in data.items():
+                        if k.startswith("_") or k in ("success",):
+                            continue
+                        if isinstance(v, (int, float)):
+                            label = self._infer_label(k, tool_name)
+                            numeric_values.append((label, v, k))
+                        elif isinstance(v, dict):
+                            for sub_k, sub_v in v.items():
+                                if isinstance(sub_v, (int, float)):
+                                    label = self._infer_label(sub_k, tool_name)
+                                    numeric_values.append((label, sub_v, sub_k))
+                                elif isinstance(sub_v, dict) and "description" in sub_v:
+                                    descriptive_parts.append(sub_v["description"])
+                        elif isinstance(v, str) and len(v) < 200:
+                            descriptive_parts.append(f"{k}: {v}")
+                elif isinstance(data, (int, float)):
+                    label = self._infer_label(tool_name, tool_name)
+                    numeric_values.append((label, data, tool_name))
+            elif isinstance(data, (int, float)):
+                label = self._infer_label(tool_name, tool_name)
+                numeric_values.append((label, data, tool_name))
+            elif isinstance(data, str) and data:
+                descriptive_parts.append(data)
+
+        if has_error and not numeric_values and not descriptive_parts:
+            return f"操作遇到问题: {error_msg}" if error_msg else "操作遇到问题，未能获取到数据。"
+
+        parts = []
+        if descriptive_parts:
+            parts.append(descriptive_parts[-1])
+        for label, value, _ in numeric_values:
+            parts.append(f"{label}: {value}")
+
+        if parts:
+            return "；".join(parts) + "。"
+
+        return "操作已完成，但未能解析出有效数据。"
+
+    @staticmethod
+    def _infer_label(key: str, tool_name: str) -> str:
+        key_lower = key.lower()
+        label_map = {
+            "temperature": "温度",
+            "humidity": "湿度",
+            "light": "光照",
+            "brightness": "亮度",
+            "battery": "电池电量",
+            "power": "功率",
+            "energy": "能耗",
+            "state": "状态",
+            "value": "数值",
+            "prop.0.2.1": "温度",
+            "prop.0.2.2": "湿度",
+            "prop.0.3.1": "电池电量",
+        }
+        for pattern, label in label_map.items():
+            if pattern in key_lower:
+                return label
+        if "send_get_rpc" in tool_name:
+            return "查询结果"
+        if "get_devices" in tool_name:
+            return "设备信息"
+        return key
 
     async def _retrieve_memory_context(self, query: str) -> Optional[str]:
         """Retrieve relevant memories for the current query."""
