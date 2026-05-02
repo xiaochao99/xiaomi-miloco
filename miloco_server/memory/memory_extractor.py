@@ -133,7 +133,6 @@ class MemoryExtractor:
         self,
         user_message: str,
         assistant_response: Optional[str] = None,
-        context_messages: Optional[List[dict]] = None,
         existing_memories: Optional[List[Memory]] = None,
     ) -> MemoryExtractionResult:
         """
@@ -142,7 +141,6 @@ class MemoryExtractor:
         Args:
             user_message: 用户消息
             assistant_response: 助手响应（可选）
-            context_messages: 上下文消息（可选）
             existing_memories: 已有的相关记忆（用于判断更新/删除）
 
         Returns:

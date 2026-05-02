@@ -15,20 +15,6 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 
-class ConditionOperator(Enum):
-    """Condition operator enumeration"""
-    EQUAL = "=="
-    NOT_EQUAL = "!="
-    GREATER_THAN = ">"
-    GREATER_THAN_OR_EQUAL = ">="
-    LESS_THAN = "<"
-    LESS_THAN_OR_EQUAL = "<="
-    CONTAINS = "in"
-    NOT_CONTAINS = "not in"
-    MATCHES = "matches"
-    NOT_MATCHES = "not matches"
-
-
 class DirectConditionChecker:
     """
     Direct condition checker that evaluates conditions without LLM.

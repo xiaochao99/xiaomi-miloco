@@ -10,7 +10,7 @@ Implements fallback strategies and graceful degradation.
 
 import logging
 import traceback
-from typing import Dict, List, Optional, Any, Callable, Type, Tuple
+from typing import Dict, List, Optional, Any, Callable, Tuple
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from datetime import datetime

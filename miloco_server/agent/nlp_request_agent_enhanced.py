@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Xiaomi Corporation
 # This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
 
-"""Enhanced Nlp Request Agent with OpenClaw Integration"""
+"""Nlp Request Agent with AHAA Agent Integration"""
 import asyncio
 import json
 import logging
@@ -9,14 +9,15 @@ import re
 
 from miloco_server.schema.chat_schema import Event, Internal, Nlp
 from miloco_server.utils.chat_companion import ChatCachedData
-from miloco_server.agent import EnhancedChatAgent, auto_select_role, select_tools
+from miloco_server.agent.enhanced_chat_agent import EnhancedChatAgent
+from miloco_server.agent.ahaa_agent_integration import auto_select_role, select_tools
 
 logger = logging.getLogger(__name__)
 
 
-class NlpRequestAgentEnhanced(EnhancedChatAgent):
+class NlpRequestAgent(EnhancedChatAgent):
     """
-    Enhanced Nlp Request Agent with OpenClaw Framework Integration
+    Nlp Request Agent with AHAA Agent Framework Integration
     
     Features:
     - Automatic role selection based on query
@@ -47,7 +48,7 @@ class NlpRequestAgentEnhanced(EnhancedChatAgent):
 
     def _handle_nlp_request(self, payload: Nlp.Request) -> None:
         """
-        Handle Nlp request with OpenClaw enhancements.
+        Handle Nlp request with AHAA Agent enhancements.
         
         Args:
             payload: Nlp request payload
@@ -58,10 +59,10 @@ class NlpRequestAgentEnhanced(EnhancedChatAgent):
         # Send dispatcher message
         self._send_instruction(Internal.Dispatcher(current_query=query, need_storage_history=True))
         
-        # OpenClaw: Auto-select role based on query
+        # AHAA Agent: Auto-select role based on query
         self._auto_select_and_set_role(query)
         
-        # OpenClaw: Intelligent tool selection
+        # AHAA Agent: Intelligent tool selection
         self._log_tool_selections(query)
         
         # Set tools metadata

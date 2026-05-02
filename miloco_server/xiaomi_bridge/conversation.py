@@ -5,7 +5,7 @@
 Miloco conversation controller for Xiaomi speaker bridge.
 Implements continuous dialogue flow: KWS → VAD → ASR → Miloco → TTS
 
-Reference: open-xiaoai-bridge/core/openclaw_conversation.py
+Reference: open-xiaoai-bridge/core/ahaa_agent_conversation.py
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class MilocoConversationController:
     7. TTS synthesizes and plays response
     8. Return to step 2 for next turn
 
-    Reference: open-xiaoai-bridge OpenClawConversationController
+    Reference: open-xiaoai-bridge AhaaAgentConversationController
     """
 
     _instance: Optional[MilocoConversationController] = None

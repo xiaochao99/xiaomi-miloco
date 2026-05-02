@@ -18,7 +18,6 @@ from miloco_server.schema.wakeup_schema import (
     WakeUpContext, WakeUpConfig, WakeUpMode,
     TriggerInfo, TriggerSourceType,
     InquiryDecision, InquirySource,
-    EnvironmentalData
 )
 
 logger = logging.getLogger(__name__)

@@ -5,6 +5,7 @@
 Chat controller
 Handles instant queries, chat history, and WebSocket connections
 Uses unified exception handling framework
+Only AHAA (Adaptive Hybrid Agent Architecture) is supported
 """
 import json
 import asyncio
@@ -16,24 +17,7 @@ from thespian.actors import ActorExitRequest
 
 from miloco_server import actor_system
 from miloco_server.config import CHAT_CONFIG
-
-# Determine which dispatcher to use based on configuration
-_use_openclaw = CHAT_CONFIG.get("use_openclaw", True)
-_use_ahaa = CHAT_CONFIG.get("use_ahaa", False)
-
-if _use_ahaa:
-    # Use AHAA (Adaptive Hybrid Agent Architecture) dispatcher
-    from miloco_server.agent.multi_agent.ahaa_dispatcher import AHAADispatcher
-    from miloco_server.service.chat_agent_dispatcher_enhanced import ChatAgentDispatcherEnhanced as ChatAgentDispatcher
-    _ahaa_dispatcher = None
-    _init_ahaa = True
-elif _use_openclaw:
-    from miloco_server.service.chat_agent_dispatcher_enhanced import ChatAgentDispatcherEnhanced as ChatAgentDispatcher
-    _init_ahaa = False
-else:
-    from miloco_server.service.chat_agent_dispatcher import ChatAgentDispatcher
-    _init_ahaa = False
-
+from miloco_server.service.chat_agent_dispatcher import ChatAgentDispatcher
 from miloco_server.schema.chat_schema import Event
 from miloco_server.schema.common_schema import NormalResponse
 from miloco_server.service.manager import get_manager
@@ -44,7 +28,7 @@ router = APIRouter(prefix="/chat", tags=["Instant Query"])
 manager = get_manager()
 
 logger = logging.getLogger(name=__name__)
-logger.info("ChatController initialized, use_openclaw=%s, use_ahaa=%s", _use_openclaw, _use_ahaa)
+logger.info("ChatController initialized with AHAA architecture only")
 
 @router.websocket("/ws/query")
 async def ws_query(
@@ -128,10 +112,9 @@ async def get_agent_status(current_user: str = Depends(verify_token)):
     logger.info("Get agent status API called, user: %s", current_user)
     
     status = {
-        "use_openclaw": _use_openclaw,
-        "use_ahaa": _use_ahaa,
-        "architecture": "AHAA" if _use_ahaa else ("OpenClaw" if _use_openclaw else "Legacy"),
-        "ahaa_config": CHAT_CONFIG.get("ahaa", {}) if _use_ahaa else None,
+        "architecture": "AHAA",
+        "ahaa_enabled": True,
+        "ahaa_config": CHAT_CONFIG.get("ahaa", {}),
     }
     
     return NormalResponse(code=0, message="Agent status retrieved successfully", data=status)
@@ -145,13 +128,6 @@ async def test_ahaa_query(
 ):
     """Test AHAA architecture with a sample query (for debugging)."""
     logger.info("Test AHAA query called, user: %s, query: %s", current_user, query)
-    
-    if not _use_ahaa:
-        return NormalResponse(
-            code=1,
-            message="AHAA is not enabled. Set chat.use_ahaa=true in server_config.yaml",
-            data=None
-        )
     
     try:
         from miloco_server.agent.multi_agent import ComplexityAnalyzer, RuleEngine

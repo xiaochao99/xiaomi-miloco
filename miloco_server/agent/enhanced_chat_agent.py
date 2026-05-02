@@ -4,7 +4,7 @@
 """
 Enhanced Chat Agent
 
-Advanced chat agent with OpenClaw integration.
+Advanced chat agent with AHAA Agent integration.
 Features intelligent role management, context-aware responses,
 adaptive learning, and robust error handling.
 """
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 class EnhancedChatAgent(Actor):
     """
-    Enhanced Chat Agent with OpenClaw Integration
+    Enhanced Chat Agent with AHAA Agent Integration
     
     Features:
     - Dynamic role management with capability-based tool assignment
@@ -368,37 +368,33 @@ class EnhancedChatAgent(Actor):
 
 **查询设备状态（如温度、湿度、亮度等）：**
 1. 第1步：调用 `get_devices` 获取目标设备（可带 device_class 或 area_id 过滤）
-2. 第2步：用返回的 did 调用 `send_get_rpc` 查询具体属性值
-3. 第3步：**直接用 <final_answer> 回答用户，不要再调用任何工具**
-
-**⚡ 常见属性 iid 速查表（不需要调用 get_device_spec）：**
-- 温度：`prop.0.2.1`
-- 湿度：`prop.0.2.2`
-- 电池电量：`prop.0.3.1`
-- 开关状态：`prop.2.1`
-- 亮度：`prop.2.3`
-- 色温：`prop.2.4`
-- 颜色：`prop.2.5`
+2. 第2步：用返回的 did 调用 `get_device_spec` 获取设备SPEC定义
+3. 第3步：从SPEC定义中找到要查询的属性 iid，调用 `send_get_rpc(did, iid)` 查询具体属性值
+4. 第4步：**直接用 <final_answer> 回答用户，不要再调用任何工具**
 
 **控制设备（如开灯、关空调）：**
 1. 第1步：调用 `get_devices` 找到目标设备的 did
-2. 第2步：用 did 调用 `send_ctrl_rpc` 执行控制
-3. 第3步：**直接用 <final_answer> 告知操作结果**
+2. 第2步：用 did 调用 `get_device_spec` 获取设备SPEC定义
+3. 第3步：从SPEC定义中找到要控制的属性 iid，调用 `send_ctrl_rpc(did, iid, value)` 执行控制
+4. 第4步：**直接用 <final_answer> 告知操作结果**
 
 **示例：用户问"机柜温度"**
 - Step 1: 调用 `get_devices(area_id="机柜", device_class="sensor_ht")` → 返回温湿度计 did
-- Step 2: 调用 `send_get_rpc(did=返回的did, iid="prop.0.2.1")` → 返回温度值 24.5
-- Step 3: **立即回答**："机柜当前温度为 24.5°C" → <final_answer>结束
+- Step 2: 调用 `get_device_spec(did=返回的did)` → 返回SPEC定义，找到温度属性的iid
+- Step 3: 调用 `send_get_rpc(did=返回的did, iid=从SPEC获取的iid)` → 返回温度值 24.5
+- Step 4: **立即回答**："机柜当前温度为 24.5°C" → <final_answer>结束
 
 **示例：用户问"打开玄关灯"**
 - Step 1: 调用 `get_devices(area_id="玄关", device_class="light")` → 返回灯的 did
-- Step 2: 调用 `send_ctrl_rpc(did=返回的did, ...)` → 执行开灯
-- Step 3: **立即回答**："已为您打开玄关灯" → <final_answer>结束
+- Step 2: 调用 `get_device_spec(did=返回的did)` → 返回SPEC定义，找到开关属性的iid
+- Step 3: 调用 `send_ctrl_rpc(did=返回的did, iid=从SPEC获取的iid, value=控制值)` → 执行开灯
+- Step 4: **立即回答**："已为您打开玄关灯" → <final_answer>结束
 
 **禁止：**
 - ❌ 已经拿到温度/湿度等数值后还继续调用 `get_devices`
 - ❌ 同一个工具用相同参数重复调用
 - ❌ 查询到设备 did 后又重新查询设备列表
+- ❌ **跳过 get_device_spec 直接调用 send_get_rpc 或 send_ctrl_rpc（必须先获取SPEC定义才能知道正确的iid）**
 
 # 智能工具选择策略 (Important - AI自主决策)
 **工具选择原则：**
@@ -959,7 +955,7 @@ class EnhancedChatAgent(Actor):
                 logger.info("Detected chat-intent query, returning empty tool set: %s", query[:50])
                 return []
 
-        core_tools = ["get_devices"]
+        core_tools = ["get_devices", "get_device_spec"]
 
         control_keywords = ["开", "关", "打开", "关闭", "调", "设置", "亮", "暗"]
         query_keywords = ["温度", "湿度", "状态", "多少", "几度", "查询", "查看", "环境", "亮度"]
@@ -975,7 +971,7 @@ class EnhancedChatAgent(Actor):
         if any(kw in query_lower for kw in scene_keywords):
             core_tools.extend(["trigger_manual_scene", "trigger_automation", "create_rule"])
 
-        if len(core_tools) == 1:
+        if len(core_tools) == 2:
             core_tools.extend(["send_ctrl_rpc", "send_get_rpc"])
 
         seen = set()
@@ -1178,6 +1174,18 @@ class EnhancedChatAgent(Actor):
                        self._tool_execution_count, self._max_tool_executions)
 
             client_id, tool_name, parameters = self._tool_executor.parse_tool_call(tool_call)
+
+            # Try to resolve the tool across all clients when client_id is unknown
+            if client_id == "unknown":
+                resolved = await self._tool_executor.resolve_unknown_tool(tool_call)
+                if resolved:
+                    client_id, tool_name, parameters = resolved
+                    logger.info("[%s] Resolved unprefixed tool '%s' to client '%s'",
+                               self._request_id, original_tool_name, client_id)
+                else:
+                    logger.error("[%s] Could not resolve tool '%s' in any MCP client",
+                                self._request_id, original_tool_name)
+
             service_name = self._tool_executor.get_server_name(client_id)
 
             self._send_instruction(
@@ -1325,6 +1333,14 @@ class EnhancedChatAgent(Actor):
             if "get_environment_context" in tool_name and isinstance(data, dict):
                 return self._format_environment_summary(data)
 
+            if "vision_understand" in tool_name:
+                if isinstance(data, dict):
+                    vision_content = data.get("content", "")
+                    if vision_content:
+                        return vision_content
+                elif isinstance(data, str) and data:
+                    return data
+
         numeric_values = []
         descriptive_parts = []
         for entry in results:
@@ -1355,8 +1371,8 @@ class EnhancedChatAgent(Actor):
                                     numeric_values.append((label, sub_v, sub_k))
                                 elif isinstance(sub_v, dict) and "description" in sub_v:
                                     descriptive_parts.append(sub_v["description"])
-                        elif isinstance(v, str) and len(v) < 200:
-                            descriptive_parts.append(f"{k}: {v}")
+                        elif isinstance(v, str):
+                            descriptive_parts.append(f"{k}: {v}" if len(v) < 500 else v)
             elif isinstance(data, str) and data:
                 descriptive_parts.append(data)
 

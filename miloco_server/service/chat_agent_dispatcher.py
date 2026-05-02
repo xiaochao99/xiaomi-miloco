@@ -2,9 +2,11 @@
 # This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
 
 """
-Chat agent dispatcher module
+Chat Agent Dispatcher with AHAA Architecture
+Implements AHAA (Adaptive Hybrid Agent Architecture) dispatch logic
 """
 
+import json
 import logging
 import time
 from typing import Optional
@@ -15,8 +17,7 @@ from fastapi import WebSocket
 from thespian.actors import Actor, ActorAddress, ActorExitRequest
 
 from miloco_server import actor_system
-from miloco_server.agent.nlp_request_agent import NlpRequestAgent
-from miloco_server.agent.dynamic_execute_agent import ActionDescriptionDynamicExecuteAgent
+from miloco_server.config import CHAT_CONFIG
 from miloco_server.schema.chat_schema import Event, Instruction, InstructionPayload, Internal, Template, Dialog
 from miloco_server.schema.chat_history_schema import (
     ChatHistoryStorage, ChatHistoryMessages, ChatHistorySession
@@ -25,11 +26,29 @@ from miloco_server.service.xiaoai_broadcast_service import broadcast_chat_reply,
 
 logger = logging.getLogger(__name__)
 
+_use_ahaa = CHAT_CONFIG.get("use_ahaa", False)
+_ahaa_dispatcher = None
+
+if _use_ahaa:
+    try:
+        from miloco_server.agent.multi_agent.ahaa_dispatcher import AHAADispatcher as _AHAADispatcher
+        _ahaa_dispatcher = _AHAADispatcher()
+        logger.info("AHAADispatcher initialized successfully")
+    except Exception as e:
+        logger.warning("Failed to initialize AHAADispatcher: %s, AHAA disabled", e)
+        _use_ahaa = False
+        _ahaa_dispatcher = None
+
 
 class ChatAgentDispatcher(Actor):
     """
-    ChatAgentDispatcher Actor - Actor model implemented using thespian
-    Concurrent component for handling WebSocket messages and event dispatching
+    Chat Agent Dispatcher with AHAA Agent Framework Support
+    
+    Features:
+    - AHAA (Adaptive Hybrid Agent Architecture) integration
+    - Automatic role management
+    - Intelligent tool selection
+    - Enhanced error handling
     """
 
     def __init__(self,
@@ -50,6 +69,12 @@ class ChatAgentDispatcher(Actor):
         from miloco_server.service.manager import get_manager  # pylint: disable=import-outside-toplevel
         self._manager = get_manager()
         self._chat_companion = self._manager.chat_companion
+        
+        # AHAA configuration
+        self._use_ahaa = _use_ahaa
+        logger.info("[%s] ChatAgentDispatcher initialized, use_ahaa=%s",
+                   self.request_id, self._use_ahaa)
+        
         chat_history_storage = self._chat_companion.get_chat_history(
             self.session_id)
         if chat_history_storage is not None:
@@ -64,14 +89,14 @@ class ChatAgentDispatcher(Actor):
             )
         self._chat_history_messages = ChatHistoryMessages.from_json(self._chat_history_storage.messages)
         logger.debug(
-            "ChatAgentDispatcher init, current chat history: %s", self._chat_history_storage
+            "[%s] Chat history: %s", self.request_id, self._chat_history_storage
         )
         self._need_storage_history = False
         self._full_response = ""
 
     def receiveMessage(self, msg, sender):
         """
-        Actor message receiving method, handles received messages
+        Actor message receiving method
         """
         try:
             if isinstance(msg, Event):
@@ -86,15 +111,14 @@ class ChatAgentDispatcher(Actor):
                     "[%s] Invalid message format: %s", self.request_id, msg)
         except Exception as e:  # pylint: disable=broad-except
             logger.error(
-                "[%s] Error in receiveMessage method: %s", self.request_id, e)
+                "[%s] Error in receiveMessage: %s", self.request_id, e)
             self._close_web_socket()
 
     def _handle_event(self, event: Event) -> None:
         """
-        Handle Event object
+        Handle Event object with AHAA Agent support
         """
-        logger.info(
-            "[%s] handle_event_sync: %s.%s", self.request_id,
+        logger.info("[%s] handle_event: %s.%s", self.request_id,
             event.header.namespace, event.header.name
         )
         if event.header.type != "event":
@@ -108,29 +132,146 @@ class ChatAgentDispatcher(Actor):
             return
 
         if event.judge_type("Nlp", "Request"):
-            logger.info("[%s] create nlp request agent", self.request_id)
-            self._full_response = ""
-            self._chat_agent = actor_system.createActor(lambda: NlpRequestAgent(
-                self.request_id, self.myAddress, self._chat_history_messages,
-            ))
-
-            logger.info("[%s] send event to nlp request agent", self.request_id)
-            actor_system.tell(self._chat_agent, event)
-
+            self._handle_nlp_request_event(event)
         elif event.judge_type("Nlp", "ActionDescriptionDynamicExecute"):
-            logger.info("[%s] create nlp action description dynamic execute agent", self.request_id)
-            self._full_response = ""
-            self._chat_agent = actor_system.createActor(lambda: ActionDescriptionDynamicExecuteAgent(
-                self.request_id, self.myAddress, self._chat_history_messages,
-            ))
-
-            logger.info("[%s] send event to nlp action descriptions dynamic execute agent", self.request_id)
-            actor_system.tell(self._chat_agent, event)
+            self._handle_dynamic_execute_event(event)
         else:
             logger.warning(
                 "[%s] Unsupported event: %s.%s", self.request_id,
                 event.header.namespace, event.header.name
             )
+
+    def _handle_nlp_request_event(self, event: Event) -> None:
+        """
+        Handle Nlp Request event with AHAA dispatch
+        """
+        self._full_response = ""
+        
+        # Try AHAA first if enabled
+        if self._use_ahaa and _ahaa_dispatcher is not None:
+            query = self._extract_query_from_event(event)
+            logger.info("[%s] AHAA dispatch for query: %s", self.request_id, query)
+            self._handle_ahaa_dispatch(event, query)
+            return
+        
+        # Fallback to AHAA Agent (NlpRequestAgent)
+        from miloco_server.agent.nlp_request_agent_enhanced import NlpRequestAgent
+        
+        self._chat_agent = actor_system.createActor(
+            lambda: NlpRequestAgent(
+                self.request_id, self.myAddress, self._chat_history_messages,
+            ))
+
+        logger.info("[%s] Sending event to AHAA Agent", self.request_id)
+        actor_system.tell(self._chat_agent, event)
+
+    async def _ahaa_dispatch_async(self, event: Event, query: str) -> None:
+        """
+        AHAA dispatch async task: analyze complexity, try rule engine, fallback to AHAA Agent.
+        """
+        try:
+            dispatcher = _ahaa_dispatcher
+            rule_engine = dispatcher.rule_engine
+            
+            match_result = await rule_engine.match(query)
+            if match_result is not None:
+                logger.info("[%s] AHAA rule matched: %s, action=%s, confidence=%.2f",
+                           self.request_id, match_result.rule_name, match_result.action.name,
+                           match_result.confidence)
+                
+                action_name = match_result.action.name
+                
+                if action_name in ("CHAT",):
+                    from miloco_server.service.context_provider import ContextProvider
+                    provider = ContextProvider.get_instance()
+                    ctx = provider.get_context() if provider else None
+                    
+                    tpl = match_result.response_template or "你好！有什么我可以帮您的吗？"
+                    template_values = {
+                        "query": query,
+                        "temperature": getattr(ctx, "temperature", None),
+                        "humidity": getattr(ctx, "humidity", None),
+                        "weather": getattr(ctx, "weather", None),
+                    }
+                    template_values.update(match_result.extracted_entities)
+                    
+                    try:
+                        response_text = tpl.format(**template_values)
+                    except KeyError:
+                        response_text = tpl
+                    
+                    logger.info("[%s] AHAA rule CHAT direct response: %s", self.request_id, response_text)
+                    self._full_response = response_text
+                    asyncio.create_task(broadcast_chat_reply(response_text))
+                    
+                    instruction = Instruction.build_instruction(
+                        Template.ToastStream(stream=response_text), self.request_id, self.session_id)
+                    instruction_finish = Instruction.build_instruction(
+                        Dialog.Finish(success=True), self.request_id, self.session_id)
+                    await self._send_instruction(instruction)
+                    await self._send_instruction(instruction_finish)
+                    
+                    self._update_chat_history_info_title(query)
+                    return
+                
+                if action_name in ("DEVICE_CONTROL", "DEVICE_QUERY"):
+                    logger.info("[%s] AHAA rule matched %s, need tool execution, falling back to AHAA Agent",
+                               self.request_id, action_name)
+            
+            logger.info("[%s] AHAA no rule match, falling back to AHAA Agent", self.request_id)
+            self._fallback_to_ahaa_agent(event)
+            
+        except Exception as e:
+            logger.error("[%s] AHAA dispatch error: %s, falling back", self.request_id, e, exc_info=True)
+            self._fallback_to_ahaa_agent(event)
+
+    def _extract_query_from_event(self, event: Event) -> str:
+        """Extract query text from Nlp.Request event payload (JSON string)."""
+        try:
+            from miloco_server.schema.chat_schema import Nlp
+            payload_data = json.loads(event.payload) if isinstance(event.payload, str) else event.payload
+            return payload_data.get("query", "")
+        except Exception:
+            return ""
+
+    def _handle_ahaa_dispatch(self, event: Event, query: str) -> None:
+        """
+        Start AHAA dispatch asynchronously.
+        Rule-matched queries respond directly, others fallback to AHAA Agent.
+        """
+        asyncio.create_task(self._ahaa_dispatch_async(event, query))
+
+    def _fallback_to_ahaa_agent(self, event: Event) -> None:
+        """
+        Fallback to AHAA Agent (NlpRequestAgent) when AHAA rule doesn't match.
+        """
+        from miloco_server.agent.nlp_request_agent_enhanced import NlpRequestAgent
+        
+        self._chat_agent = actor_system.createActor(
+            lambda: NlpRequestAgent(
+                self.request_id, self.myAddress, self._chat_history_messages,
+            ))
+
+        logger.info("[%s] Sending event to AHAA Agent (AHAA fallback)", self.request_id)
+        actor_system.tell(self._chat_agent, event)
+
+    def _handle_dynamic_execute_event(self, event: Event) -> None:
+        """
+        Handle Action Description Dynamic Execute event
+        """
+        logger.info("[%s] Creating dynamic execute agent", self.request_id)
+        
+        self._full_response = ""
+        
+        from miloco_server.agent.dynamic_execute_agent import ActionDescriptionDynamicExecuteAgent
+        
+        self._chat_agent = actor_system.createActor(
+            lambda: ActionDescriptionDynamicExecuteAgent(
+                self.request_id, self.myAddress, self._chat_history_messages,
+            ))
+
+        logger.info("[%s] Sending event to dynamic execute agent", self.request_id)
+        actor_system.tell(self._chat_agent, event)
 
     def _update_chat_history_info_title(self, query: str):
         if self._chat_history_storage.title == "":
@@ -170,7 +311,6 @@ class ChatAgentDispatcher(Actor):
         self._chat_history_storage.session.add_instruction(instruction)
         asyncio.create_task(self._send_instruction(instruction))
 
-
     def _handle_internal_dispatcher(self, dispatcher_message: Internal.Dispatcher) -> None:
         """
         Handle Internal Dispatcher message
@@ -182,16 +322,15 @@ class ChatAgentDispatcher(Actor):
         if dispatcher_message.need_storage_history is not None:
             self._need_storage_history = dispatcher_message.need_storage_history
 
-
     async def _send_instruction(self, instruction: Instruction):
         """
         Send instruction
         """
         msg = instruction.model_dump_json()
         if instruction.judge_type("Template", "ToastStream"):
-            logger.debug("send_instruction: %s", msg)
+            logger.debug("[%s] send_instruction: %s", self.request_id, msg)
         else:
-            logger.info("send_instruction: %s", msg)
+            logger.info("[%s] send_instruction: %s", self.request_id, msg)
         await self._send_message(msg)
         if instruction.judge_type("Dialog", "Finish"):
             logger.info(
@@ -214,7 +353,8 @@ class ChatAgentDispatcher(Actor):
     def _handle_exit_request(self):
         """Handle Actor exit request"""
         self._close_web_socket()
-        logger.info("[%s] handle_exit_request, need_storage_history: %s", self.request_id, self._need_storage_history)
+        logger.info("[%s] handle_exit_request, need_storage_history: %s", 
+                   self.request_id, self._need_storage_history)
         if self._need_storage_history:
             self._chat_history_storage.messages = self._chat_history_messages.to_json()
             self._chat_companion.store_chat_history(self._chat_history_storage)

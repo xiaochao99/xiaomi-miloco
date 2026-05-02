@@ -186,3 +186,32 @@ class ToolExecutor:
     async def execute_tool(self, tool_call: ChatCompletionMessageToolCall) -> CallToolResult:
         client_id, tool_name, parameters = self.parse_tool_call(tool_call)
         return await self.execute_tool_by_params(client_id, tool_name, parameters)
+
+    async def resolve_unknown_tool(
+            self, tool_call: ChatCompletionMessageToolCall) -> Optional[tuple[str, str, dict[str, Any]]]:
+        """
+        Resolve a tool call without client prefix by searching across all MCP clients.
+        Returns (client_id, tool_name, parameters) if found, None otherwise.
+        """
+        if not self.mcp_client_manager:
+            return None
+        raw_tool_name = tool_call.function.name
+        try:
+            params = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
+            if not isinstance(params, dict):
+                params = {}
+        except:
+            params = {}
+
+        for cid in self.mcp_client_manager.clients:
+            client = self.mcp_client_manager.clients.get(cid)
+            if not client or not client.is_connected():
+                continue
+            try:
+                tools = client.get_tools()
+                if any(t.name == raw_tool_name for t in tools):
+                    logger.info("Resolved tool '%s' to client '%s'", raw_tool_name, cid)
+                    return (cid, raw_tool_name, params)
+            except Exception:
+                continue
+        return None

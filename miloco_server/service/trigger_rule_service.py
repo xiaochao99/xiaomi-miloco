@@ -23,7 +23,7 @@ from miloco_server.middleware.exceptions import (
     BusinessException,
 )
 from miloco_server.proxy.miot_proxy import MiotProxy
-from miloco_server.schema.miot_schema import choose_camera_list, HADeviceInfo
+from miloco_server.schema.miot_schema import HADeviceInfo
 from miloco_server.schema.trigger_log_schema import TriggerRuleLog
 from miloco_server.schema.trigger_schema import (
     Action, Notify, TriggerRule, TriggerRuleV2, ConditionType)

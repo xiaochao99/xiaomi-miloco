@@ -25,7 +25,6 @@ CONFIG_FILE = PROJECT_ROOT.parent / "config" / "server_config.yaml"
 _config = load_yaml_config(CONFIG_FILE)
 
 # Directory path configuration
-TEMPLATES_DIR = PROJECT_ROOT / _config["directories"]["templates"]
 STATIC_DIR = PROJECT_ROOT / _config["directories"]["static"]
 
 # Storage directory with environment variable override support
@@ -92,13 +91,13 @@ CHAT_CONFIG = {
     "agent_max_steps": _config.get("chat", {}).get("agent_max_steps", 10),
     "vision_use_img_count": _config.get("chat", {}).get("vision_use_img_count", 5),
     "chat_history_ttl": _config.get("chat", {}).get("chat_history_ttl", 86400),
-    # OpenClaw framework configuration
-    "use_openclaw": _config.get("chat", {}).get("use_openclaw", True),
-    "openclaw": {
-        "default_role": _config.get("chat", {}).get("openclaw", {}).get("default_role", "smart_home_assistant"),
-        "enable_auto_role_selection": _config.get("chat", {}).get("openclaw", {}).get("enable_auto_role_selection", True),
-        "enable_intelligent_tool_selection": _config.get("chat", {}).get("openclaw", {}).get("enable_intelligent_tool_selection", True),
-        "enable_adaptive_learning": _config.get("chat", {}).get("openclaw", {}).get("enable_adaptive_learning", True),
+    # AHAA Agent framework configuration
+    "use_ahaa_agent": _config.get("chat", {}).get("use_ahaa_agent", True),
+    "ahaa_agent": {
+        "default_role": _config.get("chat", {}).get("ahaa_agent", {}).get("default_role", "smart_home_assistant"),
+        "enable_auto_role_selection": _config.get("chat", {}).get("ahaa_agent", {}).get("enable_auto_role_selection", True),
+        "enable_intelligent_tool_selection": _config.get("chat", {}).get("ahaa_agent", {}).get("enable_intelligent_tool_selection", True),
+        "enable_adaptive_learning": _config.get("chat", {}).get("ahaa_agent", {}).get("enable_adaptive_learning", True),
     },
     # AHAA (Adaptive Hybrid Agent Architecture) configuration
     "use_ahaa": _config.get("chat", {}).get("use_ahaa", False),

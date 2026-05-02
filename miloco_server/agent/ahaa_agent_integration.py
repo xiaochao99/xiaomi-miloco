@@ -2,9 +2,9 @@
 # This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
 
 """
-OpenClaw Integration Module
+AHAA Agent Integration Module
 
-Provides easy integration of OpenClaw framework components with existing system.
+Provides easy integration of AHAA Agent framework components with existing system.
 Simplifies the transition from legacy ChatAgent to EnhancedChatAgent.
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 from miloco_server.config.config_loader import load_yaml_config, get_project_root
 
-# Import OpenClaw core components
+# Import AHAA Agent core components
 from miloco_server.agent.core import (
     Role, RoleManager, RoleCapability,
     PromptTemplate, PromptContext, template_engine,
@@ -27,15 +27,15 @@ from miloco_server.agent.core import (
 logger = logging.getLogger(__name__)
 
 
-class OpenClawIntegration:
+class AhaaAgentIntegration:
     """
-    OpenClaw Integration Facade
+    AHAA Agent Integration Facade
     
-    Provides a unified interface for accessing all OpenClaw framework features.
+    Provides a unified interface for accessing all AHAA Agent framework features.
     Handles configuration loading and component initialization.
     """
     
-    _instance: Optional["OpenClawIntegration"] = None
+    _instance: Optional["AhaaAgentIntegration"] = None
     
     def __new__(cls):
         """Singleton pattern"""
@@ -56,17 +56,17 @@ class OpenClawIntegration:
         self._initialize_components()
         
         self._initialized = True
-        logger.info("OpenClawIntegration initialized successfully")
+        logger.info("AhaaAgentIntegration initialized successfully")
     
     def _load_config(self) -> None:
-        """Load OpenClaw configuration"""
-        config_path = get_project_root().parent / "config" / "openclaw_config.yaml"
+        """Load AHAA Agent configuration"""
+        config_path = get_project_root().parent / "config" / "ahaa_config.yaml"
         
         if config_path.exists():
             self._config = load_yaml_config(config_path)
-            logger.info(f"Loaded OpenClaw config from {config_path}")
+            logger.info(f"Loaded AHAA Agent config from {config_path}")
         else:
-            logger.warning(f"OpenClaw config not found at {config_path}, using defaults")
+            logger.warning(f"AHAA Agent config not found at {config_path}, using defaults")
             self._config = self._get_default_config()
     
     def _get_default_config(self) -> Dict[str, Any]:
@@ -96,7 +96,7 @@ class OpenClawIntegration:
         # Initialize Template Engine
         template_engine.initialize_default_templates()
         
-        logger.info("All OpenClaw components initialized")
+        logger.info("All AHAA Agent components initialized")
     
     def _load_custom_roles(self) -> None:
         """Load custom roles from configuration"""
@@ -295,35 +295,35 @@ class OpenClawIntegration:
 
 
 # Global integration instance
-openclaw = OpenClawIntegration()
+ahaa_agent = AhaaAgentIntegration()
 
 
-def get_openclaw() -> OpenClawIntegration:
-    """Get OpenClaw integration instance"""
-    return openclaw
+def get_ahaa_agent() -> AhaaAgentIntegration:
+    """Get AHAA Agent integration instance"""
+    return ahaa_agent
 
 
 # Convenience functions for quick access
 def switch_role(role_name: str) -> Role:
     """Switch to a role"""
-    return openclaw.switch_role(role_name)
+    return ahaa_agent.switch_role(role_name)
 
 
 def auto_select_role(query: str) -> Role:
     """Auto-select role for query"""
-    return openclaw.auto_select_role(query)
+    return ahaa_agent.auto_select_role(query)
 
 
 def select_tools(query: str, top_k: int = 3) -> List[Any]:
     """Select tools for query"""
-    return openclaw.select_tools(query, top_k=top_k)
+    return ahaa_agent.select_tools(query, top_k=top_k)
 
 
 def generate_prompt(role: Optional[Role] = None, **context) -> str:
     """Generate system prompt"""
-    return openclaw.generate_system_prompt(role, context)
+    return ahaa_agent.generate_system_prompt(role, context)
 
 
 def get_stats() -> Dict[str, Any]:
     """Get system statistics"""
-    return openclaw.get_stats()
+    return ahaa_agent.get_stats()

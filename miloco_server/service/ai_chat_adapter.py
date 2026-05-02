@@ -14,6 +14,7 @@ without affecting core behavior (including default auto camera selection and MCP
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from typing import AsyncGenerator, List, Optional
@@ -21,7 +22,7 @@ from typing import AsyncGenerator, List, Optional
 from thespian.actors import Actor, ActorExitRequest
 
 from miloco_server import actor_system
-from miloco_server.agent.nlp_request_agent import NlpRequestAgent
+from miloco_server.agent.nlp_request_agent_enhanced import NlpRequestAgent
 from miloco_server.schema.chat_schema import Dialog, Event, Header, Instruction, Nlp, Template
 from miloco_server.schema.chat_history_schema import (
     ChatHistoryMessages,

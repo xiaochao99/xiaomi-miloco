@@ -2,7 +2,7 @@
 # This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
 
 """
-OpenClaw Agent Core Framework
+AHAA Agent Core Framework
 
 A comprehensive framework for intelligent agent role configuration, prompt management,
 and context-aware tool invocation.

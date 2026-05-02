@@ -4,17 +4,10 @@
 """
 Agent Module
 
-Provides chat agent implementations for handling user interactions.
-Includes both legacy and enhanced (OpenClaw) agent implementations.
+AHAA (Adaptive Hybrid Agent Architecture) based agent implementations.
 """
 
-# Legacy agents (backward compatibility)
-from .chat_agent import ChatAgent
-from .nlp_request_agent import NlpRequestAgent
-from .dynamic_execute_agent import ActionDescriptionDynamicExecuteAgent
-from .wakeup_chat_agent import WakeUpChatAgent
-
-# OpenClaw framework components
+# AHAA Agent core components
 from .core import (
     # Role Management
     Role, RoleConfig, RoleCapability, RoleManager,
@@ -30,14 +23,14 @@ from .core import (
     ErrorHandler, FallbackStrategy, RecoveryAction, error_handler,
 )
 
-# Enhanced agent with OpenClaw integration
+# AHAA Agent implementation
 from .enhanced_chat_agent import EnhancedChatAgent
 
 # Integration facade
-from .openclaw_integration import (
-    OpenClawIntegration,
-    openclaw,
-    get_openclaw,
+from .ahaa_agent_integration import (
+    AhaaAgentIntegration,
+    ahaa_agent,
+    get_ahaa_agent,
     switch_role,
     auto_select_role,
     select_tools,
@@ -45,14 +38,17 @@ from .openclaw_integration import (
     get_stats,
 )
 
+# NLP Request Agent (AHAA-based)
+from .nlp_request_agent_enhanced import NlpRequestAgent
+
+# WakeUp Chat Agent (AHAA-based)
+from .wakeup_chat_agent import WakeUpChatAgent
+
+# Dynamic Execute Agent
+from .dynamic_execute_agent import ActionDescriptionDynamicExecuteAgent
+
 __all__ = [
-    # Legacy Agents
-    "ChatAgent",
-    "NlpRequestAgent",
-    "ActionDescriptionDynamicExecuteAgent",
-    "WakeUpChatAgent",
-    
-    # OpenClaw Core Components
+    # AHAA Agent Core Components
     "Role",
     "RoleConfig",
     "RoleCapability",
@@ -78,13 +74,22 @@ __all__ = [
     "RecoveryAction",
     "error_handler",
     
-    # Enhanced Agent
+    # AHAA Agent Implementation
     "EnhancedChatAgent",
     
+    # NLP Request Agent
+    "NlpRequestAgent",
+    
+    # WakeUp Chat Agent
+    "WakeUpChatAgent",
+    
+    # Dynamic Execute Agent
+    "ActionDescriptionDynamicExecuteAgent",
+    
     # Integration
-    "OpenClawIntegration",
-    "openclaw",
-    "get_openclaw",
+    "AhaaAgentIntegration",
+    "ahaa_agent",
+    "get_ahaa_agent",
     "switch_role",
     "auto_select_role",
     "select_tools",

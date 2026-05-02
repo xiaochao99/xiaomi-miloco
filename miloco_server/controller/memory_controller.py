@@ -22,7 +22,7 @@ from miloco_server.schema.memory_schema import (
     ManualMemoryCommand,
 )
 from miloco_server.schema.common_schema import NormalResponse
-from miloco_server.service.memory_service import get_memory_service, initialize_memory_service
+from miloco_server.service.memory_service import get_memory_service
 
 logger = logging.getLogger(__name__)
 

@@ -14,7 +14,7 @@ import json
 import base64
 from typing import List, Optional, Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, File, UploadFile, Form, Request, Depends, HTTPException, status
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, File, UploadFile, Form, Request, Depends, HTTPException
 from pydantic import BaseModel
 
 from miloco_server.middleware import verify_token, verify_websocket_token
@@ -22,8 +22,6 @@ from miloco_server.schema.xiaomi_bridge_schema import (
     BridgeConfigSchema,
     BridgeConfigResponse,
     BridgeRestartResponse,
-    VoiceCloneUploadRequest,
-    VoiceCloneItem,
     VoiceDesignRequest,
     MimoTTSRequest,
 )

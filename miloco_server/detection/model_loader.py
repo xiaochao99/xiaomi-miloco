@@ -11,7 +11,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional, BinaryIO, Union
+from typing import Optional, Union
 import sys
 
 logger = logging.getLogger(__name__)

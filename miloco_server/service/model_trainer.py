@@ -93,7 +93,7 @@ class ModelTrainer:
             return {"error": str(e)}
 
     async def evaluate(self, days: int = 7) -> Dict[str, Any]:
-        from miloco_server.utils.metrics import accuracy_score, time_mae_minutes
+        from miloco_server.utils.metrics import accuracy_score
 
         end = datetime.now()
         start = end - timedelta(days=days)

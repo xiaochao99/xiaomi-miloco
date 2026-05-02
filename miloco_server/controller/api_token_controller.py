@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends
 
 from miloco_server.schema.common_schema import NormalResponse
 from miloco_server.schema.api_token_schema import (
-    ApiTokenCreateRequest, ApiTokenDeleteRequest, ApiTokenListResponse
+    ApiTokenCreateRequest, ApiTokenDeleteRequest
 )
 from miloco_server.service.manager import get_manager
 from miloco_server.middleware import verify_token

@@ -11,14 +11,14 @@ from miloco_server.utils.chat_companion import ChatCachedData
 from miloco_server.schema.chat_schema import Dialog, Event, Confirmation, Nlp
 from miloco_server.schema.mcp_schema import CallToolResult, LocalMcpClientId
 from miloco_server.schema.trigger_schema import Action
-from miloco_server.agent.chat_agent import ChatAgent
+from miloco_server.agent.enhanced_chat_agent import EnhancedChatAgent
 from miloco_server.config.prompt_config import PromptConfig, UserLanguage
 import asyncio
 
 logger = logging.getLogger(__name__)
 
 
-class ActionDescriptionDynamicExecuteAgent(ChatAgent):
+class ActionDescriptionDynamicExecuteAgent(EnhancedChatAgent):
     """Nlp Action Description Dynamic Execute Agent"""
     def __init__(
         self,
