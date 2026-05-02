@@ -152,6 +152,8 @@ class DecisionEngine:
                     wind_speed=context.wind_speed,
                     air_quality=context.air_quality,
                     time_period=context.time_period,
+                    water_leak_detected=context.water_leak_detected,
+                    traffic_restricted=context.traffic_restricted,
                 )
 
                 risk = await self.risk_assessor.assess(action, decision_context)

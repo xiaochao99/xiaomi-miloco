@@ -136,6 +136,8 @@ class HabitCollector:
                 is_anyone_present=ctx.get("is_anyone_present"),
                 outdoor_temperature=ctx.get("outdoor_temperature"),
                 weather=ctx.get("weather"),
+                water_leak_detected=ctx.get("water_leak_detected"),
+                traffic_restricted=ctx.get("traffic_restricted"),
                 source="ha_websocket",
                 metadata=ctx,
             )

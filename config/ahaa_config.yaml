@@ -1,0 +1,209 @@
+# Adaptive Hybrid Agent Architecture (AHAA) Configuration
+# 自适应混合智能体架构配置
+
+# ============================================
+# Global Settings / 全局设置
+# ============================================
+ahaa:
+  # Enable AHAA mode / 启用AHAA模式
+  enabled: true
+
+  # Fallback to single agent on error / 出错时降级到单Agent模式
+  enable_fallback: true
+
+  # Performance monitoring / 性能监控
+  enable_monitoring: true
+
+# ============================================
+# Rule Engine Configuration / 规则引擎配置
+# ============================================
+rule_engine:
+  # Enable rule engine / 启用规则引擎
+  enabled: true
+
+  # Maximum rules / 最大规则数
+  max_rules: 200
+
+  # Default rules file / 默认规则文件
+  default_rules_file: null
+
+  # Custom rules / 自定义规则
+  custom_rules: []
+
+# ============================================
+# Complexity Analyzer Configuration / 复杂度分析器配置
+# ============================================
+complexity_analyzer:
+  # Enable complexity analyzer / 启用复杂度分析器
+  enabled: true
+
+  # Confidence thresholds / 置信度阈值
+  trivial_threshold: 0.9
+  simple_threshold: 0.7
+  moderate_threshold: 0.5
+
+  # Custom patterns / 自定义模式
+  custom_patterns: []
+
+# ============================================
+# Execution Modes Configuration / 执行模式配置
+# ============================================
+execution_modes:
+  # Rule direct mode / 规则直接响应模式
+  rule_direct:
+    enabled: true
+    max_response_time_ms: 100
+    allow_tool_execution: true
+
+  # Single agent mode / 单Agent模式
+  single_agent:
+    enabled: true
+    default_agent: "default"
+    max_response_time_ms: 30000
+    max_retries: 2
+
+  # Parallel mode / 并行多Agent模式
+  parallel:
+    enabled: true
+    max_parallel_agents: 3
+    max_response_time_ms: 20000
+    gather_timeout_ms: 25000
+
+  # Pipeline mode / 流水线多Agent模式
+  pipeline:
+    enabled: true
+    max_pipeline_steps: 5
+    step_timeout_ms: 15000
+    total_timeout_ms: 60000
+
+  # Fallback mode / 降级模式
+  fallback:
+    enabled: true
+    default_response: "抱歉，暂时无法处理您的请求，请稍后重试。"
+
+# ============================================
+# Shared Blackboard Configuration / 共享黑板配置
+# ============================================
+blackboard:
+  # Enable shared blackboard / 启用共享黑板
+  enabled: true
+
+  # Maximum entries / 最大条目数
+  max_entries: 10000
+
+  # Default TTL (seconds) / 默认过期时间（秒）
+  default_ttl_seconds: 300
+
+  # Cleanup interval (seconds) / 清理间隔（秒）
+  cleanup_interval_seconds: 60
+
+  # Namespaces / 命名空间
+  namespaces:
+    SESSION:
+      ttl_seconds: 3600
+      max_entries: 1000
+    DEVICE:
+      ttl_seconds: 60
+      max_entries: 5000
+    CONTEXT:
+      ttl_seconds: 300
+      max_entries: 2000
+    RESULT:
+      ttl_seconds: 120
+      max_entries: 500
+    AGENT:
+      ttl_seconds: 600
+      max_entries: 200
+    RULE:
+      ttl_seconds: 86400
+      max_entries: 100
+
+# ============================================
+# Capability Registry Configuration / 能力注册表配置
+# ============================================
+capability_registry:
+  # Enable capability registry / 启用能力注册表
+  enabled: true
+
+  # Performance tracking / 性能追踪
+  enable_performance_tracking: true
+
+  # Maximum history size / 最大历史记录数
+  max_history_size: 1000
+
+  # Scoring weights / 评分权重
+  scoring_weights:
+    success_rate: 0.4
+    response_time: 0.3
+    priority: 0.2
+    recency: 0.1
+
+  # Default agent capabilities / 默认Agent能力
+  default_agents:
+    device_agent:
+      capabilities:
+        - DEVICE_CONTROL
+        - DEVICE_QUERY
+      tools:
+        - send_ctrl_rpc
+        - send_get_rpc
+        - cached_get_device_state
+        - cached_get_multiple_states
+        - cached_search_devices
+      priority: 10
+
+    vision_agent:
+      capabilities:
+        - VISION_ANALYSIS
+        - FACE_RECOGNITION
+      tools:
+        - vision_understand
+        - who_am_i
+      priority: 8
+
+    automation_agent:
+      capabilities:
+        - AUTOMATION
+        - RULE_CREATION
+      tools:
+        - create_rule
+        - trigger_manual_scene
+        - trigger_automation
+      priority: 7
+
+    chat_agent:
+      capabilities:
+        - CHAT
+        - CONTEXT_AWARE
+        - MULTI_TURN
+      tools:
+        - get_current_time
+        - cached_get_room_environment
+        - get_environment_context
+      priority: 5
+
+# ============================================
+# Agent Timeout Configuration / Agent超时配置
+# ============================================
+agent_timeouts:
+  default_seconds: 30
+  device_control_seconds: 15
+  vision_analysis_seconds: 20
+  automation_seconds: 25
+  chat_seconds: 10
+
+# ============================================
+# Logging Configuration / 日志配置
+# ============================================
+logging:
+  # Log level / 日志级别
+  level: "INFO"
+
+  # Log execution details / 记录执行详情
+  log_execution_details: true
+
+  # Log performance metrics / 记录性能指标
+  log_performance_metrics: true
+
+  # Metrics export interval (seconds) / 指标导出间隔（秒）
+  metrics_export_interval_seconds: 300

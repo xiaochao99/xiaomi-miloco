@@ -537,6 +537,24 @@ const HabitLearning = () => {
                   <span className={styles.statusLabel}>🌅 {t('habitLearning.timePeriod', '时段')}</span>
                   <span className={styles.statusValue}>{envContext.time_period || '-'}</span>
                 </div>
+                <div className={styles.statusItem}>
+                  <span className={styles.statusLabel}>💧 {t('habitLearning.waterLeak', '水浸检测')}</span>
+                  <span className={styles.statusValue}>
+                    <Tag color={envContext.water_leak_detected ? 'error' : 'success'}>
+                      {envContext.water_leak_detected ? t('habitLearning.detected', '检测到') : t('habitLearning.normal', '正常')}
+                    </Tag>
+                  </span>
+                </div>
+                <div className={styles.statusItem}>
+                  <span className={styles.statusLabel}>🚗 {t('habitLearning.trafficRestriction', '限行状态')}</span>
+                  <span className={styles.statusValue}>
+                    {envContext.traffic_restricted ? (
+                      <Tag color="warning">{envContext.traffic_restricted}</Tag>
+                    ) : (
+                      <Tag color="success">{t('habitLearning.normal', '正常')}</Tag>
+                    )}
+                  </span>
+                </div>
               </div>
             </Card>
           )}
@@ -568,6 +586,8 @@ const HabitLearning = () => {
                 { key: 'is_anyone_present', label: t('habitLearning.anyonePresentEntity', '👤 有人在场（motion/presence）') },
                 { key: 'weather', label: t('habitLearning.weatherEntity', '☁️ 天气实体') },
                 { key: 'air_quality', label: t('habitLearning.airQualityEntity', '🏭 空气质量传感器') },
+                { key: 'water_leak', label: t('habitLearning.waterLeakEntity', '💧 水浸传感器') },
+                { key: 'traffic_restriction', label: t('habitLearning.trafficRestrictionEntity', '🚗 限行状态') },
               ].map(({ key, label }) => (
                 <div className={styles.habitItem} key={key} style={{ alignItems: 'center' }}>
                   <span className={styles.habitLabel} style={{ minWidth: 200 }}>{label}</span>

@@ -371,8 +371,8 @@ async def get_all_ha_entities():
 async def save_context_entities(request: ContextEntitiesRequest):
     try:
         from miloco_server.config.normal_config import save_context_entities_config
-        valid_keys = {"indoor_temperature", "humidity", "outdoor_temperature", "light_level",
-                       "is_home", "is_anyone_present", "weather", "air_quality"}
+        from miloco_server.service.context_provider import CONTEXT_ENTITY_KEYS
+        valid_keys = set(CONTEXT_ENTITY_KEYS)
         filtered = {k: v for k, v in request.entities.items() if k in valid_keys and v}
         success = save_context_entities_config(filtered)
         if not success:

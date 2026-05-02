@@ -929,5 +929,12 @@ export default {
     configSaveFailed: '配置保存失败',
     fetchFailed: '获取数据失败',
     never: '从未',
+    waterLeak: '水浸检测',
+    detected: '检测到',
+    normal: '正常',
+    trafficRestriction: '限行状态',
+    restricted: '限行',
+    waterLeakEntity: '💧 水浸传感器',
+    trafficRestrictionEntity: '🚗 限行状态',
   },
 };

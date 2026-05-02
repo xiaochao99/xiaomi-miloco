@@ -59,10 +59,11 @@ miot_devices:
         \n
         4. 调用 `{{tool_name_send_ctrl_rpc}}`\n
         - 传入的参数为`did`, `iid`和`value`\n
+        - `iid`格式为 `{{cmd}}.0.{{siid}}.{{piid}}`，例如 `prop.0.2.1`\n
         - 发送控制命令以控制设备"
       params:
         did: "米家设备DID"
-        iid: "SPEC实例ID"
+        iid: "SPEC实例ID，格式为 `{cmd}.0.{siid}.{piid}`（如 `prop.0.2.1`），必须从`get_device_spec`工具返回的SPEC定义中获取"
         value: "控制值，格式需符合SPEC定义"
     send_get_rpc:
       description: "你是一个用于米家设备属性查询的工具，请按照下述步骤操作。\n
@@ -78,10 +79,11 @@ miot_devices:
         \n
         3. 调用 `{{tool_name_send_get_rpc}}`\n
         - 传入的参数为`did`, `iid`\n
+        - `iid`格式为 `{{cmd}}.0.{{siid}}.{{piid}}`，例如 `prop.0.2.1`\n
         - 发送命令获取设备状态"
       params:
         did: "米家设备DID"
-        iid: "SPEC实例ID"
+        iid: "SPEC实例ID，格式为 `{cmd}.0.{siid}.{piid}`（如 `prop.0.2.1`），必须从`get_device_spec`工具返回的SPEC定义中获取"
   prompts:
     prompt_send_ctrl_rpc:
       description: "控制米家设备模板。"
@@ -102,6 +104,7 @@ miot_devices:
         \n
         4. 调用 `{{tool_name_send_ctrl_rpc}}`\n
         - 传入的参数为`did`, `iid`和`value`\n
+        - `iid`格式为 `{cmd}.0.{siid}.{piid}`，例如 `prop.0.2.1`\n
         - 发送控制命令以控制设备\n
         \n
         ### 输出要求：\n
@@ -122,6 +125,7 @@ miot_devices:
         \n
         3. 调用 `{{tool_name_send_get_rpc}}`\n
         - 传入的参数为`did`, `iid`\n
+        - `iid`格式为 `{cmd}.0.{siid}.{piid}`，例如 `prop.0.2.1`\n
         - 发送命令获取设备状态\n
         \n
         ### 输出要求：\n

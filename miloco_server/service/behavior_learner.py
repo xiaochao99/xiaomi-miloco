@@ -119,6 +119,8 @@ class BehaviorLearner:
                 wind_speed=context.wind_speed,
                 air_quality=context.air_quality,
                 time_period=context.time_period,
+                water_leak_detected=context.water_leak_detected,
+                traffic_restricted=context.traffic_restricted,
             )
 
             time_prediction = await self._time_predictor.predict(tp_ctx)
@@ -212,6 +214,8 @@ class BehaviorLearner:
                 ctx.wind_speed = env_ctx.wind_speed
                 ctx.air_quality = env_ctx.air_quality
                 ctx.time_period = env_ctx.time_period
+                ctx.water_leak_detected = env_ctx.water_leak_detected
+                ctx.traffic_restricted = env_ctx.traffic_restricted
                 ctx.environment = env_ctx.to_dict()
             except Exception as e:
                 logger.debug("Failed to get environment context: %s", e)

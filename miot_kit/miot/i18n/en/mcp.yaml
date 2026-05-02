@@ -59,10 +59,11 @@ miot_devices:
         \n
         4. Call `{{tool_name_send_ctrl_rpc}}`\n
         - Pass parameters `did`, `iid`, and `value`\n
+        - `iid` format is `{cmd}.0.{siid}.{piid}`, e.g. `prop.0.2.1`\n
         - Send control command to operate the device"
       params:
         did: "Xiaomi Home device DID"
-        iid: "SPEC instance ID"
+        iid: "SPEC instance ID, format is `{cmd}.0.{siid}.{piid}` (e.g. `prop.0.2.1`), must be obtained from `get_device_spec` tool's SPEC definition"
         value: "Control value, format must comply with SPEC definition"
     send_get_rpc:
       description:
@@ -79,10 +80,11 @@ miot_devices:
         \n
         3. Call `{{tool_name_send_get_rpc}}`\n
         - Pass parameters `did`, `iid`\n
+        - `iid` format is `{cmd}.0.{siid}.{piid}`, e.g. `prop.0.2.1`\n
         - Send command to get the device status"
       params:
         did: "Xiaomi Home device DID"
-        iid: "SPEC instance ID"
+        iid: "SPEC instance ID, format is `{cmd}.0.{siid}.{piid}` (e.g. `prop.0.2.1`), must be obtained from `get_device_spec` tool's SPEC definition"
   prompts:
     prompt_send_ctrl_rpc:
       description: "Template for controlling Xiaomi Home devices."
@@ -104,6 +106,7 @@ miot_devices:
         \n
         4. Call `{{tool_name_send_ctrl_rpc}}`\n
         - Pass parameters `did`, `iid`, and `value`\n
+        - `iid` format is `{cmd}.0.{siid}.{piid}`, e.g. `prop.0.2.1`\n
         - Send control command to operate the device\n
         \n
         ### Output Requirements:\n
@@ -125,6 +128,7 @@ miot_devices:
         \n
         3. Call `{{tool_name_send_get_rpc}}`\n
         - Pass parameters `did`, `iid`\n
+        - `iid` format is `{cmd}.0.{siid}.{piid}`, e.g. `prop.0.2.1`\n
         - Send command to get the device status\n
         \n
         ### Output Requirements:\n

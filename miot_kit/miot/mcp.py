@@ -620,6 +620,52 @@ class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
         self._spec_lite_buffer[self._devices[did].urn] = spec_lite
         return spec_lite
 
+    def _validate_spec_iid(self, did: str, iid: str) -> tuple[str, int, int]:
+        """Validate and parse SPEC instance id.
+
+        iid must be in the format: ``{cmd}.0.{siid}.{piid}`` e.g. ``prop.0.2.1``
+        or ``action.0.3.1``.
+
+        Returns:
+            Tuple of (cmd, siid, piid).
+
+        Raises:
+            ToolError: If iid format is invalid.
+        """
+        parts = iid.split(".")
+        if len(parts) != 4:
+            raise ToolError(self.translate(
+                key="errors.invalid_spec_iid",
+                replace={"iid": iid},
+                default=(
+                    f"无效的SPEC实例ID（{iid}），格式必须为 '{{cmd}}.0.{{siid}}.{{piid}}'"
+                    "（例如 'prop.0.2.1'），请使用工具 `get_device_spec` 获取正确的SPEC实例ID后继续"
+                )
+            ))
+        cmd, _, siid_str, piid_str = parts
+        if cmd not in ("prop", "action"):
+            raise ToolError(self.translate(
+                key="errors.invalid_spec_iid",
+                replace={"iid": iid},
+                default=(
+                    f"无效的SPEC实例ID（{iid}），命令类型必须为 'prop' 或 'action'，"
+                    "请使用工具 `get_device_spec` 获取正确的SPEC实例ID后继续"
+                )
+            ))
+        try:
+            siid = int(siid_str)
+            piid = int(piid_str)
+        except ValueError:
+            raise ToolError(self.translate(
+                key="errors.invalid_spec_iid",
+                replace={"iid": iid},
+                default=(
+                    f"无效的SPEC实例ID（{iid}），siid和piid必须为整数，"
+                    "请使用工具 `get_device_spec` 获取正确的SPEC实例ID后继续"
+                )
+            ))
+        return cmd, siid, piid
+
     async def send_ctrl_rpc_async(
         self,
         did: Annotated[str, "Device id"],
@@ -627,17 +673,7 @@ class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
         value: Annotated[Union[int, bool, str, float, List], Field(description="SPEC instance value")]
     ) -> bool:
         """Send control cmd rpc."""
-        cmd, _, siid, p_a_aiid = iid.split(".")
-        if not siid.isdigit() or not p_a_aiid.isdigit():
-            _LOGGER.warning("Invalid SPEC instance ID, %s", iid)
-            raise ToolError(self.translate(
-                key="errors.invalid_spec_iid",
-                replace={"iid": iid},
-                default=(
-                    f"Invalid SPEC instance ID ({iid}), please use the tool `get_device_spec` to obtain the "
-                    "correct SPEC instance ID before continuing."
-                )
-            ))
+        cmd, siid, p_a_aiid = self._validate_spec_iid(did, iid)
         spec: Optional[MIoTSpecDeviceLite] = None
         if did in self._devices:
             # Try to get spec item
@@ -762,24 +798,14 @@ class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
         iid: Annotated[str, "SPEC instance id"]
     ) -> Union[int, bool, str, float, None]:
         """Send get prop rpc."""
-        cmd, _, siid, piid = iid.split(".")
+        cmd, siid, piid = self._validate_spec_iid(did, iid)
         if cmd != "prop":
             _LOGGER.warning("Getting properties only supports SPEC instances of `prop` class, %s, %s", did, iid)
             raise ToolError(self.translate(
                 key="errors.spec_only_allow_prop",
                 default="Getting properties only supports SPEC instances of `prop` class"
             ))
-        if not siid.isdigit() or not piid.isdigit():
-            _LOGGER.warning("Invalid SPEC instance ID, %s, %s", did, iid)
-            raise ToolError(self.translate(
-                key="errors.invalid_spec_iid",
-                replace={"iid": iid},
-                default=(
-                    f"Invalid SPEC instance ID ({iid}), please use the tool `get_device_spec` to obtain the "
-                    "correct SPEC instance ID before continuing."
-                )
-            ))
-        result = await self._interface.get_prop_async(MIoTGetPropertyParam(did=did,  siid=int(siid), piid=int(piid)))
+        result = await self._interface.get_prop_async(MIoTGetPropertyParam(did=did,  siid=siid, piid=piid))
         _LOGGER.info("send get rpc: %s, %s -> %s", did, iid, result)
         return result
 

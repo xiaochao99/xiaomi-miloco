@@ -160,16 +160,17 @@ class LocalDefaultMcp(LocalMCPBase):
             fn=self.get_environment_context,
             name="get_environment_context",
             description=(
-                '【最高优先级】获取当前家庭环境上下文数据，包括：室内温度、室外温度、湿度、光照强度、'
-                '是否有人在家、是否有人在场、天气状况、室外温度、风速、空气质量、当前时段。'
-                '当用户询问与环境相关的问题（如"家里多少度"、"外面冷不冷"、"家里有人吗"、'
-                '"今天天气怎么样"、"空气质量如何"等）时，优先使用此工具获取实时环境数据。'
-                "此工具返回的数据可直接用于回答用户关于家庭环境的问题，"
-                "也可用于判断是否需要自动控制设备（如温度过高开空调、没人在家关灯等）。"
-                "【Highest Priority】Get current home environment context including: indoor/outdoor temperature, "
-                "humidity, light level, presence detection, weather, wind speed, air quality, time period. "
-                "Use this tool FIRST when users ask about home environment or when deciding whether "
-                "to auto-control devices based on environmental conditions."
+                '获取当前家庭环境上下文数据（实时刷新），包括：室内温度、室外温度、湿度、光照强度、'
+                '是否有人在家、是否有人在场、天气状况、风速、空气质量、当前时段、水浸检测状态、限行状态。'
+                '注意：系统提示中已嵌入环境数据快照，仅在以下情况才需要调用此工具：'
+                '1) 用户明确要求获取最新/实时数据；'
+                '2) 距离上次数据已有较长时间需要刷新；'
+                '3) 需要基于最新环境数据控制设备。'
+                '每个对话轮次最多调用1次，不要重复调用。'
+                "Get current home environment context (real-time refresh). "
+                "Note: Environment data is already embedded in the system prompt. "
+                "Only call this tool when you need to REFRESH the data (e.g., user explicitly asks for latest). "
+                "Do NOT call this tool more than once per turn."
             ),
         )
         self.mcp.add_tool(tool=env_context_tool)
@@ -424,6 +425,8 @@ class LocalDefaultMcp(LocalMCPBase):
                 "wind_speed": ctx.wind_speed,
                 "air_quality": ctx.air_quality,
                 "time_period": ctx.time_period,
+                "water_leak_detected": ctx.water_leak_detected,
+                "traffic_restricted": ctx.traffic_restricted,
             }
         except Exception as e:
             logger.error("get_environment_context failed: %s", e)

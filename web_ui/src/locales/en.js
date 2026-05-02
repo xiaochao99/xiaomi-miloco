@@ -913,5 +913,12 @@ export default {
     configSaveFailed: 'Failed to save config',
     fetchFailed: 'Failed to fetch data',
     never: 'Never',
+    waterLeak: 'Water Leak',
+    detected: 'Detected',
+    normal: 'Normal',
+    trafficRestriction: 'Traffic Restriction',
+    restricted: 'Restricted',
+    waterLeakEntity: '💧 Water Leak Sensor',
+    trafficRestrictionEntity: '🚗 Traffic Restriction',
   },
 };

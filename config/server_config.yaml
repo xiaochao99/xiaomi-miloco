@@ -47,6 +47,7 @@ chat:
   agent_max_steps: 15  # Increased from 10 to 15 for complex multi-platform queries
   vision_use_img_count: 6
   chat_history_ttl: 30 #days
+  use_ahaa: true  # Enable AHAA (Adaptive Hybrid Agent Architecture)
 
 # Trigger rule runner configuration
 trigger_rule_runner:

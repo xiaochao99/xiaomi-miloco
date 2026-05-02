@@ -59,6 +59,8 @@ class HabitEvent:
     is_anyone_present: Optional[bool] = None
     outdoor_temperature: Optional[float] = None
     weather: Optional[str] = None
+    water_leak_detected: Optional[bool] = None
+    traffic_restricted: Optional[str] = None
 
     source: str = "ha_websocket"
     confidence: float = 1.0
@@ -88,6 +90,8 @@ class HabitEvent:
             "is_anyone_present": 1 if self.is_anyone_present else (0 if self.is_anyone_present is not None else None),
             "outdoor_temperature": self.outdoor_temperature,
             "weather": self.weather,
+            "water_leak_detected": 1 if self.water_leak_detected else (0 if self.water_leak_detected is not None else None),
+            "traffic_restricted": self.traffic_restricted,
             "source": self.source,
             "confidence": self.confidence,
             "metadata": json.dumps(self.metadata) if self.metadata else None,
@@ -118,6 +122,8 @@ class HabitEvent:
             is_anyone_present=bool(row["is_anyone_present"]) if row.get("is_anyone_present") is not None else None,
             outdoor_temperature=row.get("outdoor_temperature"),
             weather=row.get("weather"),
+            water_leak_detected=bool(row["water_leak_detected"]) if row.get("water_leak_detected") is not None else None,
+            traffic_restricted=row.get("traffic_restricted"),
             source=row.get("source", "ha_websocket"),
             confidence=row.get("confidence", 1.0),
             metadata=json.loads(row["metadata"]) if row.get("metadata") else None,
@@ -212,6 +218,8 @@ class PredictionContext:
     wind_speed: Optional[float] = None
     air_quality: Optional[float] = None
     time_period: str = "day"
+    water_leak_detected: bool = False
+    traffic_restricted: Optional[str] = None
 
 
 @dataclass
@@ -305,3 +313,5 @@ class DecisionContext:
     wind_speed: Optional[float] = None
     air_quality: Optional[float] = None
     time_period: str = "day"
+    water_leak_detected: bool = False
+    traffic_restricted: Optional[str] = None

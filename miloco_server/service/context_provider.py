@@ -22,6 +22,8 @@ CONTEXT_ENTITY_KEYS = [
     "is_anyone_present",
     "weather",
     "air_quality",
+    "water_leak",
+    "traffic_restriction",
 ]
 
 
@@ -39,6 +41,8 @@ class EnvironmentContext:
     wind_speed: Optional[float] = None
     air_quality: Optional[float] = None
     time_period: str = "day"
+    water_leak_detected: bool = False
+    traffic_restricted: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -54,6 +58,8 @@ class EnvironmentContext:
             "wind_speed": self.wind_speed,
             "air_quality": self.air_quality,
             "time_period": self.time_period,
+            "water_leak_detected": self.water_leak_detected,
+            "traffic_restricted": self.traffic_restricted,
         }
 
     def similarity_score(self, other: "EnvironmentContext") -> float:
@@ -162,6 +168,8 @@ class ContextProvider:
         ctx.wind_speed = self._extract_wind_speed(states)
         ctx.air_quality = self._extract_air_quality(states)
         ctx.time_period = self._get_time_period(states)
+        ctx.water_leak_detected = self._check_water_leak(states)
+        ctx.traffic_restricted = self._check_traffic_restriction(states)
         return ctx
 
     def get_all_entities(self) -> list:
@@ -436,6 +444,50 @@ class ContextProvider:
                 return self._parse_float(state_obj.get("state"))
             if "aqi" in entity_id or "pm25" in entity_id or "pm2.5" in entity_id:
                 return self._parse_float(state_obj.get("state"))
+        return None
+
+    def _check_water_leak(self, states: Dict) -> bool:
+        configured = self._get_configured_entity("water_leak", states)
+        if configured:
+            val = self._read_bool_from_entity(configured, states)
+            if val is not None:
+                return val
+            state_val = self._read_string_from_entity(configured, states)
+            if state_val:
+                return state_val.lower() in ("on", "wet", "detected", "true")
+
+        for entity_id, state_obj in states.items():
+            if not entity_id.startswith("binary_sensor."):
+                continue
+            attrs = state_obj.get("attributes", {})
+            device_class = attrs.get("device_class", "")
+            if device_class == "moisture" or "water" in entity_id:
+                state_val = state_obj.get("state", "").lower()
+                if state_val in ("on", "wet", "detected"):
+                    return True
+
+        return False
+
+    def _check_traffic_restriction(self, states: Dict) -> Optional[str]:
+        configured = self._get_configured_entity("traffic_restriction", states)
+        if configured:
+            state_val = self._read_string_from_entity(configured, states)
+            if state_val and state_val.lower() not in ("off", "none", "no", "0", "false", ""):
+                return state_val
+            val = self._read_bool_from_entity(configured, states)
+            if val is not None:
+                if val:
+                    return "限行中"
+            val = self._read_float_from_entity(configured, states)
+            if val is not None and val > 0:
+                return "限行中"
+
+        for entity_id, state_obj in states.items():
+            if "限行" in entity_id or "traffic" in entity_id or "restriction" in entity_id:
+                state_val = state_obj.get("state", "")
+                if state_val and state_val.lower() not in ("off", "none", "no", "0", "false", ""):
+                    return state_val
+
         return None
 
     def _get_time_period(self, states: Dict) -> str:

@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 class ChatHistoryMessages:
     """Chat history messages manager"""
 
+    MAX_MESSAGES = 50
+    TOOL_RESULT_MAX_CHARS = 2000
+
     def __init__(self, messages: Optional[list[ChatCompletionMessageParam]] = None):
         self._messages: list[ChatCompletionMessageParam] = messages if messages is not None else []
         # Track up to which length the history has been checked for incomplete tool calls.
@@ -133,10 +136,54 @@ class ChatHistoryMessages:
         # Mark sanitized up to current length
         self._last_sanitized_len = len(self._messages)
 
+    def _trim_to_max_messages(self) -> None:
+        if len(self._messages) <= self.MAX_MESSAGES:
+            return
+
+        system_msgs = [m for m in self._messages
+                       if (m.get("role") if isinstance(m, dict) else getattr(m, "role", None)) == "system"]
+        non_system = [m for m in self._messages
+                      if (m.get("role") if isinstance(m, dict) else getattr(m, "role", None)) != "system"]
+        excess = len(non_system) - (self.MAX_MESSAGES - len(system_msgs))
+        if excess <= 0:
+            return
+
+        trimmed_non_system = non_system[excess:]
+        self._messages = system_msgs + trimmed_non_system
+        self._last_sanitized_len = len(self._messages)
+        logger.info(
+            "Trimmed %d old messages from history (kept %d)",
+            excess, len(self._messages))
+
+    @staticmethod
+    def _truncate_tool_result(content: str, max_chars: int) -> str:
+        if len(content) <= max_chars:
+            return content
+        return content[:max_chars] + f"\n... [truncated, total {len(content)} chars]"
+
+    def trim_tool_results(self) -> None:
+        for msg in self._messages:
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") == "tool" and isinstance(msg.get("content"), str):
+                original = msg["content"]
+                truncated = self._truncate_tool_result(original, self.TOOL_RESULT_MAX_CHARS)
+                if truncated != original:
+                    msg["content"] = truncated
+
     def add_content(self, role: str, content: str):
         """
         Add message
         """
+        self._messages.append({"role": role, "content": content})
+
+    def replace_or_add_content(self, role: str, key_prefix: str, content: str):
+        for i, msg in enumerate(self._messages):
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") == role and isinstance(msg.get("content"), str) and msg["content"].startswith(key_prefix):
+                self._messages[i] = {"role": role, "content": content}
+                return
         self._messages.append({"role": role, "content": content})
 
     def add_content_list(self, role: str, content_list: list[dict]):
@@ -186,6 +233,7 @@ class ChatHistoryMessages:
         Get messages
         """
         self._sanitize_incomplete_tool_calls()
+        self._trim_to_max_messages()
         return self._messages
 
     def to_json(self) -> str:
@@ -194,6 +242,8 @@ class ChatHistoryMessages:
         """
         try:
             self._sanitize_incomplete_tool_calls()
+            self._trim_to_max_messages()
+            self.trim_tool_results()
             return json.dumps(self._messages, ensure_ascii=False)
         except (ValueError, TypeError) as e:
             logger.error("Error serializing messages: %s", e, exc_info=True)

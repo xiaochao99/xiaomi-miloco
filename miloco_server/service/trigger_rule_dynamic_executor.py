@@ -143,7 +143,10 @@ class TriggerRuleDynamicExecutor(Actor):
         Send instruction
         """
         msg = instruction.model_dump_json()
-        logger.info("send_instruction: %s", msg)
+        if instruction.judge_type("Template", "ToastStream"):
+            logger.debug("send_instruction: %s", msg)
+        else:
+            logger.info("send_instruction: %s", msg)
         for web_socket in self._web_sockets:
             await self._send_message(web_socket, msg)
         if instruction.judge_type("Dialog", "Finish"):
@@ -175,7 +178,7 @@ class TriggerRuleDynamicExecutor(Actor):
                 while sent_index < current_count:
                     session = self._session.data[sent_index]
                     session_json = session.model_dump_json()
-                    logger.info("send session to web socket: %s", session_json)
+                    logger.debug("send session to web socket: %s", session_json)
                     await self._send_message(web_socket, session_json)
                     sent_index += 1
 

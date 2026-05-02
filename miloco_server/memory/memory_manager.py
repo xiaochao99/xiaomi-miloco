@@ -174,7 +174,20 @@ class MemoryManager:
             if not self._collection:
                 logger.error("MemoryManager not initialized, cannot add memory")
                 return None
-                
+
+            dedup = self._collection.query(
+                query_texts=[content],
+                n_results=3,
+                where={"user_id": {"$eq": user_id}},
+                include=["documents", "distances"],
+            )
+            if dedup and dedup.get("documents") and dedup["documents"][0]:
+                for doc, dist in zip(dedup["documents"][0], dedup["distances"][0]):
+                    if dist < 0.5:
+                        logger.info("Memory already exists (dist=%.2f, content=%s), skipping",
+                                    dist, doc[:50])
+                        return None
+
             memory_id = str(uuid.uuid4())
             now = datetime.now()
 

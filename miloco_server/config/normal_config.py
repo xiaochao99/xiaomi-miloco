@@ -99,6 +99,13 @@ CHAT_CONFIG = {
         "enable_auto_role_selection": _config.get("chat", {}).get("openclaw", {}).get("enable_auto_role_selection", True),
         "enable_intelligent_tool_selection": _config.get("chat", {}).get("openclaw", {}).get("enable_intelligent_tool_selection", True),
         "enable_adaptive_learning": _config.get("chat", {}).get("openclaw", {}).get("enable_adaptive_learning", True),
+    },
+    # AHAA (Adaptive Hybrid Agent Architecture) configuration
+    "use_ahaa": _config.get("chat", {}).get("use_ahaa", False),
+    "ahaa": {
+        "enable_rule_engine": _config.get("chat", {}).get("ahaa", {}).get("enable_rule_engine", True),
+        "enable_complexity_analysis": _config.get("chat", {}).get("ahaa", {}).get("enable_complexity_analysis", True),
+        "enable_shared_blackboard": _config.get("chat", {}).get("ahaa", {}).get("enable_shared_blackboard", True),
     }
 }
 

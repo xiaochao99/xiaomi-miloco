@@ -10,11 +10,14 @@ Supports multiple selection strategies and adaptive learning.
 
 import json
 import logging
-from typing import Dict, List, Optional, Any, Callable, Tuple
+from typing import Dict, List, Optional, Any, Callable, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from collections import defaultdict
 import re
+
+if TYPE_CHECKING:
+    from miloco_server.proxy.llm_proxy import LLMProxy
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,7 @@ class ToolSelectionStrategy(Enum):
     INTENT_BASED = auto()    # Intent-based selection
     HYBRID = auto()          # Combined approach
     ADAPTIVE = auto()        # Learning-based selection
+    LLM_BASED = auto()       # LLM-based pre-selection
 
 
 @dataclass
@@ -102,6 +106,8 @@ class ToolSelector:
     # Intent to tool mapping
     # Note: All cached tools removed to prevent unnecessary calls
     # Note: Use correct MIoT tool names (send_ctrl_rpc for control, send_get_rpc for query)
+    NO_TOOL_INTENTS = {"chat", "memory"}
+
     INTENT_TOOL_MAP = {
         "turn_on": ["send_ctrl_rpc"],
         "turn_off": ["send_ctrl_rpc"],
@@ -114,8 +120,9 @@ class ToolSelector:
         "monitor_security": ["vision_understand"],
         "get_time": ["get_current_time"],
         "query_state": ["send_get_rpc", "get_devices"],
-        "query_environment": ["send_get_rpc", "get_devices", "get_environment_context"],
+        "query_environment": ["send_get_rpc", "get_devices"],
         "chat": [],
+        "memory": [],
         "unknown": [],
     }
     
@@ -149,6 +156,12 @@ class ToolSelector:
         "能耗": ["send_get_rpc", "get_devices"],
         "电量": ["send_get_rpc", "get_devices"],
         "功耗": ["send_get_rpc", "get_devices"],
+        "记住": [],
+        "忘记": [],
+        "记得": [],
+        "我叫": [],
+        "我的名字": [],
+        "记住我": [],
     }
     
     def __init__(self, strategy: ToolSelectionStrategy = ToolSelectionStrategy.HYBRID):
@@ -168,6 +181,7 @@ class ToolSelector:
             "usage_count": 0,
         })
         self._intent_classifier: Optional[Callable[[str], str]] = None
+        self._llm_proxy: Optional["LLMProxy"] = None
         
         logger.info(f"ToolSelector initialized with strategy: {strategy.name}")
     
@@ -447,6 +461,7 @@ class ToolSelector:
             "create_rule": [r"规则|自动化|创建|设置.*当"],
             "activate_scene": [r"场景|模式|执行"],
             "get_time": [r"时间|几点|日期"],
+            "memory": [r"记住|忘记|记得|我叫|我的名字|记一下|帮我记"],
         }
         
         for intent, patterns_list in patterns.items():
@@ -455,6 +470,65 @@ class ToolSelector:
                     return intent
         
         return "unknown"
+    
+    def is_no_tool_query(self, query: str) -> bool:
+        intent = self._classify_intent(query)
+        return intent in self.NO_TOOL_INTENTS
+    
+    def set_llm_proxy(self, llm_proxy: "LLMProxy") -> None:
+        self._llm_proxy = llm_proxy
+    
+    _TOOL_SELECT_PROMPT = """你是一个查询分类器。根据用户查询，判断需要调用哪些工具。
+
+## 可用工具
+{tool_list}
+
+## 分类规则
+- 闲聊/问候/情感表达/角色设定 → 不需要工具
+- 记忆操作(记住/忘记/记得/我叫什么/我的名字) → 不需要工具
+- 已有足够信息可直接回答 → 不需要工具
+- 设备控制(开/关/调节) → send_ctrl_rpc
+- 设备状态查询 → send_get_rpc, get_devices
+- 环境数据(温度/湿度/天气/空气质量/有人吗) → 系统提示中已有，直接回答（除非用户要求最新数据）
+- 摄像头/图像/看画面 → vision_understand
+- 人脸识别/谁在 → who_am_i
+- 自动化规则创建 → create_rule
+- 场景触发 → trigger_manual_scene, trigger_automation
+- 时间查询 → get_current_time
+
+## 用户查询
+{query}
+
+只返回JSON，不要其他内容：{{"tools": ["tool_name"], "reason": "简要原因"}}
+不需要工具时：{{"tools": [], "reason": "简要原因"}}"""
+
+    async def async_select_tools(
+        self,
+        context: ToolContext,
+        top_k: int = 5,
+    ) -> Tuple[List[ToolSelection], bool]:
+        """
+        Tool pre-selection using local HYBRID strategy (no LLM call).
+        Uses rule-based + semantic + intent matching for fast selection.
+
+        Returns:
+            (selections, is_no_tool_query): selections is the list of tool selections,
+            is_no_tool_query indicates whether the query definitively needs no tools.
+        """
+        query = context.query
+
+        if self.is_no_tool_query(query):
+            logger.info("No-tool query detected (intent: chat/memory), skipping tool selection")
+            return [], True
+
+        selections = self.select_tools(context, top_k=top_k)
+
+        if not selections:
+            return [], self.is_no_tool_query(query)
+
+        logger.info("Local HYBRID tool selection: %s",
+                     [s.tool_name for s in selections])
+        return selections, False
     
     def extract_parameters(
         self,

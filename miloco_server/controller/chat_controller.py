@@ -17,12 +17,22 @@ from thespian.actors import ActorExitRequest
 from miloco_server import actor_system
 from miloco_server.config import CHAT_CONFIG
 
-# Use OpenClaw enhanced dispatcher if enabled
+# Determine which dispatcher to use based on configuration
 _use_openclaw = CHAT_CONFIG.get("use_openclaw", True)
-if _use_openclaw:
+_use_ahaa = CHAT_CONFIG.get("use_ahaa", False)
+
+if _use_ahaa:
+    # Use AHAA (Adaptive Hybrid Agent Architecture) dispatcher
+    from miloco_server.agent.multi_agent.ahaa_dispatcher import AHAADispatcher
     from miloco_server.service.chat_agent_dispatcher_enhanced import ChatAgentDispatcherEnhanced as ChatAgentDispatcher
+    _ahaa_dispatcher = None
+    _init_ahaa = True
+elif _use_openclaw:
+    from miloco_server.service.chat_agent_dispatcher_enhanced import ChatAgentDispatcherEnhanced as ChatAgentDispatcher
+    _init_ahaa = False
 else:
     from miloco_server.service.chat_agent_dispatcher import ChatAgentDispatcher
+    _init_ahaa = False
 
 from miloco_server.schema.chat_schema import Event
 from miloco_server.schema.common_schema import NormalResponse
@@ -34,7 +44,7 @@ router = APIRouter(prefix="/chat", tags=["Instant Query"])
 manager = get_manager()
 
 logger = logging.getLogger(name=__name__)
-logger.info("ChatController initialized, use_openclaw=%s", _use_openclaw)
+logger.info("ChatController initialized, use_openclaw=%s, use_ahaa=%s", _use_openclaw, _use_ahaa)
 
 @router.websocket("/ws/query")
 async def ws_query(
@@ -52,7 +62,7 @@ async def ws_query(
         while True:
 
             message = await websocket.receive_text()
-            logger.info(
+            logger.debug(
                 "[%s] Received message from client, %s", request_id, message)
             event_data = json.loads(message)
             event = Event(**event_data)
@@ -110,3 +120,70 @@ async def search_chat_histories(keyword: str,
     logger.info("Chat history search completed successfully, user: %s, keyword: %s, data: %s",
                 current_user, keyword, result)
     return NormalResponse(code=0, message="Chat history search completed successfully", data=result)
+
+
+@router.get("/agent/status", summary="Get agent architecture status", response_model=NormalResponse)
+async def get_agent_status(current_user: str = Depends(verify_token)):
+    """Get current agent architecture status and configuration."""
+    logger.info("Get agent status API called, user: %s", current_user)
+    
+    status = {
+        "use_openclaw": _use_openclaw,
+        "use_ahaa": _use_ahaa,
+        "architecture": "AHAA" if _use_ahaa else ("OpenClaw" if _use_openclaw else "Legacy"),
+        "ahaa_config": CHAT_CONFIG.get("ahaa", {}) if _use_ahaa else None,
+    }
+    
+    return NormalResponse(code=0, message="Agent status retrieved successfully", data=status)
+
+
+@router.post("/agent/ahaa/test", summary="Test AHAA with a query", response_model=NormalResponse)
+async def test_ahaa_query(
+    query: str,
+    session_id: Optional[str] = None,
+    current_user: str = Depends(verify_token)
+):
+    """Test AHAA architecture with a sample query (for debugging)."""
+    logger.info("Test AHAA query called, user: %s, query: %s", current_user, query)
+    
+    if not _use_ahaa:
+        return NormalResponse(
+            code=1,
+            message="AHAA is not enabled. Set chat.use_ahaa=true in server_config.yaml",
+            data=None
+        )
+    
+    try:
+        from miloco_server.agent.multi_agent import ComplexityAnalyzer, RuleEngine
+        
+        analyzer = ComplexityAnalyzer()
+        rule_engine = RuleEngine()
+        
+        # Analyze complexity
+        analysis = await analyzer.analyze(query)
+        
+        # Try rule matching
+        rule_match = await rule_engine.match(query)
+        
+        result = {
+            "query": query,
+            "analysis": {
+                "complexity": analysis.complexity.name,
+                "confidence": analysis.confidence,
+                "suggested_mode": analysis.suggested_mode,
+                "factors": analysis.factors.to_dict(),
+            },
+            "rule_match": {
+                "matched": rule_match is not None,
+                "rule_name": rule_match.rule_name if rule_match else None,
+                "action": rule_match.action.name if rule_match else None,
+                "response": rule_match.response_template if rule_match else None,
+            } if rule_match else None,
+            "summary": analyzer.get_analysis_summary(analysis),
+        }
+        
+        return NormalResponse(code=0, message="AHAA test completed", data=result)
+        
+    except Exception as e:
+        logger.error("AHAA test error: %s", e, exc_info=True)
+        return NormalResponse(code=1, message=f"AHAA test failed: {str(e)}", data=None)

@@ -63,7 +63,7 @@ class ChatAgentDispatcher(Actor):
                 messages=None,
             )
         self._chat_history_messages = ChatHistoryMessages.from_json(self._chat_history_storage.messages)
-        logger.info(
+        logger.debug(
             "ChatAgentDispatcher init, current chat history: %s", self._chat_history_storage
         )
         self._need_storage_history = False
@@ -188,7 +188,10 @@ class ChatAgentDispatcher(Actor):
         Send instruction
         """
         msg = instruction.model_dump_json()
-        logger.info("send_instruction: %s", msg)
+        if instruction.judge_type("Template", "ToastStream"):
+            logger.debug("send_instruction: %s", msg)
+        else:
+            logger.info("send_instruction: %s", msg)
         await self._send_message(msg)
         if instruction.judge_type("Dialog", "Finish"):
             logger.info(

@@ -91,6 +91,8 @@ class HabitDAO:
                 is_anyone_present INTEGER,
                 outdoor_temperature REAL,
                 weather TEXT,
+                water_leak_detected INTEGER,
+                traffic_restricted TEXT,
                 source TEXT DEFAULT 'ha_websocket',
                 confidence REAL DEFAULT 1.0,
                 metadata TEXT
@@ -437,6 +439,8 @@ class HabitDAO:
             "is_anyone_present": "INTEGER",
             "outdoor_temperature": "REAL",
             "weather": "TEXT",
+            "water_leak_detected": "INTEGER",
+            "traffic_restricted": "TEXT",
         }
         existing = self._get_table_columns(table_name)
         for col_name, col_type in new_columns.items():

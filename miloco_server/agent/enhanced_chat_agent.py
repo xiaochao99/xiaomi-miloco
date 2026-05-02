@@ -9,9 +9,11 @@ Features intelligent role management, context-aware responses,
 adaptive learning, and robust error handling.
 """
 
+import asyncio
 import json
 import logging
-from typing import AsyncGenerator, Any, Optional, Dict, List
+import re
+from typing import AsyncGenerator, Any, ClassVar, Optional, Dict, List
 from datetime import datetime
 
 from openai.types.chat import ChatCompletionChunk
@@ -55,6 +57,8 @@ class EnhancedChatAgent(Actor):
     - Comprehensive error handling with fallback strategies
     - Multi-turn conversation support with state tracking
     """
+
+    _local_tools_cache: ClassVar[Optional[List[ChatCompletionToolParam]]] = None
 
     def __init__(
         self,
@@ -118,6 +122,7 @@ class EnhancedChatAgent(Actor):
         self._other_mcp_tools_meta: List[ChatCompletionToolParam] = []
         self._all_mcp_tools_meta: List[ChatCompletionToolParam] = []
         self._selected_tool_names: Optional[List[str]] = None
+        self._is_no_tool_query: bool = False
         
         # Track consecutive tool errors to prevent infinite loops
         self._consecutive_tool_errors = 0
@@ -125,8 +130,15 @@ class EnhancedChatAgent(Actor):
         
         # Track tool execution patterns for step optimization
         self._tool_execution_count = 0
-        self._max_tool_executions = 8  # Limit tool calls to prevent step exhaustion
+        self._max_tool_executions = 8
         self._completed_tool_chains = 0
+
+        # Track called tools to avoid repeated calls
+        self._called_tool_keys: set[str] = set()
+        # Track if we already have a queryable result (e.g., temperature value)
+        self._has_query_result = False
+        self._last_tool_result_type: Optional[str] = None
+        self._current_query: str = ""
 
         self._init_conversation(chat_history_messages)
         
@@ -163,8 +175,7 @@ class EnhancedChatAgent(Actor):
 
     def _init_tool_selector(self) -> None:
         """Initialize tool selector with available tools"""
-        # Will be populated when tools are set
-        pass
+        self._tool_selector.set_llm_proxy(self._llm_proxy)
 
     def _set_tools_meta(
         self,
@@ -183,10 +194,18 @@ class EnhancedChatAgent(Actor):
         if mcp_list is None:
             mcp_list = []
 
-        self._local_default_mcp_tools_meta = self._tool_executor.get_mcp_chat_completion_tools(
-            mcp_client_ids=[LocalMcpClientId.LOCAL_DEFAULT],
-            exclude_tool_names=exclude_tool_names,
-        )
+        if EnhancedChatAgent._local_tools_cache is not None:
+            self._local_default_mcp_tools_meta = EnhancedChatAgent._local_tools_cache
+            logger.debug("[%s] Using cached local default tools (%d tools)",
+                        self._request_id, len(self._local_default_mcp_tools_meta))
+        else:
+            self._local_default_mcp_tools_meta = self._tool_executor.get_mcp_chat_completion_tools(
+                mcp_client_ids=[LocalMcpClientId.LOCAL_DEFAULT],
+                exclude_tool_names=exclude_tool_names,
+            )
+            EnhancedChatAgent._local_tools_cache = self._local_default_mcp_tools_meta
+            logger.info("[%s] Cached local default tools (%d tools)",
+                       self._request_id, len(self._local_default_mcp_tools_meta))
 
         mcp_list = list(
             filter(lambda x: x != LocalMcpClientId.LOCAL_DEFAULT, mcp_list))
@@ -343,6 +362,44 @@ class EnhancedChatAgent(Actor):
 
 观察 (Observation)：你会接收到调用工具后返回的结果。你必须基于这个新的信息，回到第1步（思考（Think）），判断是需要继续调用其他工具，还是已经可以提供最终答案。
 
+**⚡ 关键效率规则：如果工具返回的结果已经包含回答用户问题所需的全部信息，必须立即使用 <final_answer> 给出最终答案，不要继续调用任何工具！**
+
+# 设备查询标准流程 (重要 - 严格按此执行)
+
+**查询设备状态（如温度、湿度、亮度等）：**
+1. 第1步：调用 `get_devices` 获取目标设备（可带 device_class 或 area_id 过滤）
+2. 第2步：用返回的 did 调用 `send_get_rpc` 查询具体属性值
+3. 第3步：**直接用 <final_answer> 回答用户，不要再调用任何工具**
+
+**⚡ 常见属性 iid 速查表（不需要调用 get_device_spec）：**
+- 温度：`prop.0.2.1`
+- 湿度：`prop.0.2.2`
+- 电池电量：`prop.0.3.1`
+- 开关状态：`prop.2.1`
+- 亮度：`prop.2.3`
+- 色温：`prop.2.4`
+- 颜色：`prop.2.5`
+
+**控制设备（如开灯、关空调）：**
+1. 第1步：调用 `get_devices` 找到目标设备的 did
+2. 第2步：用 did 调用 `send_ctrl_rpc` 执行控制
+3. 第3步：**直接用 <final_answer> 告知操作结果**
+
+**示例：用户问"机柜温度"**
+- Step 1: 调用 `get_devices(area_id="机柜", device_class="sensor_ht")` → 返回温湿度计 did
+- Step 2: 调用 `send_get_rpc(did=返回的did, iid="prop.0.2.1")` → 返回温度值 24.5
+- Step 3: **立即回答**："机柜当前温度为 24.5°C" → <final_answer>结束
+
+**示例：用户问"打开玄关灯"**
+- Step 1: 调用 `get_devices(area_id="玄关", device_class="light")` → 返回灯的 did
+- Step 2: 调用 `send_ctrl_rpc(did=返回的did, ...)` → 执行开灯
+- Step 3: **立即回答**："已为您打开玄关灯" → <final_answer>结束
+
+**禁止：**
+- ❌ 已经拿到温度/湿度等数值后还继续调用 `get_devices`
+- ❌ 同一个工具用相同参数重复调用
+- ❌ 查询到设备 did 后又重新查询设备列表
+
 # 智能工具选择策略 (Important - AI自主决策)
 **工具选择原则：**
 - 根据用户意图和对话上下文智能选择工具
@@ -350,8 +407,8 @@ class EnhancedChatAgent(Actor):
 - 优先考虑最直接、最高效的工具
 
 **何时使用工具：**
-- 用户询问环境相关信息（温度/湿度/天气/有人吗/空气质量等）→ 使用 `get_environment_context`（**最高优先级**）
-- 需要基于环境数据决定是否控制设备（天热开空调、没人关灯等）→ 先使用 `get_environment_context`
+- 天气信息已在系统提示中提供（见"当前家庭环境上下文"），询问天气/下雨/温度等**直接回答**，不需要调用任何工具
+- 环境数据已在系统提示中，**不需要**调用 `get_environment_context`。仅在用户明确要求"最新数据"或需要刷新时才调用，且每轮最多调用1次
 - 用户明确要求控制设备（开/关/调节）→ 使用 `send_ctrl_rpc`
 - 用户查询设备状态 → 使用 `send_get_rpc`
 - 用户需要创建自动化规则 → 使用 `create_rule`
@@ -454,13 +511,20 @@ class EnhancedChatAgent(Actor):
                     parts.append("  (中度及以上污染)")
             if ctx.time_period:
                 parts.append(f"- 当前时段: {ctx.time_period}")
+            parts.append(f"- 水浸检测: {'检测到漏水' if ctx.water_leak_detected else '正常'}")
+            if ctx.traffic_restricted:
+                parts.append(f"- 限行状态: {ctx.traffic_restricted}")
+            else:
+                parts.append("- 限行状态: 无限行")
             parts.append("")
             parts.append("基于环境数据的决策参考：")
             parts.append("- 温度 > 28°C → 建议开空调制冷 | 温度 < 10°C → 建议开暖气")
             parts.append("- 湿度 < 30% → 建议开加湿器 | 湿度 > 70% → 建议开除湿")
             parts.append("- 有人在家 = 否 → 不应开灯、放音乐等 | 有人在场 = 否 → 可关灯节能")
             parts.append("- AQI > 100 → 不建议开窗 | 下雨 → 不建议开窗")
-            parts.append("- 如需最新数据，可调用 get_environment_context 工具刷新")
+            parts.append("- 水浸检测 = 检测到漏水 → 立即通知用户并建议关闭水阀")
+            parts.append("- 有限行 → 建议使用其他出行方式或提醒注意限行尾号")
+            parts.append("- 如需获取**最新**环境数据（而非上方快照），可调用 get_environment_context 工具（每轮最多1次）")
             return "\n".join(parts)
         except Exception as e:
             logger.debug("Failed to build env context section: %s", e)
@@ -479,7 +543,7 @@ class EnhancedChatAgent(Actor):
 
     def _handle_event(self, event: Event) -> None:
         """Handle event."""
-        logger.info("[%s] handle_event: %s", self._request_id, event)
+        logger.debug("[%s] handle_event: header=%s payload='%s'", self._request_id, event.header, event.payload)
         try:
             self._parse_and_handle_event(event)
         except Exception as e:
@@ -595,6 +659,8 @@ class EnhancedChatAgent(Actor):
         """
         logger.info("[%s] Starting enhanced processing: %s", self._request_id, query)
         
+        self._current_query = query
+        
         # Auto-select role if needed
         if not self._active_role or self._active_role.config.name == "smart_home_assistant":
             self._active_role = self._role_manager.auto_select_role(query)
@@ -608,32 +674,51 @@ class EnhancedChatAgent(Actor):
         error_message = None
         
         try:
-            memory_context = await self._retrieve_memory_context(query)
-            if memory_context:
-                self._chat_history_messages.add_content(
-                    "system",
-                    f"[长期记忆上下文] 以下是与当前对话相关的记忆信息，请在回答时参考：\n{memory_context}")
-
-            self._chat_history_messages.add_content(
-                "user", f"request_id: {self._request_id}, query: {query}")
-
-            # Use intelligent tool selection
             tool_context = ToolContext(
                 query=query,
                 conversation_history=[m.to_dict() for m in self._conversation_context.messages],
             )
-            
-            selected_tools = self._tool_selector.select_tools(tool_context, top_k=5)
-            logger.info("[%s] Tool selector recommendations: %s", 
-                       self._request_id, 
-                       [t.tool_name for t in selected_tools])
 
-            if self._tool_selector._tools and selected_tools:
-                self._selected_tool_names = [t.tool_name for t in selected_tools]
-            else:
-                if self._tool_selector._tools and not selected_tools:
-                    logger.info("[%s] Tool selector found no match, falling back to all tools", self._request_id)
-                self._selected_tool_names = None
+            memory_task = self._retrieve_memory_context(query)
+            tool_task = self._tool_selector.async_select_tools(tool_context, top_k=5) if self._tool_selector else None
+
+            gather_tasks = [memory_task]
+            if tool_task is not None:
+                gather_tasks.append(tool_task)
+            results = await asyncio.gather(*gather_tasks, return_exceptions=True)
+
+            memory_context = results[0] if not isinstance(results[0], Exception) else None
+            if isinstance(results[0], Exception):
+                logger.warning("[%s] Memory retrieval failed: %s", self._request_id, results[0])
+
+            if memory_context:
+                self._chat_history_messages.replace_or_add_content(
+                    "system",
+                    "[长期记忆上下文]",
+                    f"[长期记忆上下文] 以下是与当前对话相关的记忆信息，请在回答时参考：\n{memory_context}")
+
+            self._memory_extraction_start_idx = len(self._chat_history_messages._messages)
+
+            self._chat_history_messages.add_content(
+                "user", f"request_id: {self._request_id}, query: {query}")
+
+            if tool_task is not None:
+                tool_result = results[1] if len(results) > 1 and not isinstance(results[1], Exception) else ([], False)
+                if isinstance(results[1], Exception):
+                    logger.warning("[%s] Tool selection failed: %s", self._request_id, results[1])
+                selected_tools, is_no_tool = tool_result
+                logger.info("[%s] Tool selector recommendations: %s", 
+                           self._request_id, 
+                           [t.tool_name for t in selected_tools])
+
+                if is_no_tool:
+                    self._selected_tool_names = []
+                    logger.info("[%s] No-tool query detected, skipping all tools", self._request_id)
+                elif self._tool_selector._tools and selected_tools:
+                    self._selected_tool_names = [t.tool_name for t in selected_tools]
+                else:
+                    self._selected_tool_names = self._get_default_tool_names(query)
+                    logger.info("[%s] Using default tool set: %s", self._request_id, self._selected_tool_names)
 
             self._context_manager.update_state(self._request_id, ContextState.THINKING)
             success, error_message = await self._cyclic_execute()
@@ -721,15 +806,14 @@ class EnhancedChatAgent(Actor):
             msg = (error_message or "").strip() or "处理未完成或已中断"
             self._send_instruction(Dialog.Exception(message=msg))
             self._context_manager.update_state(self._request_id, ContextState.ERROR)
-        
+
         self._send_dialog_finish(success)
-        
-        # Record interaction for role learning
+
         if self._active_role:
             self._active_role.record_interaction(success)
 
         if success:
-            await self._extract_and_store_memory()
+            self._start_background_memory_extraction()
 
     async def _execute_step(self, step_number: int) -> Optional[str]:
         """Execute single agent step with enhanced error handling."""
@@ -792,6 +876,14 @@ class EnhancedChatAgent(Actor):
 
             if self._has_tool_calls(finalized_tool_calls):
                 await self._execute_tools(finalized_tool_calls)
+
+            if self._has_query_result and step_number >= 2:
+                guide_msg = (
+                    "系统提示：已获取到用户所需的查询数据，"
+                    "请立即使用 <final_answer> 标签给出最终答案，不要再调用任何工具。"
+                )
+                self._chat_history_messages.add_content("system", guide_msg)
+                logger.info("[%s] Injected completion hint: query result available", self._request_id)
             
             # Check if we've reached max consecutive errors
             if self._consecutive_tool_errors >= self._max_consecutive_errors:
@@ -844,6 +936,56 @@ class EnhancedChatAgent(Actor):
             logger.error("[%s] Error calling LLM: %s", self._request_id, str(e))
             raise
 
+    def _get_default_tool_names(self, query: str) -> list[str]:
+        """Return a minimal default tool set based on query intent instead of all 21 tools."""
+        query_lower = query.lower()
+
+        chat_intents = [
+            "greeting", "farewell", "thanks", "joke", "small_talk", "chat", "memory", "knowledge", "weather"
+        ]
+        chat_patterns = [
+            r"^(你好|hello|hi|hey|早上好|下午好|晚上好|早安|晚安|早|嗨)(\b.*)?$",
+            r"^(bye|再见|拜拜|晚安)(\b.*)?$",
+            r"^(谢谢|thanks|thank)(\b.*)?$",
+            r"^(我的|我)(手机|生日|年龄|名字|性别|信息|地址|密码)(是)?(\b.*)?$",
+            r"^(明天|今天|后天|最近).*(有雨|天气|下雨|晴天|气温|冷|热)(吗)?(\b.*)?$",
+            r"^(室内|环境|房间|客厅|卧室).*(环境|情况|状态)(吗)?(\b.*)?$",
+            r"^.*农历.*$",
+            r"^.*几点了.*$",
+            r"^.*现在(时间|几点|几点).*$",
+        ]
+        for pattern in chat_patterns:
+            if re.match(pattern, query_lower):
+                logger.info("Detected chat-intent query, returning empty tool set: %s", query[:50])
+                return []
+
+        core_tools = ["get_devices"]
+
+        control_keywords = ["开", "关", "打开", "关闭", "调", "设置", "亮", "暗"]
+        query_keywords = ["温度", "湿度", "状态", "多少", "几度", "查询", "查看", "环境", "亮度"]
+        camera_keywords = ["摄像头", "画面", "监控", "看"]
+        scene_keywords = ["场景", "模式", "自动化", "规则"]
+
+        if any(kw in query_lower for kw in control_keywords):
+            core_tools.append("send_ctrl_rpc")
+        if any(kw in query_lower for kw in query_keywords):
+            core_tools.append("send_get_rpc")
+        if any(kw in query_lower for kw in camera_keywords):
+            core_tools.extend(["vision_understand", "who_am_i"])
+        if any(kw in query_lower for kw in scene_keywords):
+            core_tools.extend(["trigger_manual_scene", "trigger_automation", "create_rule"])
+
+        if len(core_tools) == 1:
+            core_tools.extend(["send_ctrl_rpc", "send_get_rpc"])
+
+        seen = set()
+        unique_tools = []
+        for t in core_tools:
+            if t not in seen:
+                seen.add(t)
+                unique_tools.append(t)
+        return unique_tools
+
     def _filter_tools_for_llm(self) -> list:
         """Filter tools based on pre-flight check and tool selector recommendations."""
         if self._selected_tool_names is not None and not self._selected_tool_names:
@@ -851,7 +993,19 @@ class EnhancedChatAgent(Actor):
             return []
 
         if not self._selected_tool_names:
-            return self._all_mcp_tools_meta
+            logger.info("[%s] No tool selection available, using minimal default set", self._request_id)
+            self._selected_tool_names = self._get_default_tool_names("")
+
+        if not self._selected_tool_names:
+            return []
+
+        query_lower = (self._current_query or "").lower()
+        needs_env_context = any(kw in query_lower for kw in [
+            "环境", "温度", "湿度", "空气质量", "pm2.5", "甲醛", "co2"
+        ])
+        if not needs_env_context:
+            logger.info("[%s] Query does not need environment context, filtering out get_environment_context",
+                       self._request_id)
 
         selected_set = set(self._selected_tool_names)
         filtered = []
@@ -872,8 +1026,11 @@ class EnhancedChatAgent(Actor):
                 else:
                     name = getattr(func, "name", "") or ""
 
+                if name.endswith("get_environment_context") and not needs_env_context:
+                    continue
+
                 for selected_name in selected_set:
-                    if selected_name.endswith(name) or name in selected_name:
+                    if name.endswith(selected_name) or selected_name in name:
                         filtered.append(tool)
                         break
             except Exception:
@@ -975,9 +1132,24 @@ class EnhancedChatAgent(Actor):
 
     async def _execute_tools(
             self, tool_calls: list[ChatCompletionMessageToolCall]) -> None:
-        """Execute tool calls with error handling."""
-        for tool_call in tool_calls:
-            await self._execute_single_tool(tool_call)
+        """Execute tool calls in parallel for better performance."""
+        if not tool_calls:
+            return
+        if len(tool_calls) == 1:
+            await self._execute_single_tool(tool_calls[0])
+            return
+
+        results = await asyncio.gather(
+            *(self._execute_single_tool(tc) for tc in tool_calls),
+            return_exceptions=True,
+        )
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error("[%s] Tool %s failed with exception: %s",
+                            self._request_id, tool_calls[i].function.name, result)
+                self._consecutive_tool_errors += 1
+                self._chat_history_messages.add_tool_call_res_content(
+                    tool_calls[i].id, tool_calls[i].function.name, f"Error: {result}")
 
     async def _execute_single_tool(
             self, tool_call: ChatCompletionMessageToolCall) -> None:
@@ -988,6 +1160,17 @@ class EnhancedChatAgent(Actor):
 
         # Increment tool execution counter
         self._tool_execution_count += 1
+
+        # Check for repeated tool call with same parameters
+        tool_key = f"{original_tool_name}:{tool_call.function.arguments}"
+        if tool_key in self._called_tool_keys:
+            logger.warning("[%s] Detected repeated tool call: %s, skipping",
+                          self._request_id, original_tool_name)
+            self._chat_history_messages.add_tool_call_res_content(
+                tool_id, original_tool_name,
+                '{"info": "此工具已用相同参数调用过，请直接使用之前的结果回答用户。"}')
+            return
+        self._called_tool_keys.add(tool_key)
 
         try:
             logger.info("[%s] Executing tool: %s (count: %d/%d)", 
@@ -1047,6 +1230,14 @@ class EnhancedChatAgent(Actor):
                               self._request_id, self._consecutive_tool_errors, self._max_consecutive_errors)
             else:
                 self._consecutive_tool_errors = 0
+                if tool_name == "send_get_rpc" and result.response:
+                    self._has_query_result = True
+                    self._last_tool_result_type = "query_value"
+                    logger.info("[%s] Marked query result available from send_get_rpc", self._request_id)
+                elif tool_name == "send_ctrl_rpc" and result.success:
+                    self._has_query_result = True
+                    self._last_tool_result_type = "control_result"
+                    logger.info("[%s] Marked control result available from send_ctrl_rpc", self._request_id)
 
             self._chat_history_messages.add_tool_call_res_content(
                     tool_id, tool_name, tool_call_content)
@@ -1110,28 +1301,43 @@ class EnhancedChatAgent(Actor):
         if not results:
             return "处理完成。"
 
+        for entry in results:
+            tool_name = entry.get("tool_name", "")
+            data = entry.get("data")
+
+            if not isinstance(data, dict):
+                continue
+
+            if data.get("success") is False:
+                error_msg = data.get("error", data.get("error_message", ""))
+                return f"操作遇到问题: {error_msg}" if error_msg else "操作遇到问题，未能获取到数据。"
+
+            inner = data.get("content") or data.get("message") or data.get("tool_response")
+            if isinstance(inner, str):
+                try:
+                    inner = json.loads(inner)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            if isinstance(inner, dict):
+                data = inner
+
+            if "get_environment_context" in tool_name and isinstance(data, dict):
+                return self._format_environment_summary(data)
+
         numeric_values = []
         descriptive_parts = []
-        has_error = False
-        error_msg = ""
-
         for entry in results:
             tool_name = entry.get("tool_name", "")
             data = entry.get("data")
 
             if isinstance(data, dict):
-                if data.get("success") is False:
-                    has_error = True
-                    error_msg = data.get("error", data.get("error_message", ""))
-                    continue
-
                 inner = data.get("content") or data.get("message") or data.get("tool_response")
                 if isinstance(inner, str):
                     try:
                         inner = json.loads(inner)
                     except (json.JSONDecodeError, TypeError):
                         pass
-
                 if isinstance(inner, dict):
                     data = inner
 
@@ -1151,17 +1357,8 @@ class EnhancedChatAgent(Actor):
                                     descriptive_parts.append(sub_v["description"])
                         elif isinstance(v, str) and len(v) < 200:
                             descriptive_parts.append(f"{k}: {v}")
-                elif isinstance(data, (int, float)):
-                    label = self._infer_label(tool_name, tool_name)
-                    numeric_values.append((label, data, tool_name))
-            elif isinstance(data, (int, float)):
-                label = self._infer_label(tool_name, tool_name)
-                numeric_values.append((label, data, tool_name))
             elif isinstance(data, str) and data:
                 descriptive_parts.append(data)
-
-        if has_error and not numeric_values and not descriptive_parts:
-            return f"操作遇到问题: {error_msg}" if error_msg else "操作遇到问题，未能获取到数据。"
 
         parts = []
         if descriptive_parts:
@@ -1175,12 +1372,90 @@ class EnhancedChatAgent(Actor):
         return "操作已完成，但未能解析出有效数据。"
 
     @staticmethod
+    def _format_environment_summary(data: dict) -> str:
+        """Format environment context data into natural language."""
+        time_period = data.get("time_period", "")
+        period_map = {
+            "morning": "早上好", "forenoon": "上午好",
+            "afternoon": "下午好", "evening": "晚上好", "night": "晚上好",
+        }
+        greeting = period_map.get(time_period, "你好")
+
+        parts = [f"{greeting}，当前室内环境如下："]
+
+        indoor_temp = data.get("indoor_temperature")
+        if indoor_temp is not None:
+            temp_feel = "比较舒适" if 18 <= indoor_temp <= 26 else ("偏热" if indoor_temp > 26 else "偏冷")
+            parts.append(f"- **室内温度**: {indoor_temp}°C（{temp_feel}）")
+
+        outdoor_temp = data.get("outdoor_temperature")
+        if outdoor_temp is not None:
+            parts.append(f"- **室外温度**: {outdoor_temp}°C")
+
+        humidity = data.get("humidity")
+        if humidity is not None:
+            hum_feel = "适宜" if 40 <= humidity <= 60 else ("偏潮湿" if humidity > 60 else "偏干燥")
+            parts.append(f"- **湿度**: {humidity}%（{hum_feel}）")
+
+        weather = data.get("weather")
+        if weather:
+            weather_map = {
+                "sunny": "晴天", "cloudy": "多云", "partlycloudy": "多云",
+                "overcast": "阴天", "rainy": "雨天", "snowy": "雪天",
+                "foggy": "雾天", "stormy": "暴风雨",
+            }
+            parts.append(f"- **天气**: {weather_map.get(weather, weather)}")
+
+        wind_speed = data.get("wind_speed")
+        if wind_speed is not None:
+            parts.append(f"- **风速**: {wind_speed} m/s")
+
+        light_level = data.get("light_level")
+        if light_level is not None:
+            light_desc = "光线充足" if light_level > 300 else ("光线一般" if light_level > 50 else "光线较暗")
+            parts.append(f"- **光照**: {light_level} lux（{light_desc}）")
+
+        air_quality = data.get("air_quality")
+        if air_quality is not None:
+            if air_quality <= 50:
+                aq_desc = "优"
+            elif air_quality <= 100:
+                aq_desc = "良"
+            elif air_quality <= 150:
+                aq_desc = "轻度污染"
+            else:
+                aq_desc = "污染"
+            parts.append(f"- **空气质量**: AQI {air_quality}（{aq_desc}）")
+
+        is_home = data.get("is_home")
+        is_anyone = data.get("is_anyone_present")
+        if is_home is not None or is_anyone is not None:
+            if is_anyone:
+                parts.append("- **家中有人**: 是")
+            elif is_home:
+                parts.append("- **家中有人**: 主人在家，但未检测到其他人在场")
+            else:
+                parts.append("- **家中无人**: 当前无人在家")
+
+        water_leak = data.get("water_leak_detected")
+        if water_leak is not None:
+            parts.append(f"- **水浸检测**: {'⚠️ 检测到漏水！' if water_leak else '正常，未检测到漏水'}")
+
+        traffic = data.get("traffic_restricted")
+        if traffic:
+            parts.append(f"- **今日限行尾号**: {traffic}")
+
+        return "\n".join(parts)
+
+    @staticmethod
     def _infer_label(key: str, tool_name: str) -> str:
         key_lower = key.lower()
-        label_map = {
+        exact_map = {
+            "indoor_temperature": "室内温度",
+            "outdoor_temperature": "室外温度",
             "temperature": "温度",
             "humidity": "湿度",
-            "light": "光照",
+            "light_level": "光照",
             "brightness": "亮度",
             "battery": "电池电量",
             "power": "功率",
@@ -1190,8 +1465,18 @@ class EnhancedChatAgent(Actor):
             "prop.0.2.1": "温度",
             "prop.0.2.2": "湿度",
             "prop.0.3.1": "电池电量",
+            "is_home": "是否在家",
+            "is_anyone_present": "是否有人在场",
+            "weather": "天气",
+            "wind_speed": "风速",
+            "air_quality": "空气质量",
+            "time_period": "时段",
+            "water_leak_detected": "水浸检测",
+            "traffic_restricted": "限行状态",
         }
-        for pattern, label in label_map.items():
+        if key in exact_map:
+            return exact_map[key]
+        for pattern, label in exact_map.items():
             if pattern in key_lower:
                 return label
         if "send_get_rpc" in tool_name:
@@ -1217,6 +1502,22 @@ class EnhancedChatAgent(Actor):
             logger.warning("[%s] Failed to retrieve memory context: %s", self._request_id, e)
             return None
 
+    def _start_background_memory_extraction(self) -> None:
+        """Start memory extraction as a background task without blocking the dialog."""
+        import asyncio
+
+        async def _bg_task():
+            try:
+                await self._extract_and_store_memory()
+            except Exception as e:
+                logger.warning("[%s] Background memory extraction failed: %s", self._request_id, e)
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_bg_task())
+        except RuntimeError:
+            pass
+
     async def _extract_and_store_memory(self) -> None:
         """Extract memories from the current conversation and store them."""
         try:
@@ -1225,8 +1526,10 @@ class EnhancedChatAgent(Actor):
             if service is None:
                 return
             all_msgs = self._chat_history_messages.get_messages()
+            start_idx = getattr(self, "_memory_extraction_start_idx", 0)
+            new_msgs = all_msgs[start_idx:]
             user_msg = None
-            for msg in all_msgs:
+            for msg in new_msgs:
                 role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
                 content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
                 if not role or not content:
