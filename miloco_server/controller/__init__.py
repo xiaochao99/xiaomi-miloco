@@ -21,6 +21,7 @@ from .face_recognition_controller import face_recognition_router
 from .xiaomi_bridge_controller import router as xiaomi_bridge_router
 from .memory_controller import router as memory_router
 from .habit_controller import router as habit_router
+from .recording_controller import router as recording_router
 
 __all__ = [
     "web_router",
@@ -38,4 +39,5 @@ __all__ = [
     "xiaomi_bridge_router",
     "memory_router",
     "habit_router",
+    "recording_router",
 ]

@@ -68,7 +68,8 @@ class ModelTrainer:
         start_time = time.time()
 
         try:
-            pattern_count = await self.behavior_learner.learn(days=30)
+            patterns = await self.behavior_learner.learn(days=30)
+            pattern_count = len(patterns)
 
             duration = time.time() - start_time
             self._stats["train_cycles"] += 1

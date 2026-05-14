@@ -140,6 +140,9 @@ MIOT_CONFIG = {
     "cloud_server": _config["miot"]["cloud_server"],
 }
 
+# Recording configuration
+RECORDING_CONFIG = _config.get("recording", {}) or {}
+
 # Habit learning configuration
 HABIT_LEARNING_CONFIG = _config.get("habit_learning", {})
 

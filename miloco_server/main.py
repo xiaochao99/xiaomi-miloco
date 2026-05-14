@@ -30,6 +30,7 @@ from miloco_server.controller import (
     miot_router,
     model_router,
     openai_compat_router,
+    recording_router,
     trigger_router,
     web_router,
     xiaomi_bridge_router,
@@ -75,6 +76,7 @@ app.include_router(openai_compat_router)
 app.include_router(xiaomi_bridge_router, prefix="/api")
 app.include_router(memory_router, prefix="/api")
 app.include_router(habit_router, prefix="/api")
+app.include_router(recording_router, prefix="/api")
 
 
 @app.get("/{full_path:path}")
@@ -113,6 +115,9 @@ async def startup_event():
 
     # Initialize detection service
     await _init_detection_service()
+
+    # Initialize recording service
+    await _init_recording_service()
 
     # Initialize memory service
     await _init_memory_service()
@@ -163,6 +168,50 @@ async def _init_memory_service():
 
     except Exception as e:
         logger.error(f"Memory service initialization error: {e}")
+
+
+async def _init_recording_service():
+    """Initialize the recording service."""
+    try:
+        from miloco_server.service.recording_service import get_recording_service
+        from miloco_server.config.normal_config import RECORDING_CONFIG
+
+        service = get_recording_service()
+        service.configure(
+            segment_duration=int(RECORDING_CONFIG.get("segment_duration", 300)),
+            motion_buffer_seconds=int(RECORDING_CONFIG.get("motion_buffer_seconds", 30)),
+            person_buffer_seconds=int(RECORDING_CONFIG.get("person_buffer_seconds", 30)),
+            motion_check_interval=float(RECORDING_CONFIG.get("motion_check_interval", 1.0)),
+            motion_threshold=int(RECORDING_CONFIG.get("motion_threshold", 5)),
+        )
+        await service.initialize()
+
+        # Register detection event callback for person-mode recording
+        try:
+            from miloco_server.detection.detection_service import get_detection_service
+            from miloco_server.detection.stream_processor import StreamDetectionEvent
+
+            detection_service = await get_detection_service()
+
+            async def on_detection_event_for_recording(event: StreamDetectionEvent):
+                """Forward person detection events to recording service."""
+                if event.detections:
+                    has_person = any(
+                        d.class_name.lower() in ("person", "people")
+                        for d in event.detections
+                    )
+                    if has_person:
+                        await service.on_person_detected(event.camera_id)
+
+            detection_service.register_event_callback(on_detection_event_for_recording)
+            logger.info("Recording service registered with detection service for person-mode triggers")
+        except Exception as e:
+            logger.warning("Could not register recording service with detection service: %s", e)
+
+        logger.info("Recording service initialized successfully")
+
+    except Exception as e:
+        logger.error(f"Recording service initialization error: {e}")
 
 
 async def _init_xiaomi_bridge():
@@ -385,6 +434,15 @@ async def shutdown_event():
         logger.info("Detection service shutdown completed")
     except Exception as e:
         logger.error(f"Detection service shutdown error: {e}")
+
+    # Shutdown recording service
+    try:
+        from miloco_server.service.recording_service import get_recording_service
+        service = get_recording_service()
+        await service.shutdown()
+        logger.info("Recording service shutdown completed")
+    except Exception as e:
+        logger.error(f"Recording service shutdown error: {e}")
 
     logger.info("Application has been shut down")
 

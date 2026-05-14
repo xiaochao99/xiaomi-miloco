@@ -105,6 +105,16 @@ rtsp_cameras:
   # 'ru': 'Russia'
   # 'sg': 'Singapore'
   # 'us': 'United States
+# Recording configuration
+recording:
+  enabled: true
+  segment_duration: 300          # Recording segment duration in seconds (default 5 minutes)
+  retention_days: 7              # Default retention days for recordings
+  motion_buffer_seconds: 25      # Continue recording after motion stops (seconds)
+  person_buffer_seconds: 30      # Continue recording after person leaves (seconds)
+  motion_check_interval: 1.0     # Motion detection check interval (seconds)
+  motion_threshold: 5            # DHash distance threshold for motion detection
+
 miot:
   cloud_server: "cn"
 

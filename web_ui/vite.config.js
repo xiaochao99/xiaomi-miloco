@@ -70,6 +70,11 @@ export default defineConfig(({ command }) => {
           cert: fs.readFileSync('certs/localhost.pem')
         }
       }),
+      // ffmpeg.wasm需要SharedArrayBuffer支持，需要设置跨源隔离头
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+      },
       proxy: {
         '/api': {
           target: config.api.target,

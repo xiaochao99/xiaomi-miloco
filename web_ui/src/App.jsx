@@ -23,6 +23,8 @@ import DeviceManage from './pages/DeviceManage'
 import FaceLibrary from './pages/FaceLibrary'
 import MemoryManage from './pages/MemoryManage'
 import HabitLearning from './pages/HabitLearning'
+import RecordingConfig from './pages/RecordingConfig'
+import RecordingPlayback from './pages/RecordingPlayback'
 
 function App() {
   return (
@@ -47,6 +49,8 @@ function App() {
             <Route path="faceLibrary" element={<FaceLibrary />} />
             <Route path="memoryManage" element={<MemoryManage />} />
             <Route path="habitLearning" element={<HabitLearning />} />
+            <Route path="recordingConfig" element={<RecordingConfig />} />
+            <Route path="recordingPlayback" element={<RecordingPlayback />} />
           </Route>
         </Routes>
         <LogViewerModal />

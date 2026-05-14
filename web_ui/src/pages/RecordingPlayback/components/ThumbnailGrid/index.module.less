@@ -1,0 +1,154 @@
+.thumbnailGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.thumbnailItem {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #1a1a2e;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #00bdc3;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 189, 195, 0.2);
+
+    .thumbOverlay {
+      opacity: 1;
+    }
+  }
+
+  &.active {
+    border-color: #00bdc3;
+    box-shadow: 0 0 0 2px rgba(0, 189, 195, 0.3);
+  }
+}
+
+.thumbImageWrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #111;
+}
+
+.thumbImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s;
+
+  .thumbnailItem:hover & {
+    transform: scale(1.05);
+  }
+}
+
+.thumbPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 32px;
+}
+
+.thumbOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+
+  .playIcon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(0, 189, 195, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    :global(.anticon) {
+      font-size: 20px;
+      color: #fff;
+      margin-left: 2px;
+    }
+  }
+}
+
+.thumbDuration {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  padding: 1px 6px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 11px;
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.thumbMode {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: #fff;
+  font-weight: 500;
+
+  &.continuous {
+    background: rgba(24, 144, 255, 0.85);
+  }
+  &.person {
+    background: rgba(82, 196, 26, 0.85);
+  }
+  &.motion {
+    background: rgba(250, 173, 20, 0.85);
+  }
+}
+
+.thumbInfo {
+  padding: 8px 10px;
+}
+
+.thumbTime {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.4;
+}
+
+.thumbSize {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 2px;
+}
+
+.emptyGrid {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 48px 0;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 14px;
+
+  .emptyIcon {
+    font-size: 48px;
+    color: rgba(255, 255, 255, 0.15);
+    margin-bottom: 12px;
+  }
+}

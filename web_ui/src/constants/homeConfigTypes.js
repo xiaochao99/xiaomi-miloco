@@ -129,6 +129,20 @@ export const MENU_ITEMS = [
     icon: 'menuSmart',
     selectedIcon: 'menuSmartSelected',
     path: '/home/habitLearning',
+  },
+  {
+    key: '12',
+    label: 'home.menu.recordingConfig',
+    icon: 'menuDevice',
+    selectedIcon: 'menuDeviceSelected',
+    path: '/home/recordingConfig',
+  },
+  {
+    key: '13',
+    label: 'home.menu.recordingPlayback',
+    icon: 'menuLog',
+    selectedIcon: 'menuLogSelected',
+    path: '/home/recordingPlayback',
   }
 ];
 

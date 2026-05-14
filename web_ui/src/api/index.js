@@ -162,3 +162,26 @@ export const getHabitContext = () => getApi('/api/habit/context');
 export const getHabitContextEntities = () => getApi('/api/habit/context/entities');
 export const saveHabitContextEntities = (entities) => postApi('/api/habit/context/entities', { entities });
 export const getHabitAllHaEntities = () => getApi('/api/habit/context/all_entities');
+
+// Recording management API
+export const getRecordingConfigAll = () => getApi('/api/recording/config');
+export const getRecordingConfig = (cameraId) => getApi(`/api/recording/config/${cameraId}`);
+export const saveRecordingConfig = (cameraId, data) => putApi(`/api/recording/config/${cameraId}`, data);
+export const deleteRecordingConfig = (cameraId) => deleteApi(`/api/recording/config/${cameraId}`);
+export const getRecordingStatus = () => getApi('/api/recording/status');
+export const getRecordingSegments = (params = {}) => {
+  const query = Object.entries(params)
+    .filter(([, v]) => v != null)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .join('&');
+  return getApi(`/api/recording/segments${query ? `?${query}` : ''}`);
+};
+export const deleteRecordingSegment = (segmentId) => deleteApi(`/api/recording/segments/${segmentId}`);
+export const deleteRecordingSegmentsBatch = (segmentIds) =>
+  postApi('/api/recording/segments/batch-delete', { segment_ids: segmentIds });
+export const getRecordingPlaybackUrl = (segmentId) => `/api/recording/play/${segmentId}`;
+export const getRecordingThumbnailUrl = (segmentId, offset = 1) => `/api/recording/thumbnail/${segmentId}?offset=${offset}`;
+export const getRecordingVideoInfo = (segmentId) => getApi(`/api/recording/info/${segmentId}`);
+export const getRecordingTranscodeUrl = (segmentId) => `/api/recording/transcode/${segmentId}`;
+export const getRecordingStorage = () => getApi('/api/recording/storage');
+export const cleanupRecordingExpired = () => postApi('/api/recording/cleanup');

@@ -91,6 +91,19 @@ class SQLiteConnector:
                         self._create_mcp_config_table(conn)
                         tables_created.append("mcp_config")
 
+                    if "recording_config" not in existing_tables:
+                        logger.info("Recording config table not found, creating...")
+                        self._create_recording_config_table(conn)
+                        tables_created.append("recording_config")
+                    else:
+                        # Table exists, check and add missing columns
+                        self._migrate_recording_config_table(conn)
+
+                    if "recording_segments" not in existing_tables:
+                        logger.info("Recording segments table not found, creating...")
+                        self._create_recording_segments_table(conn)
+                        tables_created.append("recording_segments")
+
                     # If new tables were created, commit transaction
                     if tables_created:
                         conn.commit()
@@ -124,6 +137,8 @@ class SQLiteConnector:
         self._create_model_vendor_table(conn)
         self._create_mcp_config_table(conn)
         self._create_chat_history_table(conn)
+        self._create_recording_config_table(conn)
+        self._create_recording_segments_table(conn)
         conn.commit()
         logger.info("Database table structure created successfully")
 
@@ -291,6 +306,62 @@ class SQLiteConnector:
             "CREATE INDEX IF NOT EXISTS idx_trigger_rule_log_created_at ON trigger_rule_log(created_at)"
         )
         logger.info("Trigger rule log table created successfully")
+
+    def _create_recording_config_table(self, conn: sqlite3.Connection) -> None:
+        """Create recording config table"""
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS recording_config (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                camera_id TEXT UNIQUE NOT NULL,
+                enabled BOOLEAN DEFAULT 0,
+                mode TEXT DEFAULT 'continuous',
+                schedule_periods TEXT,
+                retention_days INTEGER DEFAULT 7,
+                segment_duration INTEGER DEFAULT 300,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_recording_config_camera_id ON recording_config(camera_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_recording_config_enabled ON recording_config(enabled)")
+        logger.info("Recording config table created successfully")
+
+    def _migrate_recording_config_table(self, conn: sqlite3.Connection) -> None:
+        """Migrate existing recording_config table to add missing columns"""
+        cursor = conn.cursor()
+        
+        # Check if segment_duration column exists, add it if not
+        try:
+            cursor.execute("SELECT segment_duration FROM recording_config LIMIT 1")
+            logger.debug("segment_duration column already exists in recording_config table")
+        except sqlite3.OperationalError:
+            logger.info("Adding segment_duration column to recording_config table")
+            cursor.execute("ALTER TABLE recording_config ADD COLUMN segment_duration INTEGER DEFAULT 300")
+            conn.commit()
+            logger.info("segment_duration column added successfully")
+
+    def _create_recording_segments_table(self, conn: sqlite3.Connection) -> None:
+        """Create recording segments table"""
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS recording_segments (
+                id TEXT PRIMARY KEY,
+                camera_id TEXT NOT NULL,
+                start_time TIMESTAMP NOT NULL,
+                end_time TIMESTAMP NOT NULL,
+                duration_seconds INTEGER NOT NULL,
+                file_path TEXT NOT NULL,
+                file_size_bytes INTEGER DEFAULT 0,
+                recording_mode TEXT NOT NULL,
+                trigger_event TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_recording_segments_camera_id ON recording_segments(camera_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_recording_segments_start_time ON recording_segments(start_time)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_recording_segments_camera_time ON recording_segments(camera_id, start_time)")
+        logger.info("Recording segments table created successfully")
 
     @contextmanager
     def get_connection(self):
