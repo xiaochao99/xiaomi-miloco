@@ -13,9 +13,15 @@ from miloco_server.config.prompt_config import PromptConfig, PromptType, UserLan
 from miloco_server.schema.chat_history_schema import ChatHistoryMessages
 from miloco_server.schema.miot_schema import CameraImgSeq
 
+logger = logging.getLogger(name=__name__)
 
 class TriggerRuleConditionPromptBuilder:
     """Trigger rule prompt builder"""
+
+    @staticmethod
+    def _s_to_time_str(timestamp: int) -> str:
+        """Convert millisecond timestamp to YYYY-MM-DD HH:MM:SS format"""
+        return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
     def build_trigger_rule_prompt(
@@ -84,6 +90,12 @@ class TriggerRuleConditionPromptBuilder:
         })
 
         chat_history_messages.add_content("user", user_content)
+
+        temp_log_output = []
+        for item in user_content:
+            if item["type"] == "text":
+                temp_log_output.append(item["text"])
+        logger.debug(f"TriggerRuleConditionPromptBuilder: {temp_log_output}")
 
         return chat_history_messages
 

@@ -6,7 +6,6 @@ Trigger business logic service
 Handles trigger-related business logic and data validation
 """
 
-import json
 import time
 from typing import Callable, List, Dict, Optional, Any, Set
 import asyncio
@@ -39,7 +38,6 @@ from miloco_server.service.wakeup_scheduler import WakeUpScheduler
 from miloco_server.utils.check_img_motion import check_camera_motion
 from miloco_server.utils.direct_condition_checker import direct_condition_checker
 from miloco_server.utils.local_models import ModelPurpose
-from miloco_server.utils.normal_util import extract_json_from_content
 from miloco_server.utils.prompt_helper import TriggerRuleConditionPromptBuilder
 from miloco_server.utils.trigger_filter import trigger_filter
 from miloco_server.detection.trigger_integration import get_detection_trigger_integration
@@ -880,8 +878,27 @@ class TriggerRuleRunner:
         Returns:
             LLM response result
         """
+        return await asyncio.wait_for(llm_proxy.async_call_llm(messages), timeout=TRIGGER_RULE_RUNNER_CONFIG["request_timeout_seconds"])
 
-        return await llm_proxy.async_call_llm(messages)
+    @staticmethod
+    def _parse_llm_output(content) -> Optional[tuple[bool, bool]]:
+        """Parse LLM numeric output (0/1/2) into (is_happened, is_same_action).
+        Returns None if output is invalid."""
+        try:
+            stripped = str(content).strip()
+        except Exception:  # pylint: disable=broad-except
+            logger.error("Invalid LLM output: %s", content)
+            return None
+        
+        if stripped == "0":
+            return (False, False)
+        if stripped == "1":
+            return (True, False)
+        if stripped == "2":
+            return (True, True)
+        else:
+            logger.error("Invalid LLM output: %s", content)
+            return None
 
     async def _check_trigger_condition(
         self, rule: TriggerRule, llm_proxy: LLMProxy,
@@ -893,6 +910,7 @@ class TriggerRuleRunner:
 
         cameras_video: dict[tuple[str, int], CameraImgSeq] = {}
         condition_result_list: List[TriggerConditionResult] = []
+        start_time = time.time()
 
         # If rule has cameras, collect them
         if rule.cameras:
@@ -937,7 +955,6 @@ class TriggerRuleRunner:
                 logger.error(
                     "LLM call failed for rule %s (cam: %s): %s", rule.name, camera_id, response
                 )
-                continue
 
             # Ensure response is dict type before accessing
             if not isinstance(response, dict):
@@ -952,8 +969,7 @@ class TriggerRuleRunner:
                 rule.name, rule.condition, camera_id, content
             )
 
-            if not content:
-                continue
+                is_happened, is_same_action = parsed
 
             try:
                 # Use optimized helper method to extract JSON content
