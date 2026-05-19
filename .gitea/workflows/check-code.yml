@@ -21,24 +21,22 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        run: |
+          git init
+          git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          git fetch --depth=1 origin "${{ gitea.sha }}"
+          git checkout "${{ gitea.sha }}"
 
-      - name: Install Node.js from apt
+      - name: Install Node.js and Python
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y nodejs npm
+          sudo apt-get install -y nodejs npm python3 python3-pip python3-venv clang-format
           node --version
           npm --version
+          python3 --version
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install system dependencies
+      - name: Install Python lint tools
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y clang-format
           pip3 install pylint
           pylint --version
           clang-format --version
@@ -80,7 +78,6 @@ jobs:
         env:
           PYLINT_CACHE_DIR: .pylint_cache
 
-      
       - name: Check Python code quality - AI Engine
         run: |
           echo -e "\n start checking miloco_ai_engine/ Python code quality..."
