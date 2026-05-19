@@ -39,9 +39,9 @@ jobs:
 
       - name: Checkout
         run: |
-          git init
+          git init -b main
           git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          git fetch --depth=0 origin "${{ gitea.sha }}"
+          git fetch --depth=1 origin "${{ gitea.sha }}"
           git checkout "${{ gitea.sha }}"
 
       - name: Set version tag
@@ -87,9 +87,9 @@ jobs:
 
       - name: Checkout
         run: |
-          git init
+          git init -b main
           git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          git fetch --depth=0 origin "${{ gitea.sha }}"
+          git fetch --depth=1 origin "${{ gitea.sha }}"
           git checkout "${{ gitea.sha }}"
 
       - name: Log in to GitHub Container Registry
@@ -130,9 +130,9 @@ jobs:
 
       - name: Checkout
         run: |
-          git init
+          git init -b main
           git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          git fetch --depth=0 origin "${{ gitea.sha }}"
+          git fetch --depth=1 origin "${{ gitea.sha }}"
           git checkout "${{ gitea.sha }}"
 
       - name: Log in to GitHub Container Registry
