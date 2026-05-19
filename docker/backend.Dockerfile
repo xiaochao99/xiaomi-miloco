@@ -67,6 +67,7 @@ RUN pip install --no-build-isolation -e /app/miloco_server \
     && pip install --no-build-isolation -e /app/miot_kit \
     && if [ "${TARGETARCH}" = "amd64" ]; then pip install --no-cache-dir onnxruntime-openvino; else echo "Skip onnxruntime-openvino on ${TARGETARCH}"; fi \
     && pip install --no-cache-dir sherpa-onnx \
+    && pip install --no-cache-dir ChromaDB \
     && rm -rf /app/miloco_server/static \
     && rm -rf /app/miloco_server/.temp \
     && rm -rf /app/miloco_server/.log

@@ -131,6 +131,12 @@ class HAConfig(BaseModel):
     token: str = Field(..., description="Home Assistant access token", min_length=1)
 
 
+class AuthorizeRequest(BaseModel):
+    """OAuth result submitted from the Xiaomi redirect page via the web UI."""
+    code: str = Field(..., description="OAuth authorization code", min_length=1)
+    state: str = Field(..., description="OAuth state token", min_length=1)
+
+
 class CameraConfig(BaseModel):
     """Camera configuration"""
     video_quality: str = Field(..., description="Video quality: LOW or HIGH")

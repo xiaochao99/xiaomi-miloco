@@ -817,17 +817,21 @@ class EnhancedChatAgent(Actor):
             llm_response: AsyncGenerator[dict, None] = await self._call_llm_stream()
 
             chunk_content_cache: list[str] = []
+            chunk_reasoning_cache: list[str] = []
             delta_tool_call_list: list[list[ChoiceDeltaToolCall]] = []
             finish_reason = None
 
             async for chunk in llm_response:
-                current_finish_reason, current_tool_calls, content_stream = await self._process_llm_chunk(
+                current_finish_reason, current_tool_calls, content_stream, reasoning_stream = await self._process_llm_chunk(
                     chunk)
                 
                 if content_stream is not None and content_stream != "":
                     chunk_content_cache.append(content_stream)
                     self._send_instruction(
                         Template.ToastStream(stream=content_stream))
+
+                if reasoning_stream is not None and reasoning_stream != "":
+                    chunk_reasoning_cache.append(reasoning_stream)
 
                 if current_tool_calls is not None:
                     delta_tool_call_list.append(current_tool_calls)
@@ -837,6 +841,7 @@ class EnhancedChatAgent(Actor):
                     break
 
             finalized_content = "".join(chunk_content_cache)
+            finalized_reasoning_content = "".join(chunk_reasoning_cache) if chunk_reasoning_cache else None
 
             # Check for final answer tag and force finish
             if "<final_answer>" in finalized_content:
@@ -862,7 +867,7 @@ class EnhancedChatAgent(Actor):
                        len(finalized_tool_calls), finish_reason)
 
             self._chat_history_messages.add_assistant_message(
-                finalized_content, finalized_tool_calls)
+                finalized_content, finalized_tool_calls, finalized_reasoning_content)
             
             # Add to context manager
             self._context_manager.add_message(
@@ -1039,7 +1044,7 @@ class EnhancedChatAgent(Actor):
 
     async def _process_llm_chunk(
         self, chunk: dict
-    ) -> tuple[Optional[str], Optional[list[ChoiceDeltaToolCall]], Optional[str]]:
+    ) -> tuple[Optional[str], Optional[list[ChoiceDeltaToolCall]], Optional[str], Optional[str]]:
         """Process LLM streaming response chunk."""
         if not chunk.get("success", False):
             error_msg = chunk.get("error", "Unknown error")
@@ -1055,8 +1060,9 @@ class EnhancedChatAgent(Actor):
 
         content_stream = delta.content
         tool_calls = delta.tool_calls
+        reasoning_content = getattr(delta, "reasoning_content", None)
 
-        return finish_reason, tool_calls, content_stream
+        return finish_reason, tool_calls, content_stream, reasoning_content
 
     def _send_instruction(self, instruction_payload: InstructionPayload):
         """Send instruction to transceiver actor."""

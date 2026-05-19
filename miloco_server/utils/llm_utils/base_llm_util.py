@@ -73,9 +73,13 @@ class BaseLLMUtil:
             message = choice.message
             finish_reason = choice.finish_reason
 
+            # Extract reasoning_content from message (Mimo thinking mode requires it)
+            reasoning_content = getattr(message, "reasoning_content", None)
+
             # Add message to conversation history
             self._chat_history.add_assistant_message(message.content,
-                                                     message.tool_calls)
+                                                     message.tool_calls,
+                                                     reasoning_content)
 
             content = message.content
             tool_calls = message.tool_calls

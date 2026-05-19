@@ -103,31 +103,24 @@ export const MENU_ITEMS = [
     path: '/home/logManage',
   },
   {
-    key: '8',
-    label: 'home.menu.setting',
-    icon: 'menuSetting',
-    selectedIcon: 'menuSettingSelected',
-    path: '/home/setting',
-  },
-  {
     key: '9',
     label: 'home.menu.faceLibrary',
-    icon: 'menuDevice',
-    selectedIcon: 'menuDeviceSelected',
+    icon: 'menuFace',
+    selectedIcon: 'menuFaceSelected',
     path: '/home/faceLibrary',
   },
   {
     key: '10',
     label: 'home.menu.memoryManage',
-    icon: 'menuDevice',
-    selectedIcon: 'menuDeviceSelected',
+    icon: 'menuMemory',
+    selectedIcon: 'menuMemorySelected',
     path: '/home/memoryManage',
   },
   {
     key: '11',
     label: 'home.menu.habitLearning',
-    icon: 'menuSmart',
-    selectedIcon: 'menuSmartSelected',
+    icon: 'menuLearn',
+    selectedIcon: 'menuLearnSelected',
     path: '/home/habitLearning',
   },
   {
@@ -143,6 +136,13 @@ export const MENU_ITEMS = [
     icon: 'menuLog',
     selectedIcon: 'menuLogSelected',
     path: '/home/recordingPlayback',
+  },
+  {
+    key: '8',
+    label: 'home.menu.setting',
+    icon: 'menuSetting',
+    selectedIcon: 'menuSettingSelected',
+    path: '/home/setting',
   }
 ];
 

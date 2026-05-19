@@ -969,8 +969,6 @@ class TriggerRuleRunner:
                 rule.name, rule.condition, camera_id, content
             )
 
-                is_happened, is_same_action = parsed
-
             try:
                 # Use optimized helper method to extract JSON content
                 json_content = extract_json_from_content(content)

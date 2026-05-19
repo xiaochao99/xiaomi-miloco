@@ -6,6 +6,7 @@ Prompt helper utilities for building chat messages and prompts.
 Provides builders for trigger rule conditions and vision understanding prompts.
 """
 
+import logging
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 

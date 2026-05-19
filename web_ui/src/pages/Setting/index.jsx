@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typography, Segmented, Table, Popconfirm, Tag, Tooltip, Alert, Upload, List, Spin} from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined, PlusOutlined, CopyOutlined, DeleteOutlined, EyeOutlined, VideoCameraOutlined, UploadOutlined, AudioOutlined, SoundOutlined, ExperimentOutlined } from '@ant-design/icons';
+import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined, PlusOutlined, CopyOutlined, DeleteOutlined, VideoCameraOutlined, UploadOutlined, AudioOutlined, SoundOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig, getRTSPServerConfig, setRTSPServerConfig, getXiaoAIConfig, updateXiaoAIConfig, restartXiaoAI, listVoiceClones, uploadVoiceClone, deleteVoiceClone, synthesizeWithVoiceClone, voiceDesignTTS } from '@/api';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSettingStore } from '@/stores/settingStore';
@@ -812,25 +812,6 @@ const Setting = () => {
                 disabled={loadingRtspServerConfig}
                 placeholder={t('setting.rtspServerPortPlaceholder')}
               />
-            </div>
-          </div>
-        </Card>
-
-        {/* Recording configuration */}
-        <Card className={styles.settingCard} contentClassName={styles.settingCardContent}>
-          <div className={styles.settingCardTitle}>{t('home.menu.recordingConfig')}</div>
-          <div className={styles.settingCardItemList}>
-            <div className={styles.settingItem}>
-              <div className={styles.settingLabel}>
-                <VideoCameraOutlined /> {t('recording.config.recordingConfig')}
-              </div>
-              <Button onClick={() => navigate('/home/recordingConfig')}>{t('common.edit')}</Button>
-            </div>
-            <div className={styles.settingItem}>
-              <div className={styles.settingLabel}>
-                <EyeOutlined /> {t('home.menu.recordingPlayback')}
-              </div>
-              <Button onClick={() => navigate('/home/recordingPlayback')}>{t('recording.playback.play')}</Button>
             </div>
           </div>
         </Card>

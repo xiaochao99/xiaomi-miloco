@@ -8,7 +8,7 @@ Used for camera recording configuration, segments, and playback.
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -24,11 +24,9 @@ class TimePeriod(BaseModel):
     """Time period for recording schedule."""
     start_time: str = Field(..., description="Start time in HH:MM format", pattern=r"^\d{2}:\d{2}$")
     end_time: str = Field(..., description="End time in HH:MM format", pattern=r"^\d{2}:\d{2}$")
-    days_of_week: Optional[List[int]] = Field(
+    days_of_week: Optional[List[Annotated[int, Field(ge=0, le=6)]]] = Field(
         default=None,
         description="Days of week (0=Monday to 6=Sunday), null means every day",
-        ge=0,
-        le=6,
     )
 
 

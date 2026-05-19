@@ -213,8 +213,11 @@ class ChatHistoryMessages:
     def add_assistant_message(
             self,
             content: str,
-            tool_calls: list[ChatCompletionMessageToolCall] = None):
+            tool_calls: list[ChatCompletionMessageToolCall] = None,
+            reasoning_content: str = None):
         message = {"role": "assistant", "content": content}
+        if reasoning_content:
+            message["reasoning_content"] = reasoning_content
         if tool_calls:
             message[
                 "tool_calls"] = ChatHistoryMessages.message_tool_call_2_param(
