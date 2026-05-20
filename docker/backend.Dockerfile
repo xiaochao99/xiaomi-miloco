@@ -5,7 +5,7 @@
 # For China: 
 # - https://mirrors.aliyun.com/pypi/simple/
 # - https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-ARG PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+ARG PIP_INDEX_URL=https://pypi.org/simple/
 
 
 ################################################
@@ -14,19 +14,10 @@ ARG PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 FROM node:20-slim AS frontend-builder
 
 WORKDIR /app
-
-# 安装 pnpm
-RUN npm config set registry https://registry.npmmirror.com/ \
-    && npm install -g pnpm
-
-# 复制所有文件
 COPY web_ui/ /app/
 
-# 使用 pnpm 安装依赖
-RUN pnpm install --frozen-lockfile=false --no-frozen-lockfile
-
-# 构建
-RUN pnpm build
+RUN npm install
+RUN npm run build
 
 
 ################################################
@@ -76,7 +67,6 @@ RUN pip install --no-build-isolation -e /app/miloco_server \
     && pip install --no-build-isolation -e /app/miot_kit \
     && if [ "${TARGETARCH}" = "amd64" ]; then pip install --no-cache-dir onnxruntime-openvino; else echo "Skip onnxruntime-openvino on ${TARGETARCH}"; fi \
     && pip install --no-cache-dir sherpa-onnx \
-    && pip install --no-cache-dir ChromaDB \
     && rm -rf /app/miloco_server/static \
     && rm -rf /app/miloco_server/.temp \
     && rm -rf /app/miloco_server/.log
