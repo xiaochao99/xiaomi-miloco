@@ -6,25 +6,24 @@
 # - https://mirrors.aliyun.com/pypi/simple/
 # - https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 ARG PIP_INDEX_URL=https://pypi.org/simple/
-ARG DOCKER_REGISTRY=""
 
 
 ################################################
 # Frontend Builder
 ################################################
-FROM ${DOCKER_REGISTRY}node:20-slim AS frontend-builder
+FROM node:20-slim AS frontend-builder
 
 WORKDIR /app
 COPY web_ui/ /app/
 
-RUN npm install --no-audit --no-fund \
-    && npx vite build
+RUN npm install
+RUN npm run build
 
 
 ################################################
 # Backend Base
 ################################################
-FROM ${DOCKER_REGISTRY}python:3.12-slim AS backend-base
+FROM python:3.12-slim AS backend-base
 
 # Restate PIP index URL.
 ARG PIP_INDEX_URL
