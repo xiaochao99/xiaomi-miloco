@@ -124,7 +124,7 @@ jobs:
 
       - name: Set up QEMU
         run: |
-          docker run --rm --privileged registry.cn-hangzhou.aliyuncs.com/multiarch/qemu-user-static --reset -p yes
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
       - name: Set up Docker Buildx
         run: |
@@ -178,7 +178,7 @@ jobs:
 
       - name: Set up QEMU
         run: |
-          docker run --rm --privileged registry.cn-hangzhou.aliyuncs.com/multiarch/qemu-user-static --reset -p yes
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
       - name: Set up Docker Buildx
         run: |
