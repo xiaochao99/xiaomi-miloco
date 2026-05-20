@@ -47,9 +47,14 @@ jobs:
         run: |
           git config --global init.defaultBranch main
           git config --global advice.detachedHead false
+          git config --global http.timeout 30
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 30
           git init
           git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          git fetch --depth=10 origin "${{ gitea.ref }}"
+          echo "Fetching from: ${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          echo "Ref: ${{ gitea.ref }}"
+          timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
 
       - name: Set version tag
@@ -103,9 +108,14 @@ jobs:
         run: |
           git config --global init.defaultBranch main
           git config --global advice.detachedHead false
+          git config --global http.timeout 30
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 30
           git init
           git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          git fetch --depth=10 origin "${{ gitea.ref }}"
+          echo "Fetching from: ${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          echo "Ref: ${{ gitea.ref }}"
+          timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
 
       - name: Log in to GitHub Container Registry
@@ -154,9 +164,14 @@ jobs:
         run: |
           git config --global init.defaultBranch main
           git config --global advice.detachedHead false
+          git config --global http.timeout 30
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 30
           git init
           git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          git fetch --depth=10 origin "${{ gitea.ref }}"
+          echo "Fetching from: ${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          echo "Ref: ${{ gitea.ref }}"
+          timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
 
       - name: Log in to GitHub Container Registry
