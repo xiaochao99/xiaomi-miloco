@@ -32,7 +32,10 @@ jobs:
             apt-get update && apt-get install -y curl ca-certificates
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           elif which apk; then
-            apk add curl ca-certificates nodejs npm
+            apk update --no-check-certificate || true
+            apk add --no-check-certificate ca-certificates || true
+            update-ca-certificates 2>/dev/null || true
+            apk add curl nodejs npm
           elif which yum; then
             yum install -y curl ca-certificates nodejs npm
           fi
@@ -82,7 +85,10 @@ jobs:
             apt-get update && apt-get install -y docker.io curl ca-certificates
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           elif which apk; then
-            apk add docker-cli curl ca-certificates nodejs npm
+            apk update --no-check-certificate || true
+            apk add --no-check-certificate ca-certificates || true
+            update-ca-certificates 2>/dev/null || true
+            apk add docker-cli curl nodejs npm
           elif which yum; then
             yum install -y docker curl ca-certificates nodejs npm
           fi
@@ -127,7 +133,10 @@ jobs:
             apt-get update && apt-get install -y docker.io curl ca-certificates
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           elif which apk; then
-            apk add docker-cli curl ca-certificates nodejs npm
+            apk update --no-check-certificate || true
+            apk add --no-check-certificate ca-certificates || true
+            update-ca-certificates 2>/dev/null || true
+            apk add docker-cli curl nodejs npm
           elif which yum; then
             yum install -y docker curl ca-certificates nodejs npm
           fi
