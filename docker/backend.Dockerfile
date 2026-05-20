@@ -5,20 +5,19 @@
 # For China: 
 # - https://mirrors.aliyun.com/pypi/simple/
 # - https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-ARG PIP_INDEX_URL=https://pypi.org/simple/
+ARG PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 
 
 ################################################
 # Frontend Builder
 ################################################
-FROM node:22-slim AS frontend-builder
+FROM node:20-slim AS frontend-builder
 
 WORKDIR /app
-COPY web_ui/package*.json ./
-RUN npm config set registry https://registry.npmjs.org/ \
-    && npm install --prefer-offline --no-audit --no-fund --maxsockets=1
 COPY web_ui/ /app/
-RUN npx --yes vite build
+
+RUN npm install
+RUN npm run build
 
 
 ################################################
