@@ -183,6 +183,16 @@ export default {
     exit: '退出',
     agree: '同意',
   },
+  authCode: {
+    title: '粘贴授权码',
+    desc: '在新标签页完成小米账号授权后，将回调页面的授权码复制并粘贴到此处。',
+    placeholder: '在此粘贴授权码…',
+    submit: '确认授权',
+    cancel: '取消',
+    errorEmpty: '授权码不能为空。',
+    errorFormat: '授权码格式错误，请从回调页面直接复制。',
+    errorSubmit: '授权失败，请重试。',
+  },
   detection: {
     mode: '目标检测',
     conditionConfig: '检测条件配置',
