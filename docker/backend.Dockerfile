@@ -14,10 +14,11 @@ ARG PIP_INDEX_URL=https://pypi.org/simple/
 FROM node:22-slim AS frontend-builder
 
 WORKDIR /app
+COPY web_ui/package*.json ./
+RUN npm config set registry https://registry.npmjs.org/ \
+    && npm install --prefer-offline --no-audit --no-fund --maxsockets=1
 COPY web_ui/ /app/
-
-RUN npm install
-RUN npm run build
+RUN npx --yes vite build
 
 
 ################################################
