@@ -29,14 +29,17 @@ jobs:
       - name: Install Node.js
         run: |
           if which apt-get; then
+            sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+            sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
             apt-get update && apt-get install -y curl ca-certificates
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           elif which apk; then
-            apk update --no-check-certificate || true
-            apk add --no-check-certificate ca-certificates || true
-            update-ca-certificates 2>/dev/null || true
-            apk add curl nodejs npm
+            sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+            apk update
+            apk add ca-certificates curl nodejs npm
           elif which yum; then
+            sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+            sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://mirrors.aliyun.com|g' /etc/yum.repos.d/CentOS-*
             yum install -y curl ca-certificates nodejs npm
           fi
 
@@ -82,14 +85,17 @@ jobs:
       - name: Install dependencies
         run: |
           if which apt-get; then
+            sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+            sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
             apt-get update && apt-get install -y docker.io curl ca-certificates
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           elif which apk; then
-            apk update --no-check-certificate || true
-            apk add --no-check-certificate ca-certificates || true
-            update-ca-certificates 2>/dev/null || true
-            apk add docker-cli curl nodejs npm
+            sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+            apk update
+            apk add ca-certificates docker-cli curl nodejs npm
           elif which yum; then
+            sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+            sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://mirrors.aliyun.com|g' /etc/yum.repos.d/CentOS-*
             yum install -y docker curl ca-certificates nodejs npm
           fi
 
@@ -130,14 +136,17 @@ jobs:
       - name: Install dependencies
         run: |
           if which apt-get; then
+            sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+            sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
             apt-get update && apt-get install -y docker.io curl ca-certificates
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           elif which apk; then
-            apk update --no-check-certificate || true
-            apk add --no-check-certificate ca-certificates || true
-            update-ca-certificates 2>/dev/null || true
-            apk add docker-cli curl nodejs npm
+            sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+            apk update
+            apk add ca-certificates docker-cli curl nodejs npm
           elif which yum; then
+            sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+            sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://mirrors.aliyun.com|g' /etc/yum.repos.d/CentOS-*
             yum install -y docker curl ca-certificates nodejs npm
           fi
 
