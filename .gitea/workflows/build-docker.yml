@@ -122,21 +122,13 @@ jobs:
           timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
 
-      - name: Set up QEMU
-        run: |
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-
-      - name: Set up Docker Buildx
-        run: |
-          docker buildx create --use --name miloco-builder 2>/dev/null || docker buildx use miloco-builder
-
       - name: Build and push ai_engine to GHCR
         run: |
-          docker buildx build \
+          docker build \
             --file docker/ai_engine.cuda.Dockerfile \
-            --push \
             --tag ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:${{ needs.setup.outputs.version }} \
             .
+          docker push ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:${{ needs.setup.outputs.version }}
 
   build-backend:
     needs: setup
@@ -176,19 +168,10 @@ jobs:
           timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
 
-      - name: Set up QEMU
+      - name: Build and push backend to GHCR
         run: |
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-
-      - name: Set up Docker Buildx
-        run: |
-          docker buildx create --use --name miloco-builder 2>/dev/null || docker buildx use miloco-builder
-
-      - name: Build and push backend to GHCR (multi-arch)
-        run: |
-          docker buildx build \
+          docker build \
             --file docker/backend.Dockerfile \
-            --platform linux/amd64,linux/arm64 \
-            --push \
             --tag ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:${{ needs.setup.outputs.version }} \
             .
+          docker push ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:${{ needs.setup.outputs.version }}
