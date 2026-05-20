@@ -51,8 +51,10 @@ jobs:
           git config --global http.lowSpeedLimit 1000
           git config --global http.lowSpeedTime 30
           git init
-          git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          echo "Fetching from: ${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          REPO_URL="${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://${{ secrets.GHCR_USERNAME }}:${{ secrets.GHCR_TOKEN }}@|")
+          git remote add origin "$AUTH_URL"
+          echo "Fetching from: $REPO_URL"
           echo "Ref: ${{ gitea.ref }}"
           timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
@@ -112,8 +114,10 @@ jobs:
           git config --global http.lowSpeedLimit 1000
           git config --global http.lowSpeedTime 30
           git init
-          git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          echo "Fetching from: ${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          REPO_URL="${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://${{ secrets.GHCR_USERNAME }}:${{ secrets.GHCR_TOKEN }}@|")
+          git remote add origin "$AUTH_URL"
+          echo "Fetching from: $REPO_URL"
           echo "Ref: ${{ gitea.ref }}"
           timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
@@ -168,8 +172,10 @@ jobs:
           git config --global http.lowSpeedLimit 1000
           git config --global http.lowSpeedTime 30
           git init
-          git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          echo "Fetching from: ${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          REPO_URL="${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://${{ secrets.GHCR_USERNAME }}:${{ secrets.GHCR_TOKEN }}@|")
+          git remote add origin "$AUTH_URL"
+          echo "Fetching from: $REPO_URL"
           echo "Ref: ${{ gitea.ref }}"
           timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
