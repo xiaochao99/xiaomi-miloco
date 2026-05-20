@@ -17,13 +17,8 @@ FROM ${DOCKER_REGISTRY}node:20-slim AS frontend-builder
 WORKDIR /app
 COPY web_ui/ /app/
 
-# Use npm mirror for China
-RUN npm config set registry https://registry.npmmirror.com \
-    && npm config set fetch-timeout 60000 \
-    && npm config set fetch-retry-mintimeout 10000 \
-    && npm config set fetch-retry-maxtimeout 60000 \
-    && npm install --maxsockets=1 \
-    && npm run build
+RUN npm install --maxsockets=1 \
+    && npx vite build
 
 
 ################################################
