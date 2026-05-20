@@ -17,7 +17,7 @@ FROM ${DOCKER_REGISTRY}node:20-slim AS frontend-builder
 WORKDIR /app
 COPY web_ui/ /app/
 
-RUN npm install --maxsockets=1 --no-audit --no-fund \
+RUN npm install --no-audit --no-fund \
     && npx vite build
 
 
