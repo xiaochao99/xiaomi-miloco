@@ -126,7 +126,7 @@ jobs:
         run: |
           docker build \
             --file docker/ai_engine.cuda.Dockerfile \
-            --build-arg DOCKER_REGISTRY=registry.cn-hangzhou.aliyuncs.com \
+            --build-arg DOCKER_REGISTRY=registry.cn-hangzhou.aliyuncs.com/library/ \
             --tag ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:${{ needs.setup.outputs.version }} \
             .
           docker push ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:${{ needs.setup.outputs.version }}
@@ -174,7 +174,7 @@ jobs:
           docker build \
             --file docker/backend.Dockerfile \
             --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
-            --build-arg DOCKER_REGISTRY=registry.cn-hangzhou.aliyuncs.com \
+            --build-arg DOCKER_REGISTRY=registry.cn-hangzhou.aliyuncs.com/library/ \
             --tag ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:${{ needs.setup.outputs.version }} \
             .
           docker push ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:${{ needs.setup.outputs.version }}
