@@ -16,13 +16,15 @@ FROM node:20-slim AS frontend-builder
 WORKDIR /app
 COPY web_ui/package*.json ./
 
+# 使用国内镜像并增加网络超时设置
 RUN npm config set registry https://registry.npmmirror.com/ \
-    && npm cache clean --force \
-    && npm install --legacy-peer-deps --no-audit --no-fund \
-    && npm cache clean --force
+    && npm config set fetch-retries 5 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm install --legacy-peer-deps --no-audit --no-fund --no-optional
 
 COPY web_ui/ /app/
-RUN npm run build
+RUN npx --yes vite build
 
 
 ################################################
