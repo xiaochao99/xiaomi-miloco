@@ -52,7 +52,7 @@ jobs:
           git config --global http.lowSpeedTime 30
           git init
           REPO_URL="${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://${{ secrets.GHCR_USERNAME }}:${{ secrets.GHCR_TOKEN }}@|")
+          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://token:${{ gitea.token }}@|")
           git remote add origin "$AUTH_URL"
           echo "Fetching from: $REPO_URL"
           echo "Ref: ${{ gitea.ref }}"
@@ -115,7 +115,7 @@ jobs:
           git config --global http.lowSpeedTime 30
           git init
           REPO_URL="${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://${{ secrets.GHCR_USERNAME }}:${{ secrets.GHCR_TOKEN }}@|")
+          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://token:${{ gitea.token }}@|")
           git remote add origin "$AUTH_URL"
           echo "Fetching from: $REPO_URL"
           echo "Ref: ${{ gitea.ref }}"
@@ -173,7 +173,7 @@ jobs:
           git config --global http.lowSpeedTime 30
           git init
           REPO_URL="${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://${{ secrets.GHCR_USERNAME }}:${{ secrets.GHCR_TOKEN }}@|")
+          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://token:${{ gitea.token }}@|")
           git remote add origin "$AUTH_URL"
           echo "Fetching from: $REPO_URL"
           echo "Ref: ${{ gitea.ref }}"
