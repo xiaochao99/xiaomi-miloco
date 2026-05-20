@@ -14,17 +14,19 @@ ARG PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 FROM node:20-slim AS frontend-builder
 
 WORKDIR /app
-COPY web_ui/package*.json ./
 
-# 使用国内镜像并增加网络超时设置
+# 安装 pnpm
 RUN npm config set registry https://registry.npmmirror.com/ \
-    && npm config set fetch-retries 5 \
-    && npm config set fetch-retry-mintimeout 20000 \
-    && npm config set fetch-retry-maxtimeout 120000 \
-    && npm install --legacy-peer-deps --no-audit --no-fund --no-optional
+    && npm install -g pnpm
 
+# 复制所有文件
 COPY web_ui/ /app/
-RUN npx --yes vite build
+
+# 使用 pnpm 安装依赖
+RUN pnpm install --frozen-lockfile=false --no-frozen-lockfile
+
+# 构建
+RUN pnpm build
 
 
 ################################################
