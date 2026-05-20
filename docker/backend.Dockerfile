@@ -14,9 +14,14 @@ ARG PIP_INDEX_URL=https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 FROM node:20-slim AS frontend-builder
 
 WORKDIR /app
-COPY web_ui/ /app/
+COPY web_ui/package*.json ./
 
-RUN npm install
+RUN npm config set registry https://registry.npmmirror.com/ \
+    && npm cache clean --force \
+    && npm install --legacy-peer-deps --no-audit --no-fund \
+    && npm cache clean --force
+
+COPY web_ui/ /app/
 RUN npm run build
 
 
