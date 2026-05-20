@@ -29,19 +29,34 @@ jobs:
       - name: Install Node.js
         run: |
           if which apt-get; then
+            sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+            sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
             apt-get update && apt-get install -y curl ca-certificates
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           elif which apk; then
-            apk add curl ca-certificates nodejs npm
+            sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+            apk update
+            apk add ca-certificates curl nodejs npm
           elif which yum; then
+            sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+            sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://mirrors.aliyun.com|g' /etc/yum.repos.d/CentOS-*
             yum install -y curl ca-certificates nodejs npm
           fi
 
       - name: Checkout
         run: |
-          git init -b main
-          git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          git fetch --depth=1 origin "${{ gitea.sha }}"
+          git config --global init.defaultBranch main
+          git config --global advice.detachedHead false
+          git config --global http.timeout 30
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 30
+          git init
+          REPO_URL="${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://token:${{ gitea.token }}@|")
+          git remote add origin "$AUTH_URL"
+          echo "Fetching from: $REPO_URL"
+          echo "Ref: ${{ gitea.ref }}"
+          timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
 
       - name: Set version tag
@@ -77,40 +92,44 @@ jobs:
       - name: Install dependencies
         run: |
           if which apt-get; then
+            sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+            sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
             apt-get update && apt-get install -y docker.io curl ca-certificates
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           elif which apk; then
-            apk add docker-cli curl ca-certificates nodejs npm
+            sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+            apk update
+            apk add ca-certificates docker-cli curl nodejs npm
           elif which yum; then
+            sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+            sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://mirrors.aliyun.com|g' /etc/yum.repos.d/CentOS-*
             yum install -y docker curl ca-certificates nodejs npm
           fi
 
       - name: Checkout
         run: |
-          git init -b main
-          git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          git fetch --depth=1 origin "${{ gitea.sha }}"
+          git config --global init.defaultBranch main
+          git config --global advice.detachedHead false
+          git config --global http.timeout 30
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 30
+          git init
+          REPO_URL="${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://token:${{ gitea.token }}@|")
+          git remote add origin "$AUTH_URL"
+          echo "Fetching from: $REPO_URL"
+          echo "Ref: ${{ gitea.ref }}"
+          timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
-
-      - name: Log in to GitHub Container Registry
-        run: |
-          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
-
-      - name: Set up QEMU
-        run: |
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-
-      - name: Set up Docker Buildx
-        run: |
-          docker buildx create --use --name miloco-builder 2>/dev/null || docker buildx use miloco-builder
 
       - name: Build and push ai_engine to GHCR
         run: |
-          docker buildx build \
+          docker build \
             --file docker/ai_engine.cuda.Dockerfile \
-            --push \
+            --build-arg DOCKER_REGISTRY=registry.cn-hangzhou.aliyuncs.com \
             --tag ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:${{ needs.setup.outputs.version }} \
             .
+          docker push ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:${{ needs.setup.outputs.version }}
 
   build-backend:
     needs: setup
@@ -120,38 +139,42 @@ jobs:
       - name: Install dependencies
         run: |
           if which apt-get; then
+            sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
+            sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list
             apt-get update && apt-get install -y docker.io curl ca-certificates
             curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs
           elif which apk; then
-            apk add docker-cli curl ca-certificates nodejs npm
+            sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+            apk update
+            apk add ca-certificates docker-cli curl nodejs npm
           elif which yum; then
+            sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+            sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://mirrors.aliyun.com|g' /etc/yum.repos.d/CentOS-*
             yum install -y docker curl ca-certificates nodejs npm
           fi
 
       - name: Checkout
         run: |
-          git init -b main
-          git remote add origin "${{ gitea.server_url }}/${{ gitea.repository }}.git"
-          git fetch --depth=1 origin "${{ gitea.sha }}"
+          git config --global init.defaultBranch main
+          git config --global advice.detachedHead false
+          git config --global http.timeout 30
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 30
+          git init
+          REPO_URL="${{ gitea.server_url }}/${{ gitea.repository }}.git"
+          AUTH_URL=$(echo "$REPO_URL" | sed "s|://|://token:${{ gitea.token }}@|")
+          git remote add origin "$AUTH_URL"
+          echo "Fetching from: $REPO_URL"
+          echo "Ref: ${{ gitea.ref }}"
+          timeout 60 git fetch --depth=1 origin "${{ gitea.ref }}" || timeout 60 git fetch origin "${{ gitea.ref }}"
           git checkout "${{ gitea.sha }}"
 
-      - name: Log in to GitHub Container Registry
+      - name: Build and push backend to GHCR
         run: |
-          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
-
-      - name: Set up QEMU
-        run: |
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-
-      - name: Set up Docker Buildx
-        run: |
-          docker buildx create --use --name miloco-builder 2>/dev/null || docker buildx use miloco-builder
-
-      - name: Build and push backend to GHCR (multi-arch)
-        run: |
-          docker buildx build \
+          docker build \
             --file docker/backend.Dockerfile \
-            --platform linux/amd64,linux/arm64 \
-            --push \
+            --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+            --build-arg DOCKER_REGISTRY=registry.cn-hangzhou.aliyuncs.com \
             --tag ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:${{ needs.setup.outputs.version }} \
             .
+          docker push ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:${{ needs.setup.outputs.version }}
