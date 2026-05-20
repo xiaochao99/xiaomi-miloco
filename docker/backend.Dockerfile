@@ -11,7 +11,7 @@ ARG PIP_INDEX_URL=https://pypi.org/simple/
 ################################################
 # Frontend Builder
 ################################################
-FROM node:20-slim AS frontend-builder
+FROM node:22-slim AS frontend-builder
 
 WORKDIR /app
 COPY web_ui/ /app/
