@@ -19,7 +19,10 @@ COPY web_ui/ /app/
 
 # Use npm mirror for China
 RUN npm config set registry https://registry.npmmirror.com \
-    && npm install \
+    && npm config set fetch-timeout 60000 \
+    && npm config set fetch-retry-mintimeout 10000 \
+    && npm config set fetch-retry-maxtimeout 60000 \
+    && npm install --maxsockets=1 \
     && npm run build
 
 
