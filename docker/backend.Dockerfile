@@ -68,6 +68,12 @@ RUN pip install --no-build-isolation -e /app/miloco_server \
     && if [ "${TARGETARCH}" = "amd64" ]; then pip install --no-cache-dir onnxruntime-openvino; else echo "Skip onnxruntime-openvino on ${TARGETARCH}"; fi \
     && pip install --no-cache-dir sherpa-onnx \
     && pip install --no-cache-dir ChromaDB \
+    && mkdir -p /root/.cache/chroma/onnx_models \
+    && echo "Downloading ONNX model from AWS S3..." \
+    && wget -q https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz -O /tmp/onnx.tar.gz \
+    && mkdir -p /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2 \
+    && tar -xzf /tmp/onnx.tar.gz -C /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2/ \
+    && rm /tmp/onnx.tar.gz \
     && rm -rf /app/miloco_server/static \
     && rm -rf /app/miloco_server/.temp \
     && rm -rf /app/miloco_server/.log
