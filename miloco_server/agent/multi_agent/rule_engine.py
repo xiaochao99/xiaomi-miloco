@@ -269,7 +269,11 @@ class RuleEngine:
 
             response = None
             if rule.response_template:
-                response = rule.response_template.format(**entities)
+                try:
+                    response = rule.response_template.format(**entities)
+                except KeyError as e:
+                    logger.warning(f"Rule '{rule.name}' response template missing entity: {e}")
+                    response = rule.response_template
 
             logger.info(f"Rule matched: {rule.name} (confidence=1.0, entities={entities})")
 

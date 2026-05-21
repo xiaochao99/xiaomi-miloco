@@ -5,9 +5,6 @@
 # Global Settings / 全局设置
 # ============================================
 ahaa:
-  # Enable AHAA mode / 启用AHAA模式
-  enabled: true
-
   # Fallback to single agent on error / 出错时降级到单Agent模式
   enable_fallback: true
 

@@ -78,7 +78,6 @@ class AHAADispatcher:
 
     def __init__(self, config_path: Optional[str] = None):
         self._config = self._load_config(config_path or CONFIG_PATH)
-        self._enabled = self._config.get("ahaa", {}).get("enabled", True)
         self._enable_fallback = self._config.get("ahaa", {}).get("enable_fallback", True)
 
         self._blackboard = SharedBlackboard(
@@ -100,7 +99,7 @@ class AHAADispatcher:
 
         self._register_default_agents()
 
-        logger.info(f"AHAADispatcher initialized: enabled={self._enabled}")
+        logger.info("AHAADispatcher initialized")
 
     def _load_config(self, config_path) -> Dict[str, Any]:
         try:
@@ -172,9 +171,6 @@ class AHAADispatcher:
         context: Optional[Dict[str, Any]] = None,
     ) -> ExecutionResult:
         self._metrics.total_requests += 1
-
-        if not self._enabled:
-            return await self._fallback_execute(query, session_id, context)
 
         try:
             await self._blackboard.write(
@@ -296,12 +292,7 @@ class AHAADispatcher:
             "orchestrator": self.get_orchestrator_stats(),
             "blackboard": self.get_blackboard_stats(),
             "registry": self.get_registry_stats(),
-            "enabled": self._enabled,
         }
-
-    @property
-    def is_enabled(self) -> bool:
-        return self._enabled
 
     @property
     def rule_engine(self) -> RuleEngine:

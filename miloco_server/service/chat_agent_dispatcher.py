@@ -26,18 +26,16 @@ from miloco_server.service.xiaoai_broadcast_service import broadcast_chat_reply,
 
 logger = logging.getLogger(__name__)
 
-_use_ahaa = CHAT_CONFIG.get("use_ahaa", False)
+# AHAA is always enabled by default
 _ahaa_dispatcher = None
 
-if _use_ahaa:
-    try:
-        from miloco_server.agent.multi_agent.ahaa_dispatcher import AHAADispatcher as _AHAADispatcher
-        _ahaa_dispatcher = _AHAADispatcher()
-        logger.info("AHAADispatcher initialized successfully")
-    except Exception as e:
-        logger.warning("Failed to initialize AHAADispatcher: %s, AHAA disabled", e)
-        _use_ahaa = False
-        _ahaa_dispatcher = None
+try:
+    from miloco_server.agent.multi_agent.ahaa_dispatcher import AHAADispatcher as _AHAADispatcher
+    _ahaa_dispatcher = _AHAADispatcher()
+    logger.info("AHAADispatcher initialized successfully")
+except Exception as e:
+    logger.warning("Failed to initialize AHAADispatcher: %s", e)
+    _ahaa_dispatcher = None
 
 
 class ChatAgentDispatcher(Actor):
@@ -70,10 +68,8 @@ class ChatAgentDispatcher(Actor):
         self._manager = get_manager()
         self._chat_companion = self._manager.chat_companion
         
-        # AHAA configuration
-        self._use_ahaa = _use_ahaa
-        logger.info("[%s] ChatAgentDispatcher initialized, use_ahaa=%s",
-                   self.request_id, self._use_ahaa)
+        # AHAA is always enabled
+        logger.info("[%s] ChatAgentDispatcher initialized with AHAA", self.request_id)
         
         chat_history_storage = self._chat_companion.get_chat_history(
             self.session_id)
@@ -147,8 +143,8 @@ class ChatAgentDispatcher(Actor):
         """
         self._full_response = ""
         
-        # Try AHAA first if enabled
-        if self._use_ahaa and _ahaa_dispatcher is not None:
+        # Use AHAA dispatcher if available
+        if _ahaa_dispatcher is not None:
             query = self._extract_query_from_event(event)
             logger.info("[%s] AHAA dispatch for query: %s", self.request_id, query)
             self._handle_ahaa_dispatch(event, query)
