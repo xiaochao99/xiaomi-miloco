@@ -192,7 +192,7 @@ RUN pip install --no-build-isolation --break-system-packages -e "/app/miloco_ai_
     && pip install --no-cache-dir --break-system-packages "openvino>=2025.0.0" \
     && echo "Downloading InsightFace buffalo_l model..." \
     && mkdir -p /root/.insightface/models/buffalo_l \
-    && python3 -c "import insightface; from insightface.app import FaceAnalysis; app = FaceAnalysis(providers=['CPUExecutionProvider']); app.prepare()" \
+    && python3 -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_l', root='/root/.insightface/models'); app.prepare()" \
     && python3 -c "import insightface; import onnxruntime; from openvino import Core; print('face deps ok, ov devices=', Core().available_devices)"
 
 EXPOSE 8001
