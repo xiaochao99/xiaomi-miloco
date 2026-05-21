@@ -70,7 +70,7 @@ RUN pip install --no-build-isolation -e /app/miloco_server \
     && pip install --no-cache-dir ChromaDB \
     && mkdir -p /root/.cache/chroma/onnx_models \
     && echo "Downloading ONNX model from AWS S3..." \
-    && wget -q https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz -O /tmp/onnx.tar.gz \
+    && python3 -c "import urllib.request; urllib.request.urlretrieve('https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz', '/tmp/onnx.tar.gz'); print('Download completed')" \
     && mkdir -p /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2 \
     && tar -xzf /tmp/onnx.tar.gz -C /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2/ \
     && rm /tmp/onnx.tar.gz \
