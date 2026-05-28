@@ -10,6 +10,7 @@ import {
   Tooltip,
   Checkbox,
   Empty,
+  Drawer,
 } from 'antd';
 import { useTranslation } from 'react-i18next';
 import {
@@ -25,8 +26,7 @@ import {
   SoundOutlined,
   StepBackwardOutlined,
   StepForwardOutlined,
-  MinusOutlined,
-  PlusOutlined,
+  UnorderedListOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -41,6 +41,7 @@ import {
   getRecordingThumbnailUrl,
   getRecordingHlsUrl,
 } from '@/api';
+import TimelineBar from './components/TimelineBar';
 import styles from './index.module.less';
 
 const RecordingPlayback = () => {
@@ -67,7 +68,8 @@ const RecordingPlayback = () => {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [zoomLevel, setZoomLevel] = useState(1);
+  const [zoomLevel, setZoomLevel] = useState(0);
+  const [segmentDrawerVisible, setSegmentDrawerVisible] = useState(false);
 
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
@@ -381,14 +383,6 @@ const RecordingPlayback = () => {
     setPlaybackRate(speeds[nextIndex]);
   }, [playbackRate]);
 
-  const handleZoomIn = useCallback(() => {
-    setZoomLevel(Math.min(zoomLevel * 2, 8));
-  }, [zoomLevel]);
-
-  const handleZoomOut = useCallback(() => {
-    setZoomLevel(Math.max(zoomLevel / 2, 1));
-  }, [zoomLevel]);
-
   const formatFileSize = (bytes) => {
     if (!bytes) return '0 B';
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -451,68 +445,7 @@ const RecordingPlayback = () => {
     }
   };
 
-  const renderTimeline = () => {
-    const hours = Array.from({ length: 24 }, (_, i) => i);
-    const segmentBlocks = allSegments.map((seg) => {
-      const start = dayjs(seg.start_time);
-      const end = dayjs(seg.end_time);
-      const startPercent = (start.hour() * 60 + start.minute()) / (24 * 60) * 100;
-      const endPercent = (end.hour() * 60 + end.minute()) / (24 * 60) * 100;
-      return {
-        ...seg,
-        left: `${startPercent}%`,
-        width: `${endPercent - startPercent}%`,
-      };
-    });
 
-    return (
-      <div className={styles.timelineContainer}>
-        <div className={styles.timelineHeader}>
-          <span className={styles.timelineTitle}>
-            {t('recording.playback.timeline')}
-          </span>
-          <div className={styles.timelineZoom}>
-            <Tooltip title={t('common.zoomOut')}>
-              <button className={styles.zoomBtn} onClick={handleZoomOut}>
-                <MinusOutlined />
-              </button>
-            </Tooltip>
-            <span style={{ fontSize: 11, color: 'var(--text-color-149)' }}>
-              {zoomLevel}x
-            </span>
-            <Tooltip title={t('common.zoomIn')}>
-              <button className={styles.zoomBtn} onClick={handleZoomIn}>
-                <PlusOutlined />
-              </button>
-            </Tooltip>
-          </div>
-        </div>
-        <div className={styles.timelineBody}>
-          <div className={styles.timelineHours}>
-            {hours.map((hour) => (
-              <div key={hour} className={styles.timelineHour}>
-                <span className={styles.timelineHourLabel}>
-                  {hour.toString().padStart(2, '0')}
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className={styles.timelineSegments}>
-            {segmentBlocks.map((seg) => (
-              <div
-                key={seg.id}
-                className={`${styles.timelineSegment} ${getModeClassName(seg.recording_mode)} ${
-                  activeSegment?.id === seg.id ? styles.segmentActive : ''
-                }`}
-                style={{ left: seg.left, width: seg.width }}
-                onClick={() => handleSegmentClick(seg)}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   const renderPlayer = () => {
     if (!activeSegment) {
@@ -773,6 +706,14 @@ const RecordingPlayback = () => {
             <span className={styles.segmentCount}>
               {t('recording.playback.totalSegments')}: {total}
             </span>
+            <Tooltip title={t('recording.playback.segmentList')}>
+              <Button
+                icon={<UnorderedListOutlined />}
+                onClick={() => setSegmentDrawerVisible(true)}
+              >
+                {t('recording.playback.segmentList')}
+              </Button>
+            </Tooltip>
             {selectedSegmentIds.size > 0 && (
               <Popconfirm
                 title={t('recording.playback.batchDeleteConfirm', { count: selectedSegmentIds.size })}
@@ -812,38 +753,76 @@ const RecordingPlayback = () => {
 
         {/* 时间轴 */}
         <div className={styles.timelineArea}>
-          {renderTimeline()}
+          <TimelineBar
+            segments={allSegments}
+            activeSegmentId={activeSegment?.id}
+            currentTime={currentTime}
+            zoom={zoomLevel}
+            onZoomChange={setZoomLevel}
+            onSegmentClick={handleSegmentClick}
+          />
         </div>
 
-        {/* 片段列表 */}
-        <div className={styles.contentArea}>
-          <Spin spinning={loading}>
-            {segments.length > 0 ? (
-              <>
-                <div style={{ marginBottom: 12 }}>
-                  <Checkbox
-                    checked={selectedSegmentIds.size === segments.length}
-                    indeterminate={selectedSegmentIds.size > 0 && selectedSegmentIds.size < segments.length}
-                    onChange={(e) => handleSelectAllSegments(e.target.checked)}
-                  >
-                    <span style={{ fontSize: 12, color: 'var(--text-color-149)' }}>
-                      {t('recording.playback.selectAll')}
-                    </span>
-                  </Checkbox>
-                </div>
-                <div className={styles.segmentGrid}>
-                  {segments.map(renderSegmentCard)}
-                </div>
-              </>
-            ) : (
-              <Empty
-                description={t('recording.playback.noSegments')}
-                style={{ padding: '80px 0' }}
-              />
-            )}
-          </Spin>
-        </div>
       </div>
+
+      {/* 片段列表抽屉 */}
+      <Drawer
+        title={
+          <div className={styles.drawerTitle}>
+            <UnorderedListOutlined />
+            <span>{t('recording.playback.segmentList')}</span>
+            <span className={styles.drawerCount}>({total})</span>
+          </div>
+        }
+        placement="right"
+        width={400}
+        open={segmentDrawerVisible}
+        onClose={() => setSegmentDrawerVisible(false)}
+        className={styles.segmentDrawer}
+      >
+        <Spin spinning={loading}>
+          {segments.length > 0 ? (
+            <>
+              <div className={styles.drawerToolbar}>
+                <Checkbox
+                  checked={selectedSegmentIds.size === segments.length}
+                  indeterminate={selectedSegmentIds.size > 0 && selectedSegmentIds.size < segments.length}
+                  onChange={(e) => handleSelectAllSegments(e.target.checked)}
+                >
+                  <span style={{ fontSize: 12, color: 'var(--text-color-149)' }}>
+                    {t('recording.playback.selectAll')}
+                  </span>
+                </Checkbox>
+                {selectedSegmentIds.size > 0 && (
+                  <Popconfirm
+                    title={t('recording.playback.batchDeleteConfirm', { count: selectedSegmentIds.size })}
+                    onConfirm={handleBatchDelete}
+                    okText={t('common.confirm')}
+                    cancelText={t('common.cancel')}
+                  >
+                    <Button
+                      danger
+                      size="small"
+                      icon={<DeleteOutlined />}
+                      loading={deleting}
+                    >
+                      {t('recording.playback.batchDelete')} ({selectedSegmentIds.size})
+                    </Button>
+                  </Popconfirm>
+                )}
+              </div>
+              <div className={styles.drawerSegmentList}>
+                {segments.map(renderSegmentCard)}
+              </div>
+            </>
+          ) : (
+            <Empty
+              description={t('recording.playback.noSegments')}
+              style={{ padding: '80px 0' }}
+            />
+          )}
+        </Spin>
+      </Drawer>
     </div>
   );
 };

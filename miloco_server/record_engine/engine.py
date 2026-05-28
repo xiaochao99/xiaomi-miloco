@@ -246,7 +246,7 @@ class RecordEngine:
         return self._config_dao.get_all()
     
     def get_status(self, camera_id: str) -> Optional[RecordingStatus]:
-        """Get recording status for a camera."""
+        """Get recording status for a camera (filesystem-based)."""
         config = self._config_dao.get_by_camera_id(camera_id)
         if not config:
             return None
@@ -262,17 +262,26 @@ class RecordEngine:
             if hasattr(ci, 'name'):
                 camera_name = ci.name or camera_id
         
-        # Get today's segments
-        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        segments_today, _ = self._segment_dao.query(
-            camera_id=camera_id,
-            start_time=today_start,
-            page_size=1000,
-        )
+        # Count today's segments from filesystem
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_dir = self._storage.base_path / camera_id / today_str
+        segments_today = 0
+        try:
+            segments_today = len(list(today_dir.glob("*.ts")))
+        except Exception:
+            pass
         
-        # Get storage stats
-        stats = self._segment_dao.get_storage_stats(camera_id)
-        storage_mb = round(stats.get("total_size_bytes", 0) / (1024 * 1024), 2)
+        # Get storage stats from filesystem
+        storage_mb = 0.0
+        try:
+            total_size = 0
+            camera_dir = self._storage.base_path / camera_id
+            if camera_dir.exists():
+                for f in camera_dir.rglob("*.ts"):
+                    total_size += f.stat().st_size
+            storage_mb = round(total_size / (1024 * 1024), 2)
+        except Exception:
+            pass
         
         return RecordingStatus(
             camera_id=camera_id,
@@ -281,7 +290,7 @@ class RecordEngine:
             recording_active=recorder.active if recorder else False,
             mode=config.mode,
             current_segment_start=recorder._segment_start if recorder else None,
-            segments_today=len(segments_today),
+            segments_today=segments_today,
             storage_used_mb=storage_mb,
         )
     
@@ -296,15 +305,14 @@ class RecordEngine:
         return statuses
     
     def get_storage_stats(self) -> RecordingStorageStats:
-        """Get overall storage statistics."""
-        db_stats = self._segment_dao.get_storage_stats()
-        per_camera = self._segment_dao.get_per_camera_stats()
-        total_bytes = db_stats.get("total_size_bytes", 0)
+        """Get overall storage statistics from filesystem."""
+        usage = self._storage.get_storage_usage()
+        per_camera = self._storage.get_per_camera_stats()
         
         return RecordingStorageStats(
-            total_size_bytes=total_bytes,
-            total_size_mb=round(total_bytes / (1024 * 1024), 2),
-            total_segments=db_stats.get("total_segments", 0),
+            total_size_bytes=usage["total_size_bytes"],
+            total_size_mb=usage["total_size_mb"],
+            total_segments=usage["total_files"],
             per_camera=per_camera,
         )
     

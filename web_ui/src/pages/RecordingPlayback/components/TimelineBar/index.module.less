@@ -2,109 +2,117 @@
   width: 100%;
   background: #1a1a2e;
   border-radius: 8px;
-  padding: 12px 16px;
+  padding: 12px 16px 10px;
   user-select: none;
 }
+
+/* ── 头部 ──────────────────────────────────────────────────────────────── */
 
 .timelineHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  gap: 16px;
+  margin-bottom: 10px;
+  gap: 12px;
 
   .timelineTitle {
     font-size: 13px;
-    color: rgba(255, 255, 255, 0.65);
+    color: rgba(255, 255, 255, 0.55);
     font-weight: 500;
-  }
-
-  .timelineDate {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.4);
+    white-space: nowrap;
   }
 }
 
 .timelineControls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  padding: 4px 8px;
+  gap: 6px;
+}
+
+.controlGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.06);
   border-radius: 6px;
+  padding: 2px 4px;
+}
 
-  .zoomLabel {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.6);
-    font-variant-numeric: tabular-nums;
-    min-width: 32px;
-    text-align: center;
+.zoomLabel {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: center;
+  line-height: 1;
+}
+
+.zoomBtn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover:not(:disabled) {
+    background: rgba(0, 189, 195, 0.25);
+    color: #00bdc3;
   }
 
-  .zoomButton {
-    width: 24px;
-    height: 24px;
-    border: none;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.15s;
-
-    &:hover:not(:disabled) {
-      background: rgba(0, 189, 195, 0.3);
-      color: #00bdc3;
-    }
-
-    &:disabled {
-      opacity: 0.3;
-      cursor: not-allowed;
-    }
-
-    :global(.anticon) {
-      font-size: 12px;
-    }
+  &:disabled {
+    opacity: 0.25;
+    cursor: not-allowed;
   }
 
-  .zoomSlider {
-    input[type='range'] {
-      width: 60px;
-      height: 4px;
-      -webkit-appearance: none;
-      appearance: none;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 2px;
-      outline: none;
-
-      &::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: #00bdc3;
-        cursor: pointer;
-      }
-    }
+  :global(.anticon) {
+    font-size: 12px;
   }
 }
+
+/* ── 主体 ──────────────────────────────────────────────────────────────── */
 
 .timelineBody {
   position: relative;
-  overflow: hidden;
 }
 
-.timelineScrollContainer {
+/* 刻度标签行 */
+.tickRow {
+  position: relative;
+  height: 22px;
+  overflow: hidden;
+
+  .tickLabel {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: none;
+    line-height: 1;
+    top: 0;
+  }
+}
+
+/* 可滚动区域 */
+.timelineScroll {
   width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  cursor: pointer;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
 
   &::-webkit-scrollbar {
-    height: 6px;
+    height: 5px;
   }
 
   &::-webkit-scrollbar-track {
@@ -112,178 +120,187 @@
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.15);
     border-radius: 3px;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
   }
 }
 
 .timelineTrackInner {
   position: relative;
-  height: 44px;
+  height: 36px;
+  min-width: 100%;
 }
 
-.hourMarks {
+/* 刻度竖线 */
+.tickLines {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 16px;
-  margin-bottom: 2px;
+  bottom: 0;
+  pointer-events: none;
 
-  .hourMark {
+  .tickLine {
     position: absolute;
-    height: 16px;
-    text-align: center;
+    top: 0;
+    bottom: 0;
     width: 1px;
-    background: rgba(255, 255, 255, 0.1);
 
-    &.fullHour {
+    &_major {
       background: rgba(255, 255, 255, 0.15);
     }
 
-    &.halfHour {
-      background: rgba(255, 255, 255, 0.08);
-    }
-
-    .hourLabel {
-      position: absolute;
-      bottom: 100%;
-      left: 0;
-      transform: translateX(-50%);
-      font-size: 10px;
-      color: rgba(255, 255, 255, 0.35);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-
-    .markLine {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      width: 1px;
-      height: 6px;
-      background: inherit;
+    &_minor {
+      background: rgba(255, 255, 255, 0.07);
     }
   }
 }
 
-.timelineTrack {
+/* 轨道背景 */
+.segmentTrack {
   position: absolute;
-  bottom: 0;
+  top: 6px;
   left: 0;
   right: 0;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.04);
+  bottom: 6px;
+  background: rgba(255, 255, 255, 0.06);
   border-radius: 4px;
-  overflow: hidden;
-  cursor: pointer;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.06);
-  }
+  overflow: visible;
 }
 
-.segmentBlock {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 0.15s;
-  min-width: 2px;
-
-  &:hover {
-    filter: brightness(1.3);
-    transform: scaleY(1.15);
-    z-index: 2;
-  }
-
-  &.active {
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6);
-    z-index: 3;
-    filter: brightness(1.2);
-  }
-
-  &.continuous {
-    background: rgba(24, 144, 255, 0.7);
-  }
-  &.person {
-    background: rgba(82, 196, 26, 0.7);
-  }
-  &.motion {
-    background: rgba(250, 173, 20, 0.7);
-  }
-
-  .segmentTooltip {
-    display: none;
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 4px 8px;
-    background: rgba(30, 30, 30, 0.95);
-    border-radius: 4px;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.85);
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: 10;
-    backdrop-filter: blur(4px);
-  }
-
-  &:hover .segmentTooltip {
-    display: block;
-  }
-}
-
-.currentTimeLine {
+/* 片段填充色块 */
+.segmentFill {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
-  background: #00bdc3;
-  z-index: 5;
-  pointer-events: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.15s, box-shadow 0.15s;
 
-  &::before {
-    content: '';
-    position: absolute;
-    top: -3px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 8px;
-    height: 8px;
-    background: #00bdc3;
-    border-radius: 50%;
+  &:hover {
+    opacity: 1 !important;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.15);
+    z-index: 2;
   }
 }
 
-.timelineLegend {
-  display: flex;
-  gap: 16px;
-  margin-top: 8px;
+/* 播放指示线 */
+.playheadLine {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  background: #00e5ff;
+  z-index: 10;
+  pointer-events: none;
 
-  .legendItem {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.45);
+  .playheadDot {
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 12px;
+    height: 12px;
+    background: #00e5ff;
+    border: 2px solid #1a1a2e;
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
+  }
 
-    .legendDot {
-      width: 8px;
-      height: 8px;
-      border-radius: 2px;
+  .playheadBubble {
+    position: absolute;
+    top: -26px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #00e5ff;
+    color: #0d0d1a;
+    font-size: 10px;
+    font-weight: 600;
+    font-family: 'Consolas', 'Courier New', monospace;
+    padding: 2px 8px;
+    border-radius: 3px;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 
-      &.continuous {
-        background: rgba(24, 144, 255, 0.7);
-      }
-      &.person {
-        background: rgba(82, 196, 26, 0.7);
-      }
-      &.motion {
-        background: rgba(250, 173, 20, 0.7);
-      }
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -4px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 5px solid #00e5ff;
     }
   }
+}
+
+/* 悬停指示线 */
+.hoverLine {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.35);
+  z-index: 5;
+  pointer-events: none;
+
+  .hoverLabel {
+    position: fixed;
+    top: 50%;
+    transform: translate(-50%, -100%);
+    background: rgba(0, 0, 0, 0.8);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 10px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    padding: 2px 8px;
+    border-radius: 3px;
+    white-space: nowrap;
+    pointer-events: none;
+    margin-top: -8px;
+  }
+}
+
+/* ── 底部信息 ──────────────────────────────────────────────────────────── */
+
+.timelineFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  gap: 12px;
+}
+
+.footerTime {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  font-family: 'Consolas', 'Courier New', monospace;
+  white-space: nowrap;
+}
+
+.footerLegend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
 }

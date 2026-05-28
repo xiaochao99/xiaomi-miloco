@@ -1036,6 +1036,7 @@ export default {
       confirmCleanup: '确认清理所有过期录像？',
       timeline: '时间轴',
       totalSegments: '共',
+      segmentList: '片段列表',
       selectAll: '全选',
       batchDelete: '批量删除',
       batchDeleteConfirm: '确认删除所选的 {{count}} 个片段吗？',

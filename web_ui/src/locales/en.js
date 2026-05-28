@@ -1020,6 +1020,7 @@ export default {
       confirmCleanup: 'Are you sure to clean all expired recordings?',
       timeline: 'Timeline',
       totalSegments: 'Total',
+      segmentList: 'Segment List',
       selectAll: 'Select All',
       batchDelete: 'Batch Delete',
       batchDeleteConfirm: 'Are you sure to delete {{count}} selected segments?',

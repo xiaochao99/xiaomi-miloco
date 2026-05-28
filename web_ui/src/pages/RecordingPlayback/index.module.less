@@ -249,6 +249,8 @@
   width: 100%;
   padding: 16px 24px;
   background: var(--bg-color);
+  display: flex;
+  justify-content: center;
 }
 
 /* 时间轴区域 */
@@ -258,12 +260,44 @@
   background: var(--bg-color);
 }
 
-/* 片段列表区域 */
-.contentArea {
-  flex: 1;
-  width: 100%;
-  overflow: hidden;
-  padding: 0 24px 24px;
+/* 片段列表抽屉 */
+.segmentDrawer {
+  :global(.ant-drawer-body) {
+    padding: 16px;
+  }
+}
+
+.drawerTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  :global(.anticon) {
+    color: var(--primary-color);
+  }
+}
+
+.drawerCount {
+  font-size: 12px;
+  color: var(--text-color-149);
+  font-weight: 400;
+}
+
+.drawerToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color-240);
+}
+
+.drawerSegmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
 }
 
 /* 空状态 */
@@ -404,17 +438,22 @@
   }
 }
 
-/* 播放器容器 */
+/* 播放器容器 - 固定尺寸 */
 .playerContainer {
   width: 100%;
+  max-width: 960px;
+  height: 540px;
   background: #000;
   border-radius: 10px;
   overflow: hidden;
   position: relative;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .playerVideo {
   width: 100%;
+  height: 100%;
+  object-fit: contain;
   display: block;
 }
 
@@ -492,134 +531,24 @@
   cursor: pointer;
 }
 
-/* 时间轴 */
-.timelineContainer {
-  width: 100%;
-  background: var(--bg-color-card);
-  border-radius: 10px;
-  border: 1px solid var(--border-color-240);
-  overflow: hidden;
-}
-
-.timelineHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-color-240);
-}
-
-.timelineTitle {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-color-31);
-}
-
-.timelineZoom {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.zoomBtn {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-color-container);
-  border: 1px solid var(--border-color-240);
-  color: var(--text-color-6);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-
-  &:hover {
-    background: var(--bg-color-card);
-    border-color: var(--border-color);
-  }
-}
-
-.timelineBody {
-  height: 48px;
-  position: relative;
-  overflow: hidden;
-}
-
-.timelineHours {
-  display: flex;
-  height: 100%;
-}
-
-.timelineHour {
-  flex: 1;
-  border-right: 1px solid var(--border-color-240);
-  position: relative;
-
-  &:last-child {
-    border-right: none;
-  }
-}
-
-.timelineHourLabel {
-  position: absolute;
-  top: 2px;
-  left: 4px;
-  font-size: 10px;
-  color: var(--text-color-149);
-}
-
-.timelineSegments {
-  position: absolute;
-  top: 16px;
-  left: 0;
-  right: 0;
-  height: 24px;
-}
-
-.timelineSegment {
-  position: absolute;
-  height: 100%;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
-
-  &:hover {
-    opacity: 0.8;
-  }
-
-  &.segmentContinuous {
-    background: rgba(24, 144, 255, 0.5);
-  }
-
-  &.segmentPerson {
-    background: rgba(82, 196, 26, 0.5);
-  }
-
-  &.segmentMotion {
-    background: rgba(250, 173, 20, 0.5);
-  }
-
-  &.segmentActive {
-    box-shadow: 0 0 0 2px #fff;
-  }
-}
-
-.timelineNowLine {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--error-color);
-  z-index: 10;
-}
 
 /* 响应式布局 */
+@media (max-width: 1400px) {
+  .playerContainer {
+    max-width: 800px;
+    height: 450px;
+  }
+}
+
 @media (max-width: 1200px) {
   .cameraSidebar {
     width: 240px;
     min-width: 240px;
+  }
+
+  .playerContainer {
+    max-width: 720px;
+    height: 405px;
   }
 }
 
@@ -647,6 +576,12 @@
   .cameraItem {
     flex-shrink: 0;
     margin-bottom: 0;
+  }
+
+  .playerContainer {
+    max-width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
   }
 
   .segmentGrid {

@@ -4,13 +4,18 @@
 """
 Recording controller for camera recording management API endpoints.
 Provides REST API for recording configuration, control, playback, and storage management.
+
+Segment ID format: "{camera_id}:{date}:{filename}"
+  e.g., "1180769232:2026-05-28:14-00-00_0001.ts"
+Maps to relative file path: "{camera_id}/{date}/{filename}"
 """
 
 import logging
 import os
-from datetime import datetime
+import urllib.parse
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -22,6 +27,7 @@ from miloco_server.schema.recording_schema import (
     RecordingConfigUpdate,
     RecordingMode,
     RecordingQuery,
+    RecordingSegment,
     RecordingSegmentListResponse,
     RecordingStatus,
     RecordingStorageStats,
@@ -32,6 +38,126 @@ from miloco_server.record_engine import get_record_engine
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/recording", tags=["recording"])
+
+
+# ─── Segment ID helpers ───────────────────────────────────────────────────────
+
+def segment_id_from_path(camera_id: str, date_str: str, filename: str) -> str:
+    """Build a segment ID from path components."""
+    return f"{camera_id}:{date_str}:{filename}"
+
+
+def segment_id_to_path(segment_id: str) -> str:
+    """Convert segment ID back to relative file path."""
+    # Also support URL-encoded IDs (legacy or from frontend encoding)
+    decoded = urllib.parse.unquote(segment_id)
+    return decoded.replace(":", "/")
+
+
+def parse_segment_id(segment_id: str) -> Tuple[str, str, str]:
+    """Parse segment ID into (camera_id, date_str, filename)."""
+    decoded = urllib.parse.unquote(segment_id)
+    parts = decoded.split(":", 2)
+    if len(parts) != 3:
+        raise HTTPException(status_code=400, detail=f"Invalid segment ID format: {segment_id}")
+    return parts[0], parts[1], parts[2]
+
+
+def _resolve_full_path(segment_id: str) -> Path:
+    """Resolve a segment ID to a full file system path."""
+    engine = get_record_engine()
+    relative_path = segment_id_to_path(segment_id)
+    return engine._storage.resolve_path(relative_path)
+
+
+def _segment_from_file(camera_id: str, date_str: str, filename: str, full_path: Path) -> Optional[RecordingSegment]:
+    """Build a RecordingSegment from a file system path."""
+    try:
+        stat = full_path.stat()
+        file_size = stat.st_size
+
+        # Parse start time from filename: HH-MM-SS_index.ts
+        time_part = filename.rsplit("_", 1)[0]  # "14-00-00"
+        start_time = datetime.fromisoformat(f"{date_str}T{time_part.replace('-', ':')}:00")
+
+        # Duration estimation from file size (rough: ~50KB/frame at 15fps for H.265, or from stream)
+        # Use a rough estimate: typical H.265 bitrate ~1-3 Mbps → 125-375 KB/s
+        # We'll set a placeholder and let video_info endpoint provide accurate duration
+        duration = max(1, int(file_size / (150 * 1024)))  # ~150KB/s rough estimate
+
+        segment_id = segment_id_from_path(camera_id, date_str, filename)
+        relative_path = f"{camera_id}/{date_str}/{filename}"
+
+        return RecordingSegment(
+            id=segment_id,
+            camera_id=camera_id,
+            start_time=start_time,
+            end_time=start_time + timedelta(seconds=duration),
+            duration_seconds=duration,
+            file_path=relative_path,
+            file_size_bytes=file_size,
+            recording_mode=RecordingMode.CONTINUOUS,
+            created_at=datetime.fromtimestamp(stat.st_mtime),
+        )
+    except Exception as e:
+        logger.warning("Failed to build segment from file %s: %s", full_path, e)
+        return None
+
+
+def scan_segments(
+    base_path: Path,
+    camera_id: Optional[str] = None,
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> Tuple[List[RecordingSegment], int]:
+    """Scan filesystem for recording segments."""
+    segments: List[RecordingSegment] = []
+
+    # Walk through camera/date/file structure
+    camera_dirs = [base_path / camera_id] if camera_id else sorted(base_path.iterdir())
+
+    for cam_dir in camera_dirs:
+        if not cam_dir.is_dir():
+            continue
+        cid = cam_dir.name
+
+        for date_dir in sorted(cam_dir.iterdir(), reverse=True):
+            if not date_dir.is_dir():
+                continue
+            date_str = date_dir.name
+
+            # Filter by date range
+            if start_time:
+                if date_str < start_time.strftime("%Y-%m-%d"):
+                    continue
+            if end_time:
+                if date_str > end_time.strftime("%Y-%m-%d"):
+                    continue
+
+            for ts_file in sorted(date_dir.iterdir(), reverse=True):
+                if not ts_file.is_file() or not ts_file.suffix == ".ts":
+                    continue
+
+                segment = _segment_from_file(cid, date_str, ts_file.name, ts_file)
+                if segment:
+                    # Filter by time range
+                    if start_time and segment.end_time and segment.end_time < start_time:
+                        continue
+                    if end_time and segment.start_time > end_time:
+                        continue
+                    segments.append(segment)
+
+    # Sort by start_time descending
+    segments.sort(key=lambda s: s.start_time, reverse=True)
+
+    total = len(segments)
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    paged = segments[start_idx:end_idx]
+
+    return paged, total
 
 
 @router.get("/config", summary="Get all recording configs", response_model=NormalResponse)
@@ -170,37 +296,27 @@ async def query_recording_segments(
     camera_id: Optional[str] = Query(None, description="Filter by camera ID"),
     start_time: Optional[str] = Query(None, description="Filter by start time (e.g., 2026-05-13T00:00:00)"),
     end_time: Optional[str] = Query(None, description="Filter by end time (e.g., 2026-05-13T23:59:59)"),
-    mode: Optional[str] = Query(None, description="Filter by recording mode"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     current_user: str = Depends(verify_token),
 ):
-    """Query recording segments with filters and pagination."""
+    """Query recording segments from filesystem (no database dependency)."""
     try:
-        from miloco_server.dao.recording_dao import RecordingSegmentDAO
-        segment_dao = RecordingSegmentDAO()
-        logger.info(f"[Recording API] Query segments: camera_id={camera_id}, start_time={start_time}, end_time={end_time}")
+        engine = get_record_engine()
+        base_path = engine._storage.base_path
 
-        if start_time:
-            start_dt = datetime.fromisoformat(start_time)
-        else:
-            start_dt = None
+        start_dt = datetime.fromisoformat(start_time) if start_time else None
+        end_dt = datetime.fromisoformat(end_time) if end_time else None
 
-        if end_time:
-            end_dt = datetime.fromisoformat(end_time)
-        else:
-            end_dt = None
-
-        logger.info(f"[Recording API] Parsed datetime: start_dt={start_dt}, end_dt={end_dt}")
-        recording_mode = RecordingMode(mode) if mode else None
-        segments, total = segment_dao.query(
+        segments, total = scan_segments(
+            base_path=base_path,
             camera_id=camera_id,
             start_time=start_dt,
             end_time=end_dt,
-            mode=recording_mode,
             page=page,
             page_size=page_size,
         )
+
         response = RecordingSegmentListResponse(
             total=total,
             page=page,
@@ -219,13 +335,17 @@ async def query_recording_segments(
 
 @router.get("/segments/{segment_id}", summary="Get segment detail", response_model=NormalResponse)
 async def get_segment_detail(segment_id: str, current_user: str = Depends(verify_token)):
-    """Get recording segment detail by ID."""
+    """Get recording segment detail by ID (filesystem-based)."""
     try:
-        from miloco_server.dao.recording_dao import RecordingSegmentDAO
-        segment_dao = RecordingSegmentDAO()
-        segment = segment_dao.get_by_id(segment_id)
+        full_path = _resolve_full_path(segment_id)
+        if not full_path.exists():
+            raise HTTPException(status_code=404, detail="Recording segment not found")
+
+        camera_id, date_str, filename = parse_segment_id(segment_id)
+        segment = _segment_from_file(camera_id, date_str, filename, full_path)
         if not segment:
             raise HTTPException(status_code=404, detail="Recording segment not found")
+
         return NormalResponse(
             code=0,
             message="Recording segment retrieved successfully",
@@ -238,20 +358,20 @@ async def get_segment_detail(segment_id: str, current_user: str = Depends(verify
         return NormalResponse(code=1, message=str(e), data=None)
 
 
-@router.get("/play/{segment_id}", summary="Play recording segment")
+@router.api_route("/play/{segment_id}", methods=["GET", "HEAD"], summary="Play recording segment")
 async def play_recording_segment(segment_id: str, request: Request):
     """Stream a recording segment file for playback. Supports HTTP Range requests."""
-    from miloco_server.dao.recording_dao import RecordingSegmentDAO
-
-    segment_dao = RecordingSegmentDAO()
-    segment = segment_dao.get_by_id(segment_id)
-    if not segment:
-        raise HTTPException(status_code=404, detail="Recording segment not found")
-
-    engine = get_record_engine()
-    full_path = engine.storage.resolve_path(segment.file_path)
+    full_path = _resolve_full_path(segment_id)
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Recording file not found on disk")
+
+    if request.method == "HEAD":
+        file_size = full_path.stat().st_size
+        return Response(status_code=200, headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+            "Content-Type": "video/mp4",
+        })
 
     file_size = full_path.stat().st_size
     range_header = request.headers.get("range")
@@ -320,15 +440,13 @@ async def get_segment_thumbnail(
 ):
     """Generate and serve a JPEG thumbnail for a recording segment."""
     try:
-        from miloco_server.dao.recording_dao import RecordingSegmentDAO
-
-        segment_dao = RecordingSegmentDAO()
-        segment = segment_dao.get_by_id(segment_id)
-        if not segment:
-            raise HTTPException(status_code=404, detail="Recording segment not found")
-
         engine = get_record_engine()
-        thumbnail_path = engine.storage.generate_thumbnail(segment.file_path, time_offset=offset)
+        relative_path = segment_id_to_path(segment_id)
+        full_path = engine._storage.resolve_path(relative_path)
+        if not full_path.exists():
+            raise HTTPException(status_code=404, detail="Recording file not found on disk")
+
+        thumbnail_path = engine._storage.generate_thumbnail(relative_path, time_offset=offset)
         if not thumbnail_path or not thumbnail_path.exists():
             raise HTTPException(status_code=404, detail="Thumbnail generation failed")
 
@@ -348,23 +466,20 @@ async def get_segment_thumbnail(
 async def get_segment_video_info(segment_id: str):
     """Detect and return video codec, resolution, and duration info."""
     try:
-        from miloco_server.dao.recording_dao import RecordingSegmentDAO
-
-        segment_dao = RecordingSegmentDAO()
-        segment = segment_dao.get_by_id(segment_id)
-        if not segment:
-            raise HTTPException(status_code=404, detail="Recording segment not found")
-
         engine = get_record_engine()
-        video_info = engine.storage.detect_video_info(segment.file_path)
+        relative_path = segment_id_to_path(segment_id)
+        full_path = engine._storage.resolve_path(relative_path)
+        if not full_path.exists():
+            raise HTTPException(status_code=404, detail="Recording file not found on disk")
+
+        video_info = engine._storage.detect_video_info(relative_path)
         if not video_info:
-            logger.warning("[Recording API] Could not detect video info for segment %s (mode=%s, path=%s)",
-                           segment_id, segment.recording_mode, segment.file_path)
+            logger.warning("[Recording API] Could not detect video info for segment %s", segment_id)
             return NormalResponse(code=0, message="Could not detect video info", data=None)
 
         needs_transcode = video_info.get('codec') in ('hevc', 'h265')
-        logger.info("[Recording API] Video info for %s (mode=%s): codec=%s, %sx%s, duration=%.1fs, needs_transcode=%s",
-                    segment_id, segment.recording_mode, video_info.get('codec'),
+        logger.info("[Recording API] Video info for %s: codec=%s, %sx%s, duration=%.1fs, needs_transcode=%s",
+                    segment_id, video_info.get('codec'),
                     video_info.get('width', 0), video_info.get('height', 0),
                     video_info.get('duration', 0), needs_transcode)
 
@@ -383,24 +498,22 @@ async def get_segment_video_info(segment_id: str):
         return NormalResponse(code=1, message=str(e), data=None)
 
 
-@router.get("/transcode/{segment_id}", summary="Transcode and play H.265 as H.264")
+@router.api_route("/transcode/{segment_id}", methods=["GET", "HEAD"], summary="Transcode and play H.265 as H.264")
 async def transcode_segment(segment_id: str, request: Request):
     """Transcode a H.265 segment to H.264 on-the-fly for browser compatibility."""
+    if request.method == "HEAD":
+        full_path = _resolve_full_path(segment_id)
+        if not full_path.exists():
+            raise HTTPException(status_code=404, detail="Recording file not found on disk")
+        return Response(status_code=200, headers={"Accept-Ranges": "bytes", "Content-Type": "video/mp4"})
+
     import asyncio
     import os
     import shutil
     import subprocess
     import tempfile
 
-    from miloco_server.dao.recording_dao import RecordingSegmentDAO
-
-    segment_dao = RecordingSegmentDAO()
-    segment = segment_dao.get_by_id(segment_id)
-    if not segment:
-        raise HTTPException(status_code=404, detail="Recording segment not found")
-
-    engine = get_record_engine()
-    full_path = engine.storage.resolve_path(segment.file_path)
+    full_path = _resolve_full_path(segment_id)
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Recording file not found on disk")
 
@@ -474,24 +587,25 @@ async def transcode_segment(segment_id: str, request: Request):
 async def get_hls_playlist(segment_id: str):
     """Generate an HLS VOD playlist wrapping a single recording segment for hls.js playback."""
     import math
-    from miloco_server.dao.recording_dao import RecordingSegmentDAO
 
-    segment_dao = RecordingSegmentDAO()
-    segment = segment_dao.get_by_id(segment_id)
-    if not segment:
-        raise HTTPException(status_code=404, detail="Segment not found")
+    full_path = _resolve_full_path(segment_id)
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="Segment file not found")
 
-    duration = segment.duration_seconds or 1
+    # Estimate duration from file size
+    file_size = full_path.stat().st_size
+    duration = max(1, int(file_size / (150 * 1024)))  # ~150KB/s rough
     target_duration = max(1, math.ceil(duration))
 
-    # ../play/{id} resolves from /hls/{id}/index.m3u8 to /play/{id}
+    # Use absolute path to avoid relative URL ambiguity in hls.js
+    encoded_id = urllib.parse.quote(segment_id, safe='')
     playlist = (
         "#EXTM3U\n"
         "#EXT-X-VERSION:3\n"
         f"#EXT-X-TARGETDURATION:{target_duration}\n"
         "#EXT-X-MEDIA-SEQUENCE:0\n"
         f"#EXTINF:{duration:.3f},\n"
-        f"../play/{segment_id}\n"
+        f"/api/recording/play/{encoded_id}\n"
         "#EXT-X-ENDLIST\n"
     )
 
@@ -507,18 +621,15 @@ async def get_hls_playlist(segment_id: str):
 
 @router.delete("/segments/{segment_id}", summary="Delete recording segment", response_model=NormalResponse)
 async def delete_recording_segment(segment_id: str, current_user: str = Depends(verify_token)):
-    """Delete a recording segment."""
+    """Delete a recording segment file from disk."""
     try:
-        from miloco_server.dao.recording_dao import RecordingSegmentDAO
-
-        segment_dao = RecordingSegmentDAO()
-        segment = segment_dao.get_by_id(segment_id)
-        if not segment:
+        engine = get_record_engine()
+        relative_path = segment_id_to_path(segment_id)
+        full_path = engine._storage.resolve_path(relative_path)
+        if not full_path.exists():
             raise HTTPException(status_code=404, detail="Recording segment not found")
         
-        engine = get_record_engine()
-        await engine.storage.delete_segment(segment.file_path)
-        segment_dao.delete_by_id(segment_id)
+        await engine._storage.delete_segment(relative_path)
         return NormalResponse(code=0, message="Recording segment deleted successfully", data=None)
     except HTTPException:
         raise
@@ -529,28 +640,25 @@ async def delete_recording_segment(segment_id: str, current_user: str = Depends(
 
 @router.post("/segments/batch-delete", summary="Batch delete recording segments", response_model=NormalResponse)
 async def batch_delete_recording_segments(request: Request, current_user: str = Depends(verify_token)):
-    """Delete multiple recording segments in batch."""
+    """Delete multiple recording segment files from disk."""
     try:
         body = await request.json()
         segment_ids = body.get("segment_ids", [])
         if not segment_ids or not isinstance(segment_ids, list):
             raise HTTPException(status_code=400, detail="segment_ids must be a non-empty list")
 
-        from miloco_server.dao.recording_dao import RecordingSegmentDAO
-
-        segment_dao = RecordingSegmentDAO()
         engine = get_record_engine()
         deleted_count = 0
         errors = []
 
         for segment_id in segment_ids:
             try:
-                segment = segment_dao.get_by_id(segment_id)
-                if not segment:
-                    errors.append(f"Segment {segment_id} not found")
+                relative_path = segment_id_to_path(segment_id)
+                full_path = engine._storage.resolve_path(relative_path)
+                if not full_path.exists():
+                    errors.append(f"Segment file not found: {segment_id}")
                     continue
-                await engine.storage.delete_segment(segment.file_path)
-                segment_dao.delete_by_id(segment_id)
+                await engine._storage.delete_segment(relative_path)
                 deleted_count += 1
             except Exception as e:
                 errors.append(f"Failed to delete {segment_id}: {str(e)}")

@@ -31,6 +31,9 @@ ARG PIP_INDEX_URL
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# Install ffmpeg for recording thumbnail generation and transcoding
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 # Set working directory.
 WORKDIR /app
 
