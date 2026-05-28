@@ -38,6 +38,7 @@ const isHEVCSupported = () => {
 
 const ProfessionalPlayer = ({
   segment,
+  segments = [],  // All segments for timeline display
   cameraName = '',
   autoPlay = true,
   onPlayNext,
@@ -457,6 +458,43 @@ const ProfessionalPlayer = ({
 
   const progressPercent = duration ? (currentTime / duration) * 100 : 0;
   const bufferedPercent = duration ? (buffered / duration) * 100 : 0;
+  
+  // Compute segment markers for the unified timeline
+  const segmentMarkers = useMemo(() => {
+    if (!segments.length || !segment) return [];
+    
+    // Sort segments by start_time
+    const sorted = [...segments].sort(
+      (a, b) => new Date(a.start_time) - new Date(b.start_time)
+    );
+    
+    // Find the time range
+    const firstStart = new Date(sorted[0].start_time);
+    const lastSeg = sorted[sorted.length - 1];
+    const lastEnd = lastSeg.is_live 
+      ? new Date()  // Live segment uses current time
+      : new Date(lastSeg.end_time || lastSeg.start_time);
+    
+    const totalRange = (lastEnd - firstStart) / 1000; // in seconds
+    if (totalRange <= 0) return [];
+    
+    return sorted.map((seg, idx) => {
+      const segStart = new Date(seg.start_time);
+      const segEnd = seg.is_live 
+        ? new Date()
+        : new Date(seg.end_time || seg.start_time);
+      const left = ((segStart - firstStart) / 1000 / totalRange) * 100;
+      const width = Math.max(((segEnd - segStart) / 1000 / totalRange) * 100, 0.5);
+      
+      return {
+        id: seg.id,
+        isActive: seg.id === segment?.id,
+        isLive: seg.is_live,
+        left,
+        width,
+      };
+    });
+  }, [segments, segment]);
 
   if (!segment) {
     return (
@@ -562,6 +600,15 @@ const ProfessionalPlayer = ({
             <div className={styles.progressPlayed} style={{ width: `${progressPercent}%` }}>
               <div className={styles.progressHandle} />
             </div>
+            {/* Segment markers on the timeline */}
+            {segmentMarkers.map((marker) => (
+              <div
+                key={marker.id}
+                className={`${styles.segmentMarker} ${marker.isActive ? styles.segmentMarkerActive : ''} ${marker.isLive ? styles.segmentMarkerLive : ''}`}
+                style={{ left: `${marker.left}%`, width: `${marker.width}%` }}
+                title={marker.isLive ? 'Live recording' : ''}
+              />
+            ))}
           </div>
           <span className={styles.timeLabel}>{formatTime(duration)}</span>
         </div>

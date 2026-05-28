@@ -190,6 +190,37 @@
   pointer-events: none;
 }
 
+// Segment markers on the progress bar timeline
+.segmentMarker {
+  position: absolute;
+  top: 0;
+  height: 6px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.15);
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+  z-index: 1;
+  transition: height 0.15s, background 0.2s;
+  min-width: 2px;
+}
+
+.segmentMarkerActive {
+  background: rgba(0, 189, 195, 0.35);
+  border-color: rgba(0, 189, 195, 0.5);
+}
+
+.segmentMarkerLive {
+  animation: segmentPulse 2s ease-in-out infinite;
+  background: rgba(255, 77, 79, 0.3);
+  border-color: rgba(255, 77, 79, 0.5);
+}
+
+@keyframes segmentPulse {
+  0%, 100% { background: rgba(255, 77, 79, 0.3); }
+  50% { background: rgba(255, 77, 79, 0.6); }
+}
+
 .controlBar {
   display: flex;
   align-items: center;

@@ -181,6 +181,7 @@ export const deleteRecordingSegment = (segmentId) => deleteApi(`/api/recording/s
 export const deleteRecordingSegmentsBatch = (segmentIds) =>
   postApi('/api/recording/segments/batch-delete', { segment_ids: segmentIds });
 export const getRecordingPlaybackUrl = (segmentId) => `/api/recording/play/${segmentId}`;
+export const getRecordingHlsUrl = (segmentId) => `/api/recording/hls/${segmentId}/index.m3u8`;
 export const getRecordingThumbnailUrl = (segmentId, offset = 1) => `/api/recording/thumbnail/${segmentId}?offset=${offset}`;
 export const getRecordingVideoInfo = (segmentId) => getApi(`/api/recording/info/${segmentId}`);
 export const getRecordingTranscodeUrl = (segmentId) => `/api/recording/transcode/${segmentId}`;

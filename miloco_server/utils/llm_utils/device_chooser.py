@@ -67,6 +67,31 @@ class DeviceChooser(BaseLLMUtil):
         user_msg += f"Available Device information: {json.dumps(device_info)}"
         self._chat_history.add_content("user", user_msg)
 
+    def _init_conversation_prefiltered(
+        self,
+        pre_cameras: List[CameraInfo],
+        pre_ha_devices: List[HADeviceInfo],
+    ) -> None:
+        """Same as ``_init_conversation`` but uses a pre-filtered device subset."""
+        self._chat_history.add_content("system", self._get_system_prompt())
+        device_info = {
+            "cameras": [camera.model_dump() for camera in pre_cameras],
+            "ha_devices": [device.model_dump() for device in pre_ha_devices],
+        }
+        user_msg = f"User condition: {self._condition}, "
+        if self._location:
+            user_msg += (
+                f"User desired location: {self._location} "
+                f"(devices below are already pre-filtered to this location), "
+            )
+        if self._choose_camera_device_ids:
+            user_msg += f"Currently focused camera IDs: {self._choose_camera_device_ids}, "
+        if self._choose_ha_device_ids:
+            user_msg += f"Currently focused HA device IDs: {self._choose_ha_device_ids}, "
+
+        user_msg += f"Available Device information: {json.dumps(device_info)}"
+        self._chat_history.add_content("user", user_msg)
+
     async def _choose_devices(
             self) -> tuple[List[CameraInfo], List[CameraInfo], List[HADeviceInfo], List[HADeviceInfo]]:
         """Choose cameras and HA devices"""
@@ -108,7 +133,42 @@ class DeviceChooser(BaseLLMUtil):
                 else:
                     return self._all_cameras, self._all_cameras, [], self._all_ha_devices
 
-            self._init_conversation()
+            # ── Pre-filter: only send location-matching devices to the LLM ──
+            #    Without this, 1000+ HA devices bloat the prompt to 15k+ tokens,
+            #    making the LLM call agonisingly slow (57 s in observed logs).
+            if self._location:
+                loc_lower = self._location.strip().lower()
+                # Cameras: match by room_name or home_name (fuzzy prefix)
+                pre_cameras = [
+                    c for c in self._all_cameras
+                    if (c.room_name and loc_lower in c.room_name.lower())
+                    or (c.home_name and loc_lower in c.home_name.lower())
+                ]
+                # HA devices: exact room_name match first, then fuzzy
+                pre_ha = [
+                    d for d in self._all_ha_devices
+                    if d.room_name and d.room_name.strip().lower() == loc_lower
+                ]
+                if not pre_ha:  # fallback to fuzzy
+                    pre_ha = [
+                        d for d in self._all_ha_devices
+                        if d.room_name and loc_lower in d.room_name.lower()
+                    ]
+            else:
+                pre_cameras = self._all_cameras
+                pre_ha = self._all_ha_devices
+
+            logger.info(
+                "[%s] Pre-filtered devices for LLM: %d cameras, %d HA devices (from %d total)",
+                self._request_id, len(pre_cameras), len(pre_ha), len(self._all_ha_devices),
+            )
+
+            if not pre_cameras and not pre_ha:
+                logger.info("[%s] No devices matching location '%s', returning empty",
+                            self._request_id, self._location)
+                return [], self._all_cameras, [], self._all_ha_devices
+
+            self._init_conversation_prefiltered(pre_cameras, pre_ha)
             content, _, _ = await self._call_llm()
 
             if not content:

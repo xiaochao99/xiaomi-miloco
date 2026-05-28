@@ -140,9 +140,13 @@ class LocalDefaultMcp(LocalMCPBase):
                 "此工具会返回对画面的完整描述，你可以直接将返回内容作为最终答案输出。"
                 "每个问题只需调用一次此工具，收到结果后不要再重复调用，"
                 "请直接基于返回内容整理后输出 <final_answer>。"
+                "⚠️ 注意：仅在用户明确要求查看摄像头画面时使用。"
+                "用户告知个人信息（如车牌号、地址、电话号码等）时不应调用此工具。"
                 "Tool for understanding camera images. Returns a complete description of the scene."
                 "Use the returned content directly as your final answer. "
-                "Only call this tool ONCE per query - do NOT call it again after receiving the result."
+                "Only call this tool ONCE per query - do NOT call it again after receiving the result. "
+                "⚠️ Only use when the user explicitly asks about camera footage. "
+                "Do NOT call this tool when the user is sharing personal information."
             ))
         self.mcp.add_tool(tool=vision_tool)
 

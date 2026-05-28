@@ -60,13 +60,14 @@ class RecordingSegment(BaseModel):
     id: str = Field(..., description="Segment ID (UUID)")
     camera_id: str = Field(..., description="Camera device ID")
     start_time: datetime = Field(..., description="Recording start time")
-    end_time: datetime = Field(..., description="Recording end time")
+    end_time: Optional[datetime] = Field(default=None, description="Recording end time (None if still recording)")
     duration_seconds: int = Field(..., description="Duration in seconds")
     file_path: str = Field(..., description="Relative file path")
     file_size_bytes: int = Field(default=0, description="File size in bytes")
     recording_mode: RecordingMode = Field(..., description="Recording mode when segment was created")
     trigger_event: Optional[str] = Field(default=None, description="Trigger event description")
-    created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
+    created_at: Optional[datetime] = Field(default=None, description="Creation timestamp")
+    is_live: bool = Field(default=False, description="Whether this segment is currently being recorded")
 
 
 class RecordingQuery(BaseModel):

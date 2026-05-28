@@ -27,7 +27,7 @@ from miloco_server.schema.recording_schema import (
     RecordingStorageStats,
     TimePeriod,
 )
-from miloco_server.service.recording_service import get_recording_service
+from miloco_server.record_engine import get_record_engine
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,8 @@ router = APIRouter(prefix="/recording", tags=["recording"])
 async def get_all_recording_configs(current_user: str = Depends(verify_token)):
     """Get recording configurations for all cameras."""
     try:
-        service = get_recording_service()
-        configs = service.get_all_configs()
+        engine = get_record_engine()
+        configs = engine.get_all_configs()
         return NormalResponse(
             code=0,
             message="Recording configurations retrieved successfully",
@@ -54,8 +54,8 @@ async def get_all_recording_configs(current_user: str = Depends(verify_token)):
 async def get_recording_config(camera_id: str, current_user: str = Depends(verify_token)):
     """Get recording configuration for a specific camera."""
     try:
-        service = get_recording_service()
-        config = service.get_config(camera_id)
+        engine = get_record_engine()
+        config = engine.get_config(camera_id)
         if not config:
             return NormalResponse(code=0, message="No recording config found", data=None)
         return NormalResponse(
@@ -78,8 +78,8 @@ async def update_recording_config(
     try:
         body = await request.json()
         logger.info(f"Received recording config update for {camera_id}: {body}")
-        service = get_recording_service()
-        existing = service.get_config(camera_id)
+        engine = get_record_engine()
+        existing = engine.get_config(camera_id)
         
         base = existing if existing else None
         enabled = body.get("enabled", base.enabled if base else False)
@@ -102,7 +102,7 @@ async def update_recording_config(
             segment_duration=segment_duration,
         )
         logger.info(f"Updating recording config for {camera_id}: enabled={enabled}, mode={mode}")
-        success = await service.update_config(config)
+        success = await engine.update_config(config)
         if success:
             logger.info(f"Recording config updated successfully for {camera_id}")
             return NormalResponse(
@@ -121,8 +121,8 @@ async def update_recording_config(
 async def delete_recording_config(camera_id: str, current_user: str = Depends(verify_token)):
     """Delete recording configuration for a camera and stop its recording."""
     try:
-        service = get_recording_service()
-        success = await service.delete_config(camera_id)
+        engine = get_record_engine()
+        success = await engine.delete_config(camera_id)
         if success:
             return NormalResponse(code=0, message="Recording configuration deleted successfully", data=None)
         return NormalResponse(code=1, message="No recording config found for camera", data=None)
@@ -135,8 +135,8 @@ async def delete_recording_config(camera_id: str, current_user: str = Depends(ve
 async def get_all_recording_statuses(current_user: str = Depends(verify_token)):
     """Get recording status for all configured cameras."""
     try:
-        service = get_recording_service()
-        statuses = service.get_all_statuses()
+        engine = get_record_engine()
+        statuses = engine.get_all_statuses()
         return NormalResponse(
             code=0,
             message="Recording statuses retrieved successfully",
@@ -151,8 +151,8 @@ async def get_all_recording_statuses(current_user: str = Depends(verify_token)):
 async def get_recording_status(camera_id: str, current_user: str = Depends(verify_token)):
     """Get recording status for a specific camera."""
     try:
-        service = get_recording_service()
-        status = service.get_status(camera_id)
+        engine = get_record_engine()
+        status = engine.get_status(camera_id)
         if not status:
             return NormalResponse(code=0, message="No recording config found for camera", data=None)
         return NormalResponse(
@@ -242,14 +242,14 @@ async def get_segment_detail(segment_id: str, current_user: str = Depends(verify
 async def play_recording_segment(segment_id: str, request: Request):
     """Stream a recording segment file for playback. Supports HTTP Range requests."""
     from miloco_server.dao.recording_dao import RecordingSegmentDAO
-    from miloco_server.service.recording_storage import recording_storage
 
     segment_dao = RecordingSegmentDAO()
     segment = segment_dao.get_by_id(segment_id)
     if not segment:
         raise HTTPException(status_code=404, detail="Recording segment not found")
 
-    full_path = recording_storage.resolve_path(segment.file_path)
+    engine = get_record_engine()
+    full_path = engine.storage.resolve_path(segment.file_path)
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Recording file not found on disk")
 
@@ -321,14 +321,14 @@ async def get_segment_thumbnail(
     """Generate and serve a JPEG thumbnail for a recording segment."""
     try:
         from miloco_server.dao.recording_dao import RecordingSegmentDAO
-        from miloco_server.service.recording_storage import recording_storage
 
         segment_dao = RecordingSegmentDAO()
         segment = segment_dao.get_by_id(segment_id)
         if not segment:
             raise HTTPException(status_code=404, detail="Recording segment not found")
 
-        thumbnail_path = recording_storage.generate_thumbnail(segment.file_path, time_offset=offset)
+        engine = get_record_engine()
+        thumbnail_path = engine.storage.generate_thumbnail(segment.file_path, time_offset=offset)
         if not thumbnail_path or not thumbnail_path.exists():
             raise HTTPException(status_code=404, detail="Thumbnail generation failed")
 
@@ -349,14 +349,14 @@ async def get_segment_video_info(segment_id: str):
     """Detect and return video codec, resolution, and duration info."""
     try:
         from miloco_server.dao.recording_dao import RecordingSegmentDAO
-        from miloco_server.service.recording_storage import recording_storage
 
         segment_dao = RecordingSegmentDAO()
         segment = segment_dao.get_by_id(segment_id)
         if not segment:
             raise HTTPException(status_code=404, detail="Recording segment not found")
 
-        video_info = recording_storage.detect_video_info(segment.file_path)
+        engine = get_record_engine()
+        video_info = engine.storage.detect_video_info(segment.file_path)
         if not video_info:
             logger.warning("[Recording API] Could not detect video info for segment %s (mode=%s, path=%s)",
                            segment_id, segment.recording_mode, segment.file_path)
@@ -393,14 +393,14 @@ async def transcode_segment(segment_id: str, request: Request):
     import tempfile
 
     from miloco_server.dao.recording_dao import RecordingSegmentDAO
-    from miloco_server.service.recording_storage import recording_storage
 
     segment_dao = RecordingSegmentDAO()
     segment = segment_dao.get_by_id(segment_id)
     if not segment:
         raise HTTPException(status_code=404, detail="Recording segment not found")
 
-    full_path = recording_storage.resolve_path(segment.file_path)
+    engine = get_record_engine()
+    full_path = engine.storage.resolve_path(segment.file_path)
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Recording file not found on disk")
 
@@ -466,18 +466,58 @@ async def transcode_segment(segment_id: str, request: Request):
         raise HTTPException(status_code=500, detail=f"Transcode failed: {str(e)}")
 
 
+@router.get(
+    "/hls/{segment_id}/index.m3u8",
+    summary="Get HLS playlist for recording segment",
+    response_class=Response,
+)
+async def get_hls_playlist(segment_id: str):
+    """Generate an HLS VOD playlist wrapping a single recording segment for hls.js playback."""
+    import math
+    from miloco_server.dao.recording_dao import RecordingSegmentDAO
+
+    segment_dao = RecordingSegmentDAO()
+    segment = segment_dao.get_by_id(segment_id)
+    if not segment:
+        raise HTTPException(status_code=404, detail="Segment not found")
+
+    duration = segment.duration_seconds or 1
+    target_duration = max(1, math.ceil(duration))
+
+    # ../play/{id} resolves from /hls/{id}/index.m3u8 to /play/{id}
+    playlist = (
+        "#EXTM3U\n"
+        "#EXT-X-VERSION:3\n"
+        f"#EXT-X-TARGETDURATION:{target_duration}\n"
+        "#EXT-X-MEDIA-SEQUENCE:0\n"
+        f"#EXTINF:{duration:.3f},\n"
+        f"../play/{segment_id}\n"
+        "#EXT-X-ENDLIST\n"
+    )
+
+    return Response(
+        content=playlist,
+        media_type="application/vnd.apple.mpegurl",
+        headers={
+            "Cache-Control": "no-cache",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
 @router.delete("/segments/{segment_id}", summary="Delete recording segment", response_model=NormalResponse)
 async def delete_recording_segment(segment_id: str, current_user: str = Depends(verify_token)):
     """Delete a recording segment."""
     try:
         from miloco_server.dao.recording_dao import RecordingSegmentDAO
-        from miloco_server.service.recording_storage import recording_storage
 
         segment_dao = RecordingSegmentDAO()
         segment = segment_dao.get_by_id(segment_id)
         if not segment:
             raise HTTPException(status_code=404, detail="Recording segment not found")
-        await recording_storage.delete_segment(segment.file_path)
+        
+        engine = get_record_engine()
+        await engine.storage.delete_segment(segment.file_path)
         segment_dao.delete_by_id(segment_id)
         return NormalResponse(code=0, message="Recording segment deleted successfully", data=None)
     except HTTPException:
@@ -497,9 +537,9 @@ async def batch_delete_recording_segments(request: Request, current_user: str = 
             raise HTTPException(status_code=400, detail="segment_ids must be a non-empty list")
 
         from miloco_server.dao.recording_dao import RecordingSegmentDAO
-        from miloco_server.service.recording_storage import recording_storage
 
         segment_dao = RecordingSegmentDAO()
+        engine = get_record_engine()
         deleted_count = 0
         errors = []
 
@@ -509,7 +549,7 @@ async def batch_delete_recording_segments(request: Request, current_user: str = 
                 if not segment:
                     errors.append(f"Segment {segment_id} not found")
                     continue
-                await recording_storage.delete_segment(segment.file_path)
+                await engine.storage.delete_segment(segment.file_path)
                 segment_dao.delete_by_id(segment_id)
                 deleted_count += 1
             except Exception as e:
@@ -532,8 +572,8 @@ async def batch_delete_recording_segments(request: Request, current_user: str = 
 async def get_storage_stats(current_user: str = Depends(verify_token)):
     """Get recording storage statistics."""
     try:
-        service = get_recording_service()
-        stats = service.get_storage_stats()
+        engine = get_record_engine()
+        stats = engine.get_storage_stats()
         return NormalResponse(
             code=0,
             message="Storage statistics retrieved successfully",
@@ -548,8 +588,8 @@ async def get_storage_stats(current_user: str = Depends(verify_token)):
 async def trigger_cleanup(current_user: str = Depends(verify_token)):
     """Manually trigger cleanup of expired recording segments."""
     try:
-        service = get_recording_service()
-        deleted_count = await service.manual_cleanup()
+        engine = get_record_engine()
+        deleted_count = await engine.manual_cleanup()
         return NormalResponse(
             code=0,
             message=f"Cleanup completed, deleted {deleted_count} expired segments",

@@ -296,9 +296,9 @@ class MiotProxy:
             
             # Register camera handler with recording service
             try:
-                from miloco_server.service.recording_service import get_recording_service
-                recording_service = get_recording_service()
-                await recording_service.register_camera_handler(camera_info.did, camera_img_manager)
+                from miloco_server.record_engine import get_record_engine
+                engine = get_record_engine()
+                await engine.register_camera_handler(camera_info.did, camera_img_manager)
                 logger.info("[MIoT] Registered camera %s with recording service", camera_info.did)
             except Exception as e:
                 logger.warning("[MIoT] Could not register camera %s with recording service: %s", camera_info.did, e)
@@ -329,9 +329,9 @@ class MiotProxy:
             
             # Register camera handler with recording service
             try:
-                from miloco_server.service.recording_service import get_recording_service
-                recording_service = get_recording_service()
-                await recording_service.register_camera_handler(camera_info.did, camera_img_manager)
+                from miloco_server.record_engine import get_record_engine
+                engine = get_record_engine()
+                await engine.register_camera_handler(camera_info.did, camera_img_manager)
                 logger.info("[MIoT] Registered RTSP camera %s with recording service", camera_info.did)
             except Exception as e:
                 logger.warning("[MIoT] Could not register RTSP camera %s with recording service: %s", camera_info.did, e)
@@ -432,9 +432,9 @@ class MiotProxy:
                 if isinstance(manager, CameraVisionHandler) and camera_did not in cameras:
                     # Unregister from recording service
                     try:
-                        from miloco_server.service.recording_service import get_recording_service
-                        recording_service = get_recording_service()
-                        await recording_service.unregister_camera_handler(camera_did)
+                        from miloco_server.record_engine import get_record_engine
+                        engine = get_record_engine()
+                        await engine.unregister_camera_handler(camera_did)
                         logger.info("[MIoT] Unregistered camera %s from recording service", camera_did)
                     except Exception as e:
                         logger.warning("[MIoT] Could not unregister camera %s from recording service: %s", camera_did, e)
@@ -484,9 +484,9 @@ class MiotProxy:
             if isinstance(manager, RtspCameraVisionHandler) and camera_did not in rtsp_info:
                 # Unregister from recording service
                 try:
-                    from miloco_server.service.recording_service import get_recording_service
-                    recording_service = get_recording_service()
-                    await recording_service.unregister_camera_handler(camera_did)
+                    from miloco_server.record_engine import get_record_engine
+                    engine = get_record_engine()
+                    await engine.unregister_camera_handler(camera_did)
                     logger.info("[MIoT] Unregistered RTSP camera %s from recording service", camera_did)
                 except Exception as e:
                     logger.warning("[MIoT] Could not unregister RTSP camera %s from recording service: %s", camera_did, e)
@@ -501,9 +501,9 @@ class MiotProxy:
                 continue
             # Unregister from recording service
             try:
-                from miloco_server.service.recording_service import get_recording_service
-                recording_service = get_recording_service()
-                await recording_service.unregister_camera_handler(camera_did)
+                from miloco_server.record_engine import get_record_engine
+                engine = get_record_engine()
+                await engine.unregister_camera_handler(camera_did)
                 logger.info("[MIoT] Unregistered camera %s from recording service", camera_did)
             except Exception as e:
                 logger.warning("[MIoT] Could not unregister camera %s from recording service: %s", camera_did, e)

@@ -171,20 +171,11 @@ async def _init_memory_service():
 
 
 async def _init_recording_service():
-    """Initialize the recording service."""
+    """Initialize the recording service (RecordEngine)."""
     try:
-        from miloco_server.service.recording_service import get_recording_service
-        from miloco_server.config.normal_config import RECORDING_CONFIG
+        from miloco_server.record_engine import init_record_engine
 
-        service = get_recording_service()
-        service.configure(
-            segment_duration=int(RECORDING_CONFIG.get("segment_duration", 300)),
-            motion_buffer_seconds=int(RECORDING_CONFIG.get("motion_buffer_seconds", 30)),
-            person_buffer_seconds=int(RECORDING_CONFIG.get("person_buffer_seconds", 30)),
-            motion_check_interval=float(RECORDING_CONFIG.get("motion_check_interval", 1.0)),
-            motion_threshold=int(RECORDING_CONFIG.get("motion_threshold", 5)),
-        )
-        await service.initialize()
+        engine = await init_record_engine()
 
         # Register detection event callback for person-mode recording
         try:
@@ -194,24 +185,24 @@ async def _init_recording_service():
             detection_service = await get_detection_service()
 
             async def on_detection_event_for_recording(event: StreamDetectionEvent):
-                """Forward person detection events to recording service."""
+                """Forward person detection events to recording engine."""
                 if event.detections:
                     has_person = any(
                         d.class_name.lower() in ("person", "people")
                         for d in event.detections
                     )
                     if has_person:
-                        await service.on_person_detected(event.camera_id)
+                        await engine.on_person_detected(event.camera_id)
 
             detection_service.register_event_callback(on_detection_event_for_recording)
-            logger.info("Recording service registered with detection service for person-mode triggers")
+            logger.info("RecordEngine registered with detection service for person-mode triggers")
         except Exception as e:
-            logger.warning("Could not register recording service with detection service: %s", e)
+            logger.warning("Could not register RecordEngine with detection service: %s", e)
 
-        logger.info("Recording service initialized successfully")
+        logger.info("RecordEngine initialized successfully")
 
     except Exception as e:
-        logger.error(f"Recording service initialization error: {e}")
+        logger.error(f"RecordEngine initialization error: {e}")
 
 
 async def _init_xiaomi_bridge():
@@ -258,6 +249,17 @@ async def _init_miot_after_startup():
             logger.info("MIoT devices refreshed successfully")
         except Exception as e:
             logger.warning("MIoT devices refresh failed: %s", e)
+
+        # 2.5. Register camera handlers with RecordEngine
+        # This must be after MIoT refresh (cameras exist) and after RecordEngine init
+        try:
+            from miloco_server.record_engine import get_record_engine
+            engine = get_record_engine()
+            for camera_id, handler in miot_proxy._camera_img_managers.items():
+                await engine.register_camera_handler(camera_id, handler)
+            logger.info("Registered %d camera handlers with RecordEngine", len(miot_proxy._camera_img_managers))
+        except Exception as e:
+            logger.warning("Could not register cameras with RecordEngine: %s", e)
 
         # 3. Initialize MCP clients (MIoT scenarios etc)
         try:
@@ -437,12 +439,12 @@ async def shutdown_event():
 
     # Shutdown recording service
     try:
-        from miloco_server.service.recording_service import get_recording_service
-        service = get_recording_service()
-        await service.shutdown()
-        logger.info("Recording service shutdown completed")
+        from miloco_server.record_engine import get_record_engine
+        engine = get_record_engine()
+        await engine.shutdown()
+        logger.info("RecordEngine shutdown completed")
     except Exception as e:
-        logger.error(f"Recording service shutdown error: {e}")
+        logger.error(f"RecordEngine shutdown error: {e}")
 
     logger.info("Application has been shut down")
 

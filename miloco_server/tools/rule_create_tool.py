@@ -4,6 +4,7 @@
 """Rule creation tool module for creating and managing automation rules."""
 
 import asyncio
+import json
 import logging
 from typing import List, Optional
 
@@ -58,6 +59,9 @@ class RuleCreateTool(Actor):
         self._future = None
         self._camera_ids = camera_ids
         self._mcp_ids = mcp_ids
+        # Store the original rule sent to the frontend so we can patch
+        # missing fields (e.g. ``trigger``) when the user saves.
+        self._sent_trigger_rule: Optional[TriggerRuleV2] = None
         logger.info("[%s] RuleCreateTool actor initialized", self._request_id)
 
     def receiveMessage(self, msg, sender):
@@ -87,7 +91,23 @@ class RuleCreateTool(Actor):
         """Handle events"""
         try:
             if event.judge_type("Confirmation", "SaveRuleConfirmResult"):
-                save_rule_confirm_result = Confirmation.SaveRuleConfirmResult.model_validate_json(event.payload)
+                raw = json.loads(event.payload)
+                save_rule_confirm_result = Confirmation.SaveRuleConfirmResult(**raw)
+                # ── Patch: if the frontend returned a rule without ``trigger``,
+                #     reconstruct it from the original rule that was sent.
+                if (save_rule_confirm_result.rule is not None
+                        and self._sent_trigger_rule is not None):
+                    rule = save_rule_confirm_result.rule
+                    if rule.trigger is None and self._sent_trigger_rule.trigger is not None:
+                        logger.info(
+                            "[%s] Frontend rule missing trigger — patching from original",
+                            self._request_id,
+                        )
+                        rule.trigger = self._sent_trigger_rule.trigger
+                    # Also copy over any other missing critical fields
+                    if (rule.id is None
+                            and self._sent_trigger_rule.id is not None):
+                        rule.id = self._sent_trigger_rule.id
                 self._handle_save_rule_confirm_result(save_rule_confirm_result)
             else:
                 raise ValueError(f"Invalid event: {event.header.namespace}.{event.header.name}")
@@ -162,6 +182,7 @@ class RuleCreateTool(Actor):
                 ]
             )
 
+            self._sent_trigger_rule = trigger_rule_v2
             dispatcher_message = Internal.Dispatcher(next_event_handler=self.myAddress)
             self._send_instruction(dispatcher_message)
             self._send_instruction(save_rule_confirm)

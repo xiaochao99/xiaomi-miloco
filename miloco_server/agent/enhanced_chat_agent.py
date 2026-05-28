@@ -135,6 +135,14 @@ class EnhancedChatAgent(Actor):
 
         # Track called tools to avoid repeated calls
         self._called_tool_keys: set[str] = set()
+        # Track consecutive skipped (repeated) tool calls for early termination
+        self._consecutive_skipped_calls = 0
+        self._max_consecutive_skips = 2
+        # Interactive UI tools that should never be retried —
+        # once the user has interacted (or an error occurred), the result is final.
+        self._no_retry_tools = {
+            "create_rule",
+        }
         # Track if we already have a queryable result (e.g., temperature value)
         self._has_query_result = False
         self._last_tool_result_type: Optional[str] = None
@@ -358,6 +366,11 @@ class EnhancedChatAgent(Actor):
 3. 如果需要调用工具，应该调用哪个工具？
 4. 如果不需要工具，应该直接回答什么？
 
+**🔴 无需使用工具的典型场景（必须直接回复，禁止调用工具）：**
+- 用户告知/陈述个人信息：如"我的车牌号是...""我住在...""我的手机号是..."
+- 简单确认/应答：如"知道了""好的""嗯"
+- 闲聊/问候/天气/知识问答等
+
 行动 (Action)：如果思考后确定需要与外部世界交互（查询状态、控制设备等），则生成一个或多个符合OpenAI Tool Calling格式的工具调用。
 
 观察 (Observation)：你会接收到调用工具后返回的结果。你必须基于这个新的信息，回到第1步（思考（Think）），判断是需要继续调用其他工具，还是已经可以提供最终答案。
@@ -450,9 +463,11 @@ class EnhancedChatAgent(Actor):
 # 禁止行为 (Strictly Forbidden)
 - ❌ 闲聊时调用任何工具
 - ❌ 设定角色时调用任何工具
+- ❌ 用户告知个人信息（如"我的车牌号是..."）时调用任何工具 —— 直接确认即可
 - ❌ 用户说"打开灯"时先查询状态再打开
 - ❌ 连续多次尝试不同实体名称
 - ❌ 一个平台失败后不尝试备选平台就直接放弃
+- ❌ 工具返回了完整结果后，继续调用相同工具（vision_understand、get_devices 等单次调用即可完成的工具）
 
 # 输出格式与严格约束 (Strictly Enforced)
 - Markdown格式: 所有输出必须使用Markdown格式。
@@ -787,6 +802,36 @@ class EnhancedChatAgent(Actor):
             self._context_manager.update_state(self._request_id, ContextState.EXECUTING)
             finish_reason = await self._execute_step(step_number)
 
+            # Early termination: detect repeated-tool-call loop and force completion
+            if self._consecutive_skipped_calls >= self._max_consecutive_skips:
+                logger.warning(
+                    "[%s] Consecutive repeated tool calls (%d) reached limit, forcing final_answer",
+                    self._request_id, self._consecutive_skipped_calls,
+                )
+                self._chat_history_messages.add_content(
+                    "system",
+                    "系统提示：你已经连续多次尝试调用相同的工具且均被拦截。"
+                    "该工具之前的结果已经在对话历史中，请立即回顾历史消息找到结果，"
+                    "直接使用 <final_answer> 标签给出最终答案。不要再调用任何工具。"
+                )
+                self._consecutive_skipped_calls = 0
+                # Give one more step to output final_answer.
+                # If the LLM makes a *different* (non-repeated) tool call, allow it
+                # to proceed — the loop will continue naturally on the next iteration.
+                if step < self._max_steps - 1:
+                    finish_reason = await self._execute_step(step_number + 1)
+                    if self._is_completion_step(finish_reason):
+                        logger.info("[%s] Agent completed after force-completion", self._request_id)
+                        self._context_manager.update_state(self._request_id, ContextState.COMPLETED)
+                        return True, None
+                    # If the LLM made a new (non-repeated) tool call or is still going,
+                    # let the main loop handle it — don't fail immediately.
+                    if finish_reason in ("tool_calls",):
+                        logger.info("[%s] Force-completion gave a non-repeated tool call, "
+                                    "letting main loop continue", self._request_id)
+                        continue
+                return False, "多次尝试重复调用相同工具，请简化您的请求"
+
             if self._is_completion_step(finish_reason):
                 logger.info("[%s] Agent has completed the task", self._request_id)
                 self._context_manager.update_state(self._request_id, ContextState.COMPLETED)
@@ -948,12 +993,14 @@ class EnhancedChatAgent(Actor):
             r"^(你好|hello|hi|hey|早上好|下午好|晚上好|早安|晚安|早|嗨)(\b.*)?$",
             r"^(bye|再见|拜拜|晚安)(\b.*)?$",
             r"^(谢谢|thanks|thank)(\b.*)?$",
-            r"^(我的|我)(手机|生日|年龄|名字|性别|信息|地址|密码)(是)?(\b.*)?$",
+            r"^(我的|我)(手机|生日|年龄|名字|性别|信息|地址|密码|车牌号)(是)?(\b.*)?$",
             r"^(明天|今天|后天|最近).*(有雨|天气|下雨|晴天|气温|冷|热)(吗)?(\b.*)?$",
             r"^(室内|环境|房间|客厅|卧室).*(环境|情况|状态)(吗)?(\b.*)?$",
             r"^.*农历.*$",
             r"^.*几点了.*$",
             r"^.*现在(时间|几点|几点).*$",
+            r"^(知道了|好的|嗯|哦|行|OK|ok).*$",
+            r"^(备注|说明|补充).*一下.*$",
         ]
         for pattern in chat_patterns:
             if re.match(pattern, query_lower):
@@ -976,8 +1023,14 @@ class EnhancedChatAgent(Actor):
         if any(kw in query_lower for kw in scene_keywords):
             core_tools.extend(["trigger_manual_scene", "trigger_automation", "create_rule"])
 
+        # When no device-related keywords matched, don't force tools —
+        # the query is likely a statement/chat that needs no tools
         if len(core_tools) == 2:
-            core_tools.extend(["send_ctrl_rpc", "send_get_rpc"])
+            logger.info(
+                "No device-related keywords matched, returning empty tool set for query: %s",
+                query[:50],
+            )
+            return []
 
         seen = set()
         unique_tools = []
@@ -1163,16 +1216,67 @@ class EnhancedChatAgent(Actor):
         # Increment tool execution counter
         self._tool_execution_count += 1
 
+        # ── No-retry guard: interactive tools (create_rule etc.) can only
+        #     be called ONCE.  Any subsequent attempt (even with different
+        #     arguments) must be blocked — retrying opens another UI dialog.
+        is_no_retry = (
+            original_tool_name in self._no_retry_tools
+            or any(original_tool_name.endswith(name)
+                   for name in self._no_retry_tools)
+        )
+        if is_no_retry and any(key.startswith(original_tool_name)
+                               for key in self._called_tool_keys):
+            logger.warning("[%s] No-retry tool %s already called — skipping",
+                          self._request_id, original_tool_name)
+            self._chat_history_messages.add_tool_call_res_content(
+                tool_id, original_tool_name,
+                '{"error":"此交互工具不可重复调用，请直接使用之前的结果告知用户。"}'
+            )
+            self._chat_history_messages.add_content(
+                "system",
+                "🔴 系统强制指令：{} 是交互式工具，已经调用过一次，不可重复调用。"
+                "请立即使用 <final_answer> 标签输出最终答案，不要再调用任何工具。"
+                .format(original_tool_name),
+            )
+            self._consecutive_skipped_calls = self._max_consecutive_skips  # trigger force-completion
+            return
+
         # Check for repeated tool call with same parameters
         tool_key = f"{original_tool_name}:{tool_call.function.arguments}"
         if tool_key in self._called_tool_keys:
             logger.warning("[%s] Detected repeated tool call: %s, skipping",
                           self._request_id, original_tool_name)
+
+            # 1) Inject a tool-level response so the conversation flow is maintained
             self._chat_history_messages.add_tool_call_res_content(
                 tool_id, original_tool_name,
-                '{"info": "此工具已用相同参数调用过，请直接使用之前的结果回答用户。"}')
+                '{"info":"此工具刚刚已被调用过，本次调用被拦截。"}'
+            )
+
+            # 2) Retrieve the previous *real* result for this tool and inject it
+            #    as a SYSTEM message so the LLM sees both the command to stop
+            #    AND the actual data it should use.
+            prev_result = self._find_previous_tool_result(original_tool_name)
+            if prev_result:
+                sys_msg = (
+                    "🔴 系统强制指令：你刚刚重复调用了同一个工具（{}），本次调用已被拦截。"
+                    "下面是该工具上一次调用时返回的真实结果，请直接使用这些数据，"
+                    "立即输出 <final_answer> 标签给出最终答案，不要再调用任何工具。\n\n"
+                    "—— 之前的结果 ——\n{}"
+                ).format(original_tool_name, prev_result[:1500])
+            else:
+                sys_msg = (
+                    "🔴 系统强制指令：你刚刚重复调用了同一个工具（{}），本次调用已被拦截。"
+                    "该工具之前的结果已经存在于对话历史中，请回顾历史消息找到它，"
+                    "立即输出 <final_answer> 标签给出最终答案，不要再调用任何工具。"
+                ).format(original_tool_name)
+
+            self._chat_history_messages.add_content("system", sys_msg)
+            self._consecutive_skipped_calls += 1
             return
         self._called_tool_keys.add(tool_key)
+        # Reset skipped counter when a new (non-repeated) tool is executed
+        self._consecutive_skipped_calls = 0
 
         try:
             logger.info("[%s] Executing tool: %s (count: %d/%d)", 
@@ -1237,6 +1341,26 @@ class EnhancedChatAgent(Actor):
                 tool_call_content = result.error_message
                 is_actual_error = True
 
+            # ── No-retry guard for interactive tools (create_rule etc.) ──
+            #    These tools pop a UI dialog; once errored the result is final —
+            #    retrying would open another dialog, which is terrible UX.
+            if is_actual_error and (tool_name in self._no_retry_tools
+                                    or any(tool_name.endswith(name)
+                                           for name in self._no_retry_tools)):
+                logger.warning(
+                    "[%s] Interactive tool %s errored — forcing immediate completion (no retry)",
+                    self._request_id, tool_name,
+                )
+                self._chat_history_messages.add_content(
+                    "system",
+                    "系统提示：create_rule 工具返回了错误，创建规则流程已结束。"
+                    "请立即使用 <final_answer> 标签告知用户发生了什么，"
+                    "并建议用户重新发起规则创建。不要再调用任何工具。"
+                )
+                # Push consecutive errors to the limit so the existing
+                # force-completion block in _execute_step triggers immediately.
+                self._consecutive_tool_errors = self._max_consecutive_errors
+
             # Update consecutive error counter
             if is_actual_error:
                 self._consecutive_tool_errors += 1
@@ -1285,6 +1409,44 @@ class EnhancedChatAgent(Actor):
             tool_name: str, parameters: dict, result: CallToolResult) -> None:
         """Post process tool call."""
         pass
+
+    def _find_previous_tool_result(self, tool_name: str) -> Optional[str]:
+        """Look up the most recent *real* tool result for ``tool_name`` in
+        the conversation history, skipping injected skip-placeholders.
+        Returns the content string or None if not found."""
+        messages = self._chat_history_messages.get_messages()
+        # Walk backwards; the most recent real result is usually the first hit.
+        for msg in reversed(messages):
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") != "tool":
+                continue
+            if not (tool_name in msg.get("name", "")
+                    or msg.get("name", "").endswith(tool_name)):
+                continue
+            content = msg.get("content", "")
+            if not content:
+                continue
+            # Skip the artificial "被拦截" placeholder we inject on repeats
+            if "被拦截" in content:
+                continue
+            # Try to extract the most useful piece from JSON-wrapped results
+            try:
+                parsed = json.loads(content)
+                if isinstance(parsed, dict):
+                    # Common patterns for vision_understand / get_devices, etc.
+                    for key in ("content", "message", "tool_response", "data"):
+                        val = parsed.get(key)
+                        if isinstance(val, str) and val.strip():
+                            return val
+                        if isinstance(val, dict):
+                            inner = val.get("content") or val.get("message")
+                            if isinstance(inner, str) and inner.strip():
+                                return inner
+            except (json.JSONDecodeError, TypeError):
+                pass
+            return content
+        return None
 
     def _is_completion_step(self, finish_reason: Optional[str]) -> bool:
         """Check if this is a completion step."""

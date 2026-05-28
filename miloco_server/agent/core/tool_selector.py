@@ -106,7 +106,7 @@ class ToolSelector:
     # Intent to tool mapping
     # Note: All cached tools removed to prevent unnecessary calls
     # Note: Use correct MIoT tool names (send_ctrl_rpc for control, send_get_rpc for query)
-    NO_TOOL_INTENTS = {"chat", "memory"}
+    NO_TOOL_INTENTS = {"chat", "memory", "statement"}
 
     INTENT_TOOL_MAP = {
         "turn_on": ["send_ctrl_rpc"],
@@ -451,6 +451,13 @@ class ToolSelector:
         
         # Simple rule-based classification
         patterns = {
+            "statement": [
+                r"我(的|家|家里|家里面).*(是|叫|有|住|在|号码|电话|车牌|地址)",
+                r"我.*(手机号|生日|年龄|车牌号|地址|门牌)",
+                r"(告诉|跟).*你.*(说|一下|个事)",
+                r"^(备注|说明|补充).*一下",
+                r"^(知道了|好的|嗯|哦|行|OK|ok)",
+            ],
             "turn_on": [r"打开|开.*灯|开.*空调|开.*电视"],
             "turn_off": [r"关闭|关掉|关.*灯|关.*空调|关.*电视"],
             "adjust": [r"调.*温度|调.*亮度|调.*音量|设置"],
@@ -477,58 +484,216 @@ class ToolSelector:
     
     def set_llm_proxy(self, llm_proxy: "LLMProxy") -> None:
         self._llm_proxy = llm_proxy
-    
-    _TOOL_SELECT_PROMPT = """你是一个查询分类器。根据用户查询，判断需要调用哪些工具。
 
-## 可用工具
+    # ──────────────────────────────────────────────────────────
+    #  LLM-based classification prompt (generic, keyword-free)
+    # ──────────────────────────────────────────────────────────
+    _LLM_CLASSIFY_PROMPT = """You are a query classifier for a smart home AI agent. Your ONLY job is to decide whether the user's query requires calling any tools (device control, camera, face recognition, environment data, etc.), or whether it can be answered directly.
+
+## Available tools and their purposes:
 {tool_list}
 
-## 分类规则
-- 闲聊/问候/情感表达/角色设定 → 不需要工具
-- 记忆操作(记住/忘记/记得/我叫什么/我的名字) → 不需要工具
-- 已有足够信息可直接回答 → 不需要工具
-- 设备控制(开/关/调节) → send_ctrl_rpc
-- 设备状态查询 → send_get_rpc, get_devices
-- 环境数据(温度/湿度/天气/空气质量/有人吗) → 系统提示中已有，直接回答（除非用户要求最新数据）
-- 摄像头/图像/看画面 → vision_understand
-- 人脸识别/谁在 → who_am_i
-- 自动化规则创建 → create_rule
-- 场景触发 → trigger_manual_scene, trigger_automation
-- 时间查询 → get_current_time
+## Classification rules:
+- If the user is just **chatting, greeting, making small talk, or sharing personal information** (e.g. "my license plate is...", "I live at...", "my phone number is...", "I'm XX years old") → **NO tools needed**.
+- If the user is **telling you something without asking for any action or query** → **NO tools needed**.
+- If the user is **confirming or acknowledging** (e.g. "OK", "got it", "I see") → **NO tools needed**.
+- If the user asks about **general knowledge, advice, explanations** → **NO tools needed**.
+- If the user asks about **camera footage, what's happening in a room** → vision_understand.
+- If the user wants to **control a device** (turn on/off, adjust) → send_ctrl_rpc, get_devices.
+- If the user wants to **query device status** (temperature, humidity, is something on?) → send_get_rpc, get_devices.
+- If the user asks about **face identity, who someone is** → who_am_i.
+- If the user wants to **create/delete/modify automation rules** → create_rule.
+- If the user wants to **trigger a scene/mode** → trigger_manual_scene.
 
-## 用户查询
+## User query:
 {query}
 
-只返回JSON，不要其他内容：{{"tools": ["tool_name"], "reason": "简要原因"}}
-不需要工具时：{{"tools": [], "reason": "简要原因"}}"""
+Think carefully: does this query truly require calling any tool? Only answer YES if a tool call is strictly necessary to fulfill the user's request.
+
+Respond with ONLY a JSON object, nothing else:
+{{"needs_tools": true, "tools": ["tool_name1"], "reason": "brief explanation in English"}}
+If no tools are needed:
+{{"needs_tools": false, "tools": [], "reason": "brief explanation in English"}}"""
+
+    async def _llm_classify_query(
+        self, query: str, tool_names: List[str]
+    ) -> Tuple[Optional[List[str]], bool, str]:
+        """Use LLM to semantically classify whether the query needs tools.
+
+        Args:
+            query: User query text.
+            tool_names: Registered tool full-names (may include prefixes like
+                        ``local_default___vision_understand``).
+
+        Returns:
+            (short_tool_names or None, is_no_tool, reason):
+            - short_tool_names: list of *short* tool names (e.g. ``vision_understand``),
+              suitable for ``_filter_tools_for_llm`` suffix-matching.  None if LLM
+              unavailable.
+            - is_no_tool: True if LLM determined no tools needed.
+            - reason: human-readable classification reason.
+        """
+        if self._llm_proxy is None:
+            logger.debug("No LLM proxy available for query classification")
+            return None, False, "LLM proxy not available"
+
+        # Build short-name → full-name mapping and a human-readable tool list.
+        # Strip common prefixes so the LLM sees clean names like "vision_understand".
+        _KNOWN_PREFIXES = ("local_default___", "miot_devices___", "miot_manual_scenes___")
+        short_to_full: dict[str, str] = {}
+        tool_lines: list[str] = []
+
+        for full_name in tool_names:
+            short_name = full_name
+            for prefix in _KNOWN_PREFIXES:
+                if full_name.startswith(prefix):
+                    short_name = full_name[len(prefix):]
+                    break
+            short_to_full[short_name] = full_name
+
+            tool_meta = self._tools.get(full_name)
+            if tool_meta:
+                tool_lines.append(f"- {short_name}: {tool_meta.description[:120]}")
+            else:
+                tool_lines.append(f"- {short_name}")
+
+        tool_list_str = "\n".join(tool_lines) if tool_lines else "(no tools registered)"
+
+        prompt = self._LLM_CLASSIFY_PROMPT.format(
+            tool_list=tool_list_str, query=query,
+        )
+
+        messages: list[dict[str, str]] = [
+            {"role": "user", "content": prompt},
+        ]
+
+        try:
+            result = await self._llm_proxy.async_call_llm(messages, tools=None)
+        except Exception as e:
+            logger.warning("LLM classification call failed: %s, falling back to keywords", e)
+            return None, False, f"LLM call error: {e}"
+
+        if not result.get("success"):
+            logger.warning("LLM classification returned failure: %s", result.get("error", "unknown"))
+            return None, False, "LLM call failed"
+
+        content = (result.get("content") or "").strip()
+        # Strip markdown code fences if present
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1]
+            if content.endswith("```"):
+                content = content[: content.rfind("```")].strip()
+
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            logger.warning("LLM classification returned invalid JSON: %s", content[:200])
+            return None, False, f"Invalid JSON: {content[:100]}"
+
+        needs_tools = parsed.get("needs_tools", True)
+        llm_tool_names: list[str] = parsed.get("tools", [])
+        reason: str = parsed.get("reason", "") or ""
+
+        if not needs_tools:
+            return [], True, reason
+
+        # Validate: accept tool names that are either an exact short-name match
+        # or a suffix match against registered full-names.
+        valid_short_names: list[str] = []
+        for name in llm_tool_names:
+            # 1) exact short-name match
+            if name in short_to_full:
+                valid_short_names.append(name)
+                continue
+            # 2) suffix match against any registered full-name
+            for reg_full_name in self._tools:
+                if reg_full_name.endswith(name):
+                    # derive the short name for consistency
+                    short = name
+                    for prefix in _KNOWN_PREFIXES:
+                        if reg_full_name.startswith(prefix):
+                            short = reg_full_name[len(prefix):]
+                            break
+                    if short not in valid_short_names:
+                        valid_short_names.append(short)
+                    break
+
+        if not valid_short_names:
+            logger.info(
+                "LLM suggested tools %s, but none matched registered tools — treating as no-tool",
+                llm_tool_names,
+            )
+            return [], True, reason
+
+        return valid_short_names, False, reason
 
     async def async_select_tools(
         self,
         context: ToolContext,
         top_k: int = 5,
+        use_llm: bool = True,
     ) -> Tuple[List[ToolSelection], bool]:
         """
-        Tool pre-selection using local HYBRID strategy (no LLM call).
-        Uses rule-based + semantic + intent matching for fast selection.
+        Tool pre-selection — keyword-first, LLM only when keywords are inconclusive.
+
+        Strategy (ordered):
+        1. Keyword fast-path — ~0 ms.  Returns immediately when clear.
+        2. Keyword HYBRID — ~0 ms.  Returns immediately when tools are matched.
+        3. LLM classification — only reached when both keyword layers produce no
+           clear answer.  This avoids 20-second LLM latency for >90% of queries.
 
         Returns:
-            (selections, is_no_tool_query): selections is the list of tool selections,
-            is_no_tool_query indicates whether the query definitively needs no tools.
+            (selections, is_no_tool_query)
         """
         query = context.query
 
+        # ── Layer 1: Fast-path no-tool intents (keyword patterns, ~0 ms) ──
         if self.is_no_tool_query(query):
-            logger.info("No-tool query detected (intent: chat/memory), skipping tool selection")
+            logger.info("No-tool query detected (intent: chat/memory/statement), skipping all tools")
             return [], True
 
-        selections = self.select_tools(context, top_k=top_k)
+        # ── Layer 2: Keyword-based HYBRID selection (~0 ms) ──
+        keyword_selections = self.select_tools(context, top_k=top_k)
+        if keyword_selections:
+            logger.info("Keyword HYBRID tool selection: %s",
+                         [s.tool_name for s in keyword_selections])
+            return keyword_selections, False
 
-        if not selections:
-            return [], self.is_no_tool_query(query)
+        # ── Layer 3: LLM-based classification (slow, only when needed) ──
+        if use_llm and self._llm_proxy is not None:
+            registered_names = list(self._tools.keys())
+            llm_tools, is_no_tool, reason = await self._llm_classify_query(
+                query, registered_names,
+            )
 
-        logger.info("Local HYBRID tool selection: %s",
-                     [s.tool_name for s in selections])
-        return selections, False
+            if is_no_tool:
+                logger.info(
+                    "LLM classification: NO tools needed for query '%s' — %s",
+                    query[:60], reason,
+                )
+                return [], True
+
+            if llm_tools is not None:
+                logger.info(
+                    "LLM classification: tools=%s for query '%s' — %s",
+                    llm_tools, query[:60], reason,
+                )
+                selections = [
+                    ToolSelection(
+                        tool_name=name,
+                        confidence=0.90,
+                        reasoning=f"LLM: {reason}",
+                        strategy_used=ToolSelectionStrategy.LLM_BASED,
+                    )
+                    for name in llm_tools
+                ]
+                return selections[:top_k], False
+
+            # LLM call failed, treat as inconclusive
+            logger.info("LLM classification unavailable, treating as no-tool")
+
+        # No tools matched by any strategy — safe to return no tools
+        return [], self.is_no_tool_query(query)
     
     def extract_parameters(
         self,
