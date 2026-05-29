@@ -690,7 +690,24 @@ useEffect(() => {
         setEnableXiaoAIProactiveInquiry(false);
       }
 
-      setCheckedMcpServices(formData.mcp_list?.map(mcp => `${mcp?.server_name}#${mcp?.client_id}`) || []);
+      // Handle both formats: object array with server_name/client_id or string array with client_ids
+      const rawMcpList = formData.mcp_list || [];
+      const mcpKeys = rawMcpList.map(mcp => {
+        if (typeof mcp === 'object' && mcp?.server_name && mcp?.client_id) {
+          // Object format: { server_name, client_id }
+          return `${mcp.server_name}#${mcp.client_id}`;
+        } else if (typeof mcp === 'string') {
+          // String format: just client_id, look up server_name from availableMcpServices
+          const found = availableMcpServices.find(s => s?.client_id === mcp);
+          if (found?.server_name) {
+            return `${found.server_name}#${found.client_id}`;
+          }
+          // Fallback: use "unknown" as server name
+          return `unknown#${mcp}`;
+        }
+        return null;
+      }).filter(Boolean);
+      setCheckedMcpServices(mcpKeys);
       setAiRecommendExecuteType(formData.ai_recommend_execute_type || 'static');
       setAiRecommendActionDescriptions(formData.ai_recommend_action_descriptions || []);
       setAiRecommendActions(formData.ai_recommend_actions || []);

@@ -47,7 +47,7 @@ class TriggerRuleConditionPromptBuilder:
             img_seq_base64 = img_seq.to_base64()
             user_content.append({
                 "type": "text",
-                "text": prefixes["image_sequence_prefix"]
+                "text": prefixes["current_frames_prefix"]
             })
 
             for image_data in img_seq_base64.img_list:

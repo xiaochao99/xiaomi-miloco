@@ -6,6 +6,7 @@ Trigger business logic service
 Handles trigger-related business logic and data validation
 """
 
+import json
 import time
 from typing import Callable, List, Dict, Optional, Any, Set
 import asyncio
@@ -38,6 +39,7 @@ from miloco_server.service.wakeup_scheduler import WakeUpScheduler
 from miloco_server.utils.check_img_motion import check_camera_motion
 from miloco_server.utils.direct_condition_checker import direct_condition_checker
 from miloco_server.utils.local_models import ModelPurpose
+from miloco_server.utils.normal_util import extract_json_from_content
 from miloco_server.utils.prompt_helper import TriggerRuleConditionPromptBuilder
 from miloco_server.utils.trigger_filter import trigger_filter
 from miloco_server.detection.trigger_integration import get_detection_trigger_integration
@@ -674,11 +676,7 @@ class TriggerRuleRunner:
                 # Camera based filter
                 # camera_info should be present if rule.cameras is set, but check safety
                 execable = any([
-                    trigger_filter.post_filter(
-                        rule_id,
-                        f"{condition_result.camera_info.did},"
-                        f"{condition_result.channel}" if condition_result.camera_info else "global",
-                        condition_result.result)
+                    trigger_filter.post_filter(rule_id, condition_result.result)
                     for condition_result in condition_result_list
                 ])
             else:
