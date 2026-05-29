@@ -148,6 +148,12 @@ class EnhancedChatAgent(Actor):
         self._last_tool_result_type: Optional[str] = None
         self._current_query: str = ""
 
+        # Track which devices have had their spec retrieved (did → True)
+        # Used to enforce the get_devices → get_device_spec → send_ctrl_rpc/send_get_rpc flow
+        self._device_spec_retrieved: set[str] = set()
+        # Tools that require get_device_spec to be called first
+        self._spec_required_tools = {"send_ctrl_rpc", "send_get_rpc"}
+
         self._init_conversation(chat_history_messages)
         
         # Initialize template engine
@@ -1293,8 +1299,45 @@ class EnhancedChatAgent(Actor):
                     logger.info("[%s] Resolved unprefixed tool '%s' to client '%s'",
                                self._request_id, original_tool_name, client_id)
                 else:
+                    # Tool could not be resolved — likely a hallucinated tool (e.g., "reflect")
                     logger.error("[%s] Could not resolve tool '%s' in any MCP client",
                                 self._request_id, original_tool_name)
+                    self._chat_history_messages.add_tool_call_res_content(
+                        tool_id, original_tool_name,
+                        '{"error":"工具 \\"%s\\" 不存在。请使用已注册的工具，'
+                        '或直接使用 <final_answer> 标签输出最终答案。"}' % original_tool_name
+                    )
+                    self._chat_history_messages.add_content(
+                        "system",
+                        "🔴 系统强制指令：你尝试调用了不存在的工具 \"%s\"。\n"
+                        "- <reflect> 和 </reflect> 是思考标签，不是工具，不要尝试调用它们。\n"
+                        "- 如果你已经收集到足够信息，请立即使用 <final_answer> 标签给出最终答案。\n"
+                        "- 如果还需要调用工具，请使用列表中已注册的工具名称。" % original_tool_name,
+                    )
+                    self._consecutive_skipped_calls += 1
+                    return
+
+            # ── Enforce device spec flow: get_device_spec must be called before send_ctrl_rpc/send_get_rpc ──
+            if tool_name in self._spec_required_tools:
+                did = parameters.get("did") or parameters.get("device_id") or ""
+                if did and did not in self._device_spec_retrieved:
+                    logger.warning("[%s] Tool %s called for device %s without prior get_device_spec — blocking",
+                                  self._request_id, tool_name, did)
+                    self._chat_history_messages.add_tool_call_res_content(
+                        tool_id, tool_name,
+                        '{"error":"设备 %s 的SPEC定义尚未获取。你必须先调用 get_device_spec(did=\\"%s\\") '
+                        '获取设备SPEC定义，然后从SPEC中找到正确的 iid，才能调用 %s。'
+                        '请立即调用 get_device_spec。"}' % (did, did, tool_name)
+                    )
+                    self._chat_history_messages.add_content(
+                        "system",
+                        "🔴 系统强制指令：你跳过了关键步骤！调用 %s 之前必须先调用 get_device_spec。\n"
+                        "正确流程：get_devices → get_device_spec(did=\"%s\") → %s(did, iid从SPEC获取)\n"
+                        "请立即调用 get_device_spec(did=\"%s\") 获取设备SPEC定义。"
+                        % (tool_name, did, tool_name, did),
+                    )
+                    self._consecutive_skipped_calls += 1
+                    return
 
             service_name = self._tool_executor.get_server_name(client_id)
 
@@ -1368,6 +1411,13 @@ class EnhancedChatAgent(Actor):
                               self._request_id, self._consecutive_tool_errors, self._max_consecutive_errors)
             else:
                 self._consecutive_tool_errors = 0
+                # Track successful get_device_spec calls to enforce correct flow
+                if tool_name == "get_device_spec" and result.success:
+                    spec_did = parameters.get("did") or parameters.get("device_id") or ""
+                    if spec_did:
+                        self._device_spec_retrieved.add(spec_did)
+                        logger.info("[%s] Device spec retrieved for DID %s", self._request_id, spec_did)
+
                 if tool_name == "send_get_rpc" and result.response:
                     self._has_query_result = True
                     self._last_tool_result_type = "query_value"

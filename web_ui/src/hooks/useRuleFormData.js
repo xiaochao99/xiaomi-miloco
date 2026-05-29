@@ -116,17 +116,30 @@ export const convertFormDataToBackend = (formData) => {
     ? ha_devices.map(device => typeof device === 'object' ? (device.did || device) : device)
     : [];
 
-  const mcp_list_ids = mcp_list?.length > 0 ? mcp_list.map(mcp => mcp?.client_id) : [];
+  const mcp_list_ids = mcp_list?.length > 0
+    ? mcp_list.map(mcp => mcp?.client_id).filter(id => id && typeof id === 'string')
+    : [];
+
+  // Build trigger object (v2 format)
+  const trigger = {
+    type: condition_type || 'llm',
+    llm_condition: condition_type === 'llm' ? condition : null,
+    camera_condition: condition_type === 'hybrid' ? condition : null,
+    ha_condition: (condition_type === 'direct' || condition_type === 'hybrid') ? (ha_condition || null) : null,
+    detection_condition: detection_condition || null,
+  };
+
+  // Build targets object (v2 format)
+  const targets = {
+    camera_ids: camera_dids,
+    ha_device_ids: ha_device_ids,
+    trigger_entity_id: trigger_entity_id || null,
+  };
 
   const backendData = {
     name,
-    cameras: camera_dids,
-    ha_devices: ha_device_ids,
-    condition,
-    condition_type: condition_type,
-    ha_condition: ha_condition || null,
-    trigger_entity_id: trigger_entity_id || null,
-    detection_condition: detection_condition || null,
+    trigger,
+    targets,
     execute_info: {
       ai_recommend_execute_type: ai_recommend_execute_type || 'static',
       ai_recommend_action_descriptions: ai_recommend_action_descriptions || [],
@@ -160,15 +173,24 @@ export const convertBackendToFormData = (backendData) => {
     return null;
   }
 
+  // Support both V1 and V2 formats
+  const isV2 = backendData.trigger !== undefined && backendData.targets !== undefined;
+
   return {
     name: backendData.name || '',
-    cameras: backendData.cameras || [],
-    ha_devices: backendData.ha_devices || [],
-    condition: backendData.condition || '',
-    condition_type: backendData.condition_type || 'llm',
-    ha_condition: backendData.ha_condition || '',
-    trigger_entity_id: backendData.trigger_entity_id || null,
-    detection_condition: backendData.detection_condition || null,
+    cameras: isV2 ? (backendData.targets?.camera_ids || []) : (backendData.cameras || []),
+    ha_devices: isV2 ? (backendData.targets?.ha_device_ids || []) : (backendData.ha_devices || []),
+    condition: isV2
+      ? (backendData.trigger?.llm_condition || backendData.trigger?.camera_condition || '')
+      : (backendData.condition || ''),
+    condition_type: isV2 ? (backendData.trigger?.type || 'llm') : (backendData.condition_type || 'llm'),
+    ha_condition: isV2 ? (backendData.trigger?.ha_condition || '') : (backendData.ha_condition || ''),
+    trigger_entity_id: isV2
+      ? (backendData.targets?.trigger_entity_id || null)
+      : (backendData.trigger_entity_id || null),
+    detection_condition: isV2
+      ? (backendData.trigger?.detection_condition || null)
+      : (backendData.detection_condition || null),
     ai_recommend_execute_type: backendData.execute_info?.ai_recommend_execute_type || 'static',
     ai_recommend_action_descriptions: backendData.execute_info?.ai_recommend_action_descriptions || [],
     ai_recommend_actions: backendData.execute_info?.ai_recommend_actions || [],

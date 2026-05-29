@@ -948,7 +948,9 @@ useEffect(() => {
         triggerIntervalMinutes,
         triggerIntervalSeconds,
       },
-      mcp_list: checkedMcpServices.map(service => availableMcpServices.find(mcp => `${mcp?.server_name}#${mcp?.client_id}` === service)).filter(Boolean),
+      mcp_list: checkedMcpServices
+        .map(service => availableMcpServices.find(mcp => mcp?.server_name && mcp?.client_id && `${mcp.server_name}#${mcp.client_id}` === service))
+        .filter(mcp => mcp && mcp.client_id),
       target_entities: selectedTargetEntities.length > 0 ? selectedTargetEntities : null,
       enabled: initialRule?.enabled !== undefined ? initialRule.enabled : true,
     };

@@ -80,7 +80,10 @@ export const useRuleFormUpdates = () => {
   const handleSaveRule = async (formData) => {
     try {
       setLoading(true);
-      const response = await saveSmartRuleV2(buildRuleData(formData));
+      // formData from RuleForm is already in v2 format (via convertFormDataToBackend).
+      // Pass directly to API without re-processing through buildRuleData.
+      console.log('[handleSaveRule] Sending v2 create:', JSON.stringify(formData, null, 2));
+      const response = await saveSmartRuleV2(formData);
 
       if (response?.code === 0) {
         message.success(t('smartCenter.ruleSaved'));
@@ -102,12 +105,18 @@ export const useRuleFormUpdates = () => {
   const handleUpdateRule = async (rule, formData) => {
     try {
       setLoading(true);
-      const ruleData = buildRuleData({
+      // formData from RuleForm is already in v2 format (via convertFormDataToBackend).
+      // Do NOT pass through buildRuleData which expects flat form format —
+      // doing so would destroy the nested trigger/targets structure.
+      const ruleData = {
         ...formData,
-        mcp_list: formData?.execute_info.mcp_list || rule.execute_info?.mcp_list || [],
-      });
+        id: rule.id,
+        // Ensure enabled comes from the current rule state, not stale form data
+        enabled: rule.enabled !== undefined ? rule.enabled : (formData.enabled ?? true),
+      };
 
-      ruleData.enabled = rule.enabled !== undefined ? rule.enabled : true;
+      console.log('[handleUpdateRule] Sending v2 update:', JSON.stringify(ruleData, null, 2));
+
       const response = await updateSmartRuleV2(rule.id, ruleData);
 
       if (response && response.code === 0) {
@@ -141,32 +150,65 @@ export const useRuleFormUpdates = () => {
 
   const handleToggleRule = async (rule, checked) => {
     try {
-      const { mcp_list = [], ...rest } = rule.execute_info || {};
-
-      // Build camera IDs array
-      const camera_dids = rule.cameras
-        ? Array.isArray(rule.cameras)
-          ? rule.cameras.map(camera => typeof camera === 'object' ? camera.did : camera)
-          : rule.cameras
+      // ── Build camera IDs array ──
+      const camera_dids = (rule.cameras)
+        ? (Array.isArray(rule.cameras)
+            ? rule.cameras.map(camera => typeof camera === 'object' ? camera.did : camera)
+            : [rule.cameras])
         : [];
 
-      // Build HA device IDs array
-      const ha_device_dids = rule.ha_devices
-        ? Array.isArray(rule.ha_devices)
-          ? rule.ha_devices.map(device => typeof device === 'object' ? device.did : device)
-          : rule.ha_devices
+      // ── Build HA device IDs array ──
+      const ha_device_dids = (rule.ha_devices)
+        ? (Array.isArray(rule.ha_devices)
+            ? rule.ha_devices.map(device => typeof device === 'object' ? device.did : device)
+            : [rule.ha_devices])
         : [];
 
-      const updateData = buildRuleData({
-        ...rule,
-        cameras: camera_dids,
-        ha_devices: ha_device_dids,
-        execute_info: {
-          ...rest,
-          mcp_list: mcp_list?.length > 0 ? mcp_list.map(mcp => mcp.client_id) : [],
-        },
+      // ── Extract MCP client IDs, filtering out invalid entries ──
+      const rawMcpList = rule.execute_info?.mcp_list || [];
+      const mcpClientIds = rawMcpList
+        .map(mcp => {
+          if (typeof mcp === 'string') return mcp;
+          return mcp?.client_id;
+        })
+        .filter(id => id && typeof id === 'string');
+
+      // ── Build clean v2 format update data directly (no spread of full rule object) ──
+      const conditionType = rule.condition_type || 'llm';
+      const updateData = {
+        name: rule.name,
         enabled: checked,
-      });
+        trigger: {
+          type: conditionType,
+          llm_condition: (conditionType === 'llm' || conditionType === 'detection' || conditionType === 'face_recognition')
+            ? (rule.condition || null)
+            : null,
+          camera_condition: conditionType === 'hybrid' ? (rule.condition || null) : null,
+          ha_condition: (conditionType === 'direct' || conditionType === 'hybrid')
+            ? (rule.ha_condition || null)
+            : null,
+          detection_condition: rule.detection_condition || null,
+        },
+        targets: {
+          camera_ids: camera_dids,
+          ha_device_ids: ha_device_dids,
+          trigger_entity_id: rule.trigger_entity_id || null,
+        },
+        execute_info: {
+          ai_recommend_execute_type: rule.execute_info?.ai_recommend_execute_type || 'static',
+          ai_recommend_action_descriptions: rule.execute_info?.ai_recommend_action_descriptions || [],
+          ai_recommend_actions: rule.execute_info?.ai_recommend_actions || [],
+          automation_actions: rule.execute_info?.automation_actions || [],
+          mcp_list: mcpClientIds,
+          notify: rule.execute_info?.notify || null,
+          xiaoai_broadcast: rule.execute_info?.xiaoai_broadcast || null,
+          xiaoai_wakeup: rule.execute_info?.xiaoai_wakeup || null,
+          target_entities: rule.execute_info?.target_entities || null,
+        },
+        filter: rule.filter || null,
+      };
+
+      console.log('[handleToggleRule] Sending v2 update:', JSON.stringify(updateData, null, 2));
 
       const response = await updateSmartRuleV2(rule.id, updateData);
       if (response.code === 0) {
