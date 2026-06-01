@@ -63,6 +63,10 @@ const RecordingConfig = () => {
             })),
             retention_days: c.retention_days || 7,
             segment_duration: c.segment_duration || 300,
+            motion_buffer_seconds: c.motion_buffer_seconds ?? 25,
+            person_buffer_seconds: c.person_buffer_seconds ?? 30,
+            motion_threshold: c.motion_threshold ?? 5,
+            motion_check_interval: c.motion_check_interval ?? 1.0,
           };
         });
         setConfigs(configMap);
@@ -92,6 +96,10 @@ const RecordingConfig = () => {
             })),
             retention_days: d.retention_days || 7,
             segment_duration: d.segment_duration || 300,
+            motion_buffer_seconds: d.motion_buffer_seconds ?? 25,
+            person_buffer_seconds: d.person_buffer_seconds ?? 30,
+            motion_threshold: d.motion_threshold ?? 5,
+            motion_check_interval: d.motion_check_interval ?? 1.0,
           },
         }));
       } else {
@@ -103,6 +111,10 @@ const RecordingConfig = () => {
             recording_plans: [],
             retention_days: 7,
             segment_duration: 300,
+            motion_buffer_seconds: 25,
+            person_buffer_seconds: 30,
+            motion_threshold: 5,
+            motion_check_interval: 1.0,
           },
         }));
       }
@@ -228,6 +240,10 @@ const RecordingConfig = () => {
         })),
         retention_days: config.retention_days,
         segment_duration: config.segment_duration,
+        motion_buffer_seconds: config.motion_buffer_seconds,
+        person_buffer_seconds: config.person_buffer_seconds,
+        motion_threshold: config.motion_threshold,
+        motion_check_interval: config.motion_check_interval,
       };
       const res = await saveRecordingConfig(selectedCamera, payload);
       if (res && res.code === 0) {
@@ -398,6 +414,95 @@ const RecordingConfig = () => {
                 </div>
               </div>
             </div>
+
+            {config.recording_mode === 'motion' && (
+              <div className={styles.section}>
+                <div className={styles.sectionTitle}>
+                  <SettingOutlined className={styles.sectionIcon} />
+                  {t('recording.config.motionDetection')}
+                </div>
+                <div className={styles.settingsGrid}>
+                  <div className={styles.settingItem}>
+                    <div className={styles.settingLabel}>
+                      {t('recording.config.motionBufferSeconds')}
+                      <Tooltip title={t('recording.config.motionBufferSecondsTooltip')}>
+                        <QuestionCircleOutlined className={styles.settingTooltip} />
+                      </Tooltip>
+                    </div>
+                    <Input
+                      type="number"
+                      min={5}
+                      max={300}
+                      value={config.motion_buffer_seconds}
+                      onChange={(e) => updateConfig('motion_buffer_seconds', parseFloat(e.target.value) || 25)}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className={styles.settingItem}>
+                    <div className={styles.settingLabel}>
+                      {t('recording.config.motionThreshold')}
+                      <Tooltip title={t('recording.config.motionThresholdTooltip')}>
+                        <QuestionCircleOutlined className={styles.settingTooltip} />
+                      </Tooltip>
+                    </div>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={config.motion_threshold}
+                      onChange={(e) => updateConfig('motion_threshold', parseInt(e.target.value) || 5)}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className={styles.settingItem}>
+                    <div className={styles.settingLabel}>
+                      {t('recording.config.motionCheckInterval')}
+                      <Tooltip title={t('recording.config.motionCheckIntervalTooltip')}>
+                        <QuestionCircleOutlined className={styles.settingTooltip} />
+                      </Tooltip>
+                    </div>
+                    <Input
+                      type="number"
+                      min={0.5}
+                      max={10}
+                      step={0.5}
+                      value={config.motion_check_interval}
+                      onChange={(e) => updateConfig('motion_check_interval', parseFloat(e.target.value) || 1.0)}
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {config.recording_mode === 'person' && (
+              <div className={styles.section}>
+                <div className={styles.sectionTitle}>
+                  <SettingOutlined className={styles.sectionIcon} />
+                  {t('recording.config.personDetection')}
+                </div>
+                <div className={styles.settingsGrid}>
+                  <div className={styles.settingItem}>
+                    <div className={styles.settingLabel}>
+                      {t('recording.config.personBufferSeconds')}
+                      <Tooltip title={t('recording.config.personBufferSecondsTooltip')}>
+                        <QuestionCircleOutlined className={styles.settingTooltip} />
+                      </Tooltip>
+                    </div>
+                    <Input
+                      type="number"
+                      min={5}
+                      max={300}
+                      value={config.person_buffer_seconds}
+                      onChange={(e) => updateConfig('person_buffer_seconds', parseFloat(e.target.value) || 30)}
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className={styles.section}>
               <div className={styles.sectionTitle}>

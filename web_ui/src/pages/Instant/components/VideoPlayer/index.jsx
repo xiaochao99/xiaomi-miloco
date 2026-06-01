@@ -668,9 +668,31 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
           return;
         }
 
-        console.log(`Processing ${pendingData.length} pending data chunks`);
-        
-        for (const item of pendingData) {
+        // 找到第一个关键帧，跳过之前的 delta 帧
+        // configure() 后必须先送入关键帧，否则 decode() 会抛出错误
+        let firstKeyIdx = -1;
+        for (let i = 0; i < pendingData.length; i++) {
+          if (pendingData[i].isKey) {
+            firstKeyIdx = i;
+            break;
+          }
+        }
+
+        if (firstKeyIdx === -1) {
+          // 没有关键帧，丢弃所有待处理数据，等待下一个关键帧
+          console.log(`No key frame found in ${pendingData.length} pending chunks, discarding all`);
+          pendingData = [];
+          return;
+        }
+
+        if (firstKeyIdx > 0) {
+          console.log(`Skipping ${firstKeyIdx} delta frames before first key frame`);
+        }
+
+        const toProcess = pendingData.slice(firstKeyIdx);
+        console.log(`Processing ${toProcess.length} pending data chunks (starting from key frame)`);
+
+        for (const item of toProcess) {
           try {
             decoderRef.current.decode(new EncodedVideoChunk({
               type: item.isKey ? 'key' : 'delta',
@@ -679,9 +701,10 @@ const VideoPlayer = ({ codec = 'avc1.42E01E', poster, style, cameraId, channel, 
             }));
           } catch (err) {
             console.error('Error processing pending data:', err);
+            break; // 解码出错时停止，避免级联错误
           }
         }
-        
+
         pendingData = [];
       }
 

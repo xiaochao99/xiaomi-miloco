@@ -186,13 +186,16 @@ async def _init_recording_service():
 
             async def on_detection_event_for_recording(event: StreamDetectionEvent):
                 """Forward person detection events to recording engine."""
+                has_person = False
                 if event.detections:
                     has_person = any(
                         d.class_name.lower() in ("person", "people")
                         for d in event.detections
                     )
-                    if has_person:
-                        await engine.on_person_detected(event.camera_id)
+                if has_person:
+                    await engine.on_person_detected(event.camera_id)
+                else:
+                    await engine.on_person_lost(event.camera_id)
 
             detection_service.register_event_callback(on_detection_event_for_recording)
             logger.info("RecordEngine registered with detection service for person-mode triggers")

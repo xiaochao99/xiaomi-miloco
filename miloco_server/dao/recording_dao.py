@@ -45,6 +45,10 @@ class RecordingConfigDAO:
             schedule_periods=schedule_periods,
             retention_days=row["retention_days"],
             segment_duration=row.get("segment_duration", 300),
+            motion_buffer_seconds=row.get("motion_buffer_seconds", 25.0),
+            person_buffer_seconds=row.get("person_buffer_seconds", 30.0),
+            motion_threshold=row.get("motion_threshold", 5),
+            motion_check_interval=row.get("motion_check_interval", 1.0),
         )
 
     def get_by_camera_id(self, camera_id: str) -> Optional[RecordingConfig]:
@@ -75,14 +79,20 @@ class RecordingConfigDAO:
 
         now = datetime.now().isoformat()
         sql = """
-            INSERT INTO recording_config (camera_id, enabled, mode, schedule_periods, retention_days, segment_duration, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO recording_config (camera_id, enabled, mode, schedule_periods, retention_days, segment_duration, 
+                                          motion_buffer_seconds, person_buffer_seconds, motion_threshold, motion_check_interval,
+                                          created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(camera_id) DO UPDATE SET
                 enabled = excluded.enabled,
                 mode = excluded.mode,
                 schedule_periods = excluded.schedule_periods,
                 retention_days = excluded.retention_days,
                 segment_duration = excluded.segment_duration,
+                motion_buffer_seconds = excluded.motion_buffer_seconds,
+                person_buffer_seconds = excluded.person_buffer_seconds,
+                motion_threshold = excluded.motion_threshold,
+                motion_check_interval = excluded.motion_check_interval,
                 updated_at = excluded.updated_at
         """
         params = (
@@ -92,6 +102,10 @@ class RecordingConfigDAO:
             schedule_json,
             config.retention_days,
             config.segment_duration,
+            config.motion_buffer_seconds,
+            config.person_buffer_seconds,
+            config.motion_threshold,
+            config.motion_check_interval,
             now,
             now,
         )

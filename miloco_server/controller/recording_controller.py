@@ -76,14 +76,34 @@ def _segment_from_file(camera_id: str, date_str: str, filename: str, full_path: 
         stat = full_path.stat()
         file_size = stat.st_size
 
-        # Parse start time from filename: HH-MM-SS_index.ts
-        time_part = filename.rsplit("_", 1)[0]  # "14-00-00"
+        # Parse filename: HH-MM-SS_index.ts (legacy) or HH-MM-SS_index_mode.ts (new)
+        # mode is: c (continuous), m (motion), p (person)
+        name_without_ext = filename.rsplit(".", 1)[0]  # "14-00-00_0001_m"
+        parts = name_without_ext.split("_")
+        
+        if len(parts) >= 3:
+            # New format: HH-MM-SS_index_mode
+            time_part = parts[0]  # "14-00-00"
+            mode_char = parts[-1]  # "c", "m", or "p"
+            mode_map = {"c": RecordingMode.CONTINUOUS, "m": RecordingMode.MOTION, "p": RecordingMode.PERSON}
+            recording_mode = mode_map.get(mode_char, RecordingMode.CONTINUOUS)
+        else:
+            # Legacy format: HH-MM-SS_index (no mode indicator)
+            time_part = parts[0]  # "14-00-00"
+            recording_mode = RecordingMode.CONTINUOUS
+        
+        # Validate time_part format
+        if time_part.count("-") != 2:
+            logger.warning("Invalid time format in filename %s: %s", filename, time_part)
+            return None
+        
         start_time = datetime.fromisoformat(f"{date_str}T{time_part.replace('-', ':')}:00")
 
-        # Duration estimation from file size (rough: ~50KB/frame at 15fps for H.265, or from stream)
-        # Use a rough estimate: typical H.265 bitrate ~1-3 Mbps → 125-375 KB/s
-        # We'll set a placeholder and let video_info endpoint provide accurate duration
-        duration = max(1, int(file_size / (150 * 1024)))  # ~150KB/s rough estimate
+        # 优先用 ffprobe 读取真实视频时长，避免文件大小估算误差（尤其对 20fps 视频）
+        duration = _detect_duration_from_file(full_path)
+        if duration <= 0:
+            # fallback：按文件大小粗略估算
+            duration = max(1, int(file_size / (150 * 1024)))
 
         segment_id = segment_id_from_path(camera_id, date_str, filename)
         relative_path = f"{camera_id}/{date_str}/{filename}"
@@ -96,12 +116,54 @@ def _segment_from_file(camera_id: str, date_str: str, filename: str, full_path: 
             duration_seconds=duration,
             file_path=relative_path,
             file_size_bytes=file_size,
-            recording_mode=RecordingMode.CONTINUOUS,
+            recording_mode=recording_mode,
             created_at=datetime.fromtimestamp(stat.st_mtime),
         )
     except Exception as e:
         logger.warning("Failed to build segment from file %s: %s", full_path, e)
         return None
+
+
+def _detect_duration_from_file(full_path: Path) -> float:
+    """用 ffprobe 读取视频文件的真实时长（秒），失败返回 0。"""
+    import json
+    import subprocess
+    try:
+        cmd = [
+            'ffprobe', '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_format', '-show_streams',
+            str(full_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            return 0.0
+        data = json.loads(result.stdout)
+        # 优先从 format.duration 读取
+        fmt = data.get('format', {})
+        duration = float(fmt.get('duration', 0))
+        if duration > 0:
+            return duration
+        # 备选：从视频流读取
+        for stream in data.get('streams', []):
+            if stream.get('codec_type') == 'video':
+                nb_frames = stream.get('nb_frames')
+                r_frame_rate = stream.get('r_frame_rate', '')
+                if nb_frames and '/' in r_frame_rate:
+                    num, den = r_frame_rate.split('/')
+                    fps = int(num) / int(den)
+                    if fps > 0:
+                        return int(nb_frames) / fps
+        return 0.0
+    except FileNotFoundError:
+        logger.warning("ffprobe not found, skip duration detection for %s", full_path)
+        return 0.0
+    except Exception as e:
+        logger.warning("Failed to detect duration from %s: %s", full_path, e)
+        return 0.0
+    except Exception as e:
+        logger.warning("Failed to detect duration from %s: %s", full_path, e)
+        return 0.0
 
 
 def scan_segments(
@@ -212,6 +274,12 @@ async def update_recording_config(
         mode = body.get("recording_mode", body.get("mode", base.mode if base else "continuous"))
         retention_days = body.get("retention_days", base.retention_days if base else 7)
         segment_duration = body.get("segment_duration", base.segment_duration if base else 300)
+        
+        # Motion/Person detection settings
+        motion_buffer_seconds = body.get("motion_buffer_seconds", base.motion_buffer_seconds if base else 25.0)
+        person_buffer_seconds = body.get("person_buffer_seconds", base.person_buffer_seconds if base else 30.0)
+        motion_threshold = body.get("motion_threshold", base.motion_threshold if base else 5)
+        motion_check_interval = body.get("motion_check_interval", base.motion_check_interval if base else 1.0)
 
         schedule_periods = body.get("recording_plans", body.get("schedule_periods"))
         if schedule_periods is not None:
@@ -226,8 +294,12 @@ async def update_recording_config(
             schedule_periods=schedule_periods,
             retention_days=retention_days,
             segment_duration=segment_duration,
+            motion_buffer_seconds=motion_buffer_seconds,
+            person_buffer_seconds=person_buffer_seconds,
+            motion_threshold=motion_threshold,
+            motion_check_interval=motion_check_interval,
         )
-        logger.info(f"Updating recording config for {camera_id}: enabled={enabled}, mode={mode}")
+        logger.info(f"Updating recording config for {camera_id}: enabled={enabled}, mode={mode}, motion_buffer={motion_buffer_seconds}, person_buffer={person_buffer_seconds}")
         success = await engine.update_config(config)
         if success:
             logger.info(f"Recording config updated successfully for {camera_id}")
@@ -592,9 +664,11 @@ async def get_hls_playlist(segment_id: str):
     if not full_path.exists():
         raise HTTPException(status_code=404, detail="Segment file not found")
 
-    # Estimate duration from file size
-    file_size = full_path.stat().st_size
-    duration = max(1, int(file_size / (150 * 1024)))  # ~150KB/s rough
+    # 用 ffprobe 读取真实视频时长，不再按文件大小估算（避免 20fps 视频时长偏差）
+    duration = _detect_duration_from_file(full_path)
+    if duration <= 0:
+        file_size = full_path.stat().st_size
+        duration = max(1, int(file_size / (150 * 1024)))  # fallback
     target_duration = max(1, math.ceil(duration))
 
     # Use absolute path to avoid relative URL ambiguity in hls.js

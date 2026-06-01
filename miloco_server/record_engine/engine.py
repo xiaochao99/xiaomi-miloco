@@ -31,6 +31,8 @@ from miloco_server.schema.recording_schema import (
     TimePeriod,
 )
 
+from miloco_server.utils.check_img_motion import CheckImgMotionByDHash
+
 from .channel import ChannelRecorder
 from .storage import StorageManager
 
@@ -47,12 +49,16 @@ class RecordEngineConfig:
         retention_days: int = 7,
         motion_buffer_seconds: float = 5.0,
         person_buffer_seconds: float = 5.0,
+        motion_threshold: int = 5,
+        motion_check_interval: float = 1.0,
     ):
         self.segment_duration = segment_duration
         self.pre_buffer_seconds = pre_buffer_seconds
         self.retention_days = retention_days
         self.motion_buffer_seconds = motion_buffer_seconds
         self.person_buffer_seconds = person_buffer_seconds
+        self.motion_threshold = motion_threshold
+        self.motion_check_interval = motion_check_interval
 
 
 class RecordEngine:
@@ -76,9 +82,13 @@ class RecordEngine:
         # Camera handlers for raw stream registration
         self._camera_handlers: Dict[str, object] = {}
         
+        # Motion detection state per camera (for MOTION mode)
+        self._motion_states: Dict[str, dict] = {}
+        
         # State
         self._running = False
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._trigger_monitor_task: Optional[asyncio.Task] = None
         
         # Statistics
         self._start_time: Optional[float] = None
@@ -99,6 +109,8 @@ class RecordEngine:
         
         # Start cleanup task
         self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+        # Start trigger monitor for MOTION/PERSON modes
+        self._trigger_monitor_task = asyncio.create_task(self._trigger_monitor_loop())
         
         logger.info("[RecordEngine] Initialization complete")
     
@@ -116,12 +128,21 @@ class RecordEngine:
             except asyncio.CancelledError:
                 pass
         
+        # Cancel trigger monitor task
+        if self._trigger_monitor_task:
+            self._trigger_monitor_task.cancel()
+            try:
+                await self._trigger_monitor_task
+            except asyncio.CancelledError:
+                pass
+        
         # Stop all recorders
         for key, recorder in self._recorders.items():
             await recorder.stop_recording()
         
         self._recorders.clear()
         self._camera_handlers.clear()
+        self._motion_states.clear()
         
         logger.info("[RecordEngine] Shutdown complete")
     
@@ -146,6 +167,17 @@ class RecordEngine:
             await self._recorders[key].stop_recording()
             del self._recorders[key]
         
+        # Clean up motion state
+        self._motion_states.pop(camera_id, None)
+        
+        # Unregister JPEG stream if handler supports it
+        handler = self._camera_handlers.get(camera_id)
+        if handler and hasattr(handler, 'unregister_jpeg_stream'):
+            try:
+                await handler.unregister_jpeg_stream(channel=0)
+            except Exception:
+                pass
+        
         self._camera_handlers.pop(camera_id, None)
     
     async def _setup_camera_recording(self, config: RecordingConfig, handler=None):
@@ -166,21 +198,50 @@ class RecordEngine:
             segment_duration=config.segment_duration or self._config.segment_duration,
             pre_buffer_seconds=self._config.pre_buffer_seconds,
             output_dir=self._storage.base_path,
+            recording_mode=config.mode.value if config.mode else "continuous",
         )
         
         key = (camera_id, 0)
         self._recorders[key] = recorder
         
-        # Register raw stream callback
+        # Register raw stream callback (needed for all modes to fill pre-buffer)
         if hasattr(handler, 'register_raw_stream'):
             callback = recorder.on_raw_frame
             await handler.register_raw_stream(callback, channel=0)
             logger.info("[RecordEngine] Registered raw stream callback for camera %s", camera_id)
         
-        # Start recording if enabled
-        if config.enabled:
+        if not config.enabled:
+            return
+        
+        if config.mode == RecordingMode.CONTINUOUS:
+            # Continuous mode: start recording immediately
             await recorder.start_recording()
-            logger.info("[RecordEngine] Started recording for camera %s", camera_id)
+            logger.info("[RecordEngine] Started continuous recording for camera %s", camera_id)
+        
+        elif config.mode == RecordingMode.MOTION:
+            # Motion mode: register JPEG stream for motion detection, wait for trigger
+            if hasattr(handler, 'register_jpeg_stream'):
+                jpeg_callback = self._create_motion_jpeg_callback(camera_id)
+                await handler.register_jpeg_stream(jpeg_callback, channel=0)
+                logger.info("[RecordEngine] Motion mode: registered JPEG stream for camera %s", camera_id)
+            else:
+                logger.warning("[RecordEngine] Motion mode requires JPEG stream support, handler missing register_jpeg_stream for camera %s", camera_id)
+            
+            self._motion_states[camera_id] = {
+                "mode": "motion",
+                "detected": False,
+                "last_activity_time": 0,
+            }
+            logger.info("[RecordEngine] Motion mode setup for camera %s, waiting for motion detection", camera_id)
+        
+        elif config.mode == RecordingMode.PERSON:
+            # Person mode: wait for detection service callback
+            self._motion_states[camera_id] = {
+                "mode": "person",
+                "detected": False,
+                "last_activity_time": 0,
+            }
+            logger.info("[RecordEngine] Person mode setup for camera %s, waiting for person detection", camera_id)
     
     async def on_person_detected(self, camera_id: str):
         """Callback when person is detected (for PERSON mode)."""
@@ -188,11 +249,29 @@ class RecordEngine:
         if not config or config.mode != RecordingMode.PERSON:
             return
         
+        state = self._motion_states.get(camera_id)
+        if state:
+            state["last_activity_time"] = time.time()
+            if not state.get("detected"):
+                state["detected"] = True
+                logger.info("[RecordEngine] Person detected for camera %s", camera_id)
+        
         key = (camera_id, 0)
         recorder = self._recorders.get(key)
         if recorder and not recorder.active:
             await recorder.start_recording()
             logger.info("[RecordEngine] Person detected, started recording for camera %s", camera_id)
+    
+    async def on_person_lost(self, camera_id: str):
+        """Callback when person is no longer detected (for PERSON mode)."""
+        config = self._config_dao.get_by_camera_id(camera_id)
+        if not config or config.mode != RecordingMode.PERSON:
+            return
+        
+        state = self._motion_states.get(camera_id)
+        if state and state.get("detected"):
+            state["detected"] = False
+            logger.info("[RecordEngine] Person lost for camera %s, will end recording after buffer time", camera_id)
     
     async def on_motion_detected(self, camera_id: str):
         """Callback when motion is detected (for MOTION mode)."""
@@ -200,11 +279,143 @@ class RecordEngine:
         if not config or config.mode != RecordingMode.MOTION:
             return
         
+        state = self._motion_states.get(camera_id)
+        if state:
+            state["last_activity_time"] = time.time()
+            if not state.get("detected"):
+                state["detected"] = True
+                logger.info("[RecordEngine] Motion detected for camera %s", camera_id)
+        
         key = (camera_id, 0)
         recorder = self._recorders.get(key)
         if recorder and not recorder.active:
             await recorder.start_recording()
             logger.info("[RecordEngine] Motion detected, started recording for camera %s", camera_id)
+    
+    async def on_motion_lost(self, camera_id: str):
+        """Callback when motion is no longer detected (for MOTION mode)."""
+        config = self._config_dao.get_by_camera_id(camera_id)
+        if not config or config.mode != RecordingMode.MOTION:
+            return
+        
+        state = self._motion_states.get(camera_id)
+        if state and state.get("detected"):
+            state["detected"] = False
+            logger.info("[RecordEngine] Motion lost for camera %s, will end recording after buffer time", camera_id)
+    
+    def _create_motion_jpeg_callback(self, camera_id: str) -> Callable:
+        """Create a JPEG callback for motion detection using DHash.
+        
+        Only signals motion_detected when frames differ. Motion stop is handled
+        by _trigger_monitor_loop based on last_activity_time timeout, not by
+        individual unchanged frames, to avoid rapid start/stop toggling.
+        
+        Features:
+        - Configurable check interval to reduce CPU usage
+        - Logs DHash distance for debugging
+        - Cooldown period to prevent rapid start/stop
+        - Configurable motion threshold for sensitivity adjustment
+        """
+        last_check_time = 0.0
+        last_frame: Optional[bytes] = None
+        last_motion_time = 0.0  # For cooldown
+        COOLDOWN_SECONDS = 2.0  # Minimum time between motion start events
+        motion_threshold = self._config.motion_threshold
+        check_interval = self._config.motion_check_interval
+        
+        async def on_jpeg_frame(did: str, data: bytes, ts: int, channel: int):
+            nonlocal last_check_time, last_frame, last_motion_time
+            
+            state = self._motion_states.get(camera_id)
+            if not state or state.get("mode") != "motion":
+                return
+            
+            now = time.time()
+            if now - last_check_time < check_interval:
+                return
+            last_check_time = now
+            
+            prev_frame = last_frame
+            last_frame = data
+            
+            if prev_frame:
+                try:
+                    changed, distance = CheckImgMotionByDHash.is_image_changed(prev_frame, data, threshold=motion_threshold)
+                    
+                    # Log distance for debugging
+                    if distance >= 0:
+                        logger.debug("[RecordEngine] Motion check for %s: distance=%d, threshold=%d, changed=%s",
+                                   camera_id, distance, motion_threshold, changed)
+                    
+                    if changed:
+                        # Apply cooldown to prevent rapid start/stop
+                        if now - last_motion_time < COOLDOWN_SECONDS:
+                            logger.debug("[RecordEngine] Motion detected but in cooldown for %s", camera_id)
+                            return
+                        
+                        last_motion_time = now
+                        await self.on_motion_detected(camera_id)
+                    # Do NOT call on_motion_lost here; let _trigger_monitor_loop
+                    # decide when to stop based on last_activity_time timeout.
+                except Exception as e:
+                    logger.debug("[RecordEngine] Motion check error for %s: %s", camera_id, e)
+        
+        return on_jpeg_frame
+    
+    async def _trigger_monitor_loop(self):
+        """Monitor MOTION/PERSON mode recorders and stop them after buffer timeout.
+        
+        Logic: Stop recording when last_activity_time exceeds buffer_seconds.
+        The 'detected' flag is used for logging, not for controlling stop logic.
+        
+        Buffer seconds are read from each camera's config in the database,
+        not from the global engine config.
+        """
+        logger.info("[RecordEngine] Trigger monitor loop started (using per-camera config from DB)")
+        
+        while self._running:
+            try:
+                await asyncio.sleep(1)
+                now = time.time()
+                
+                for camera_id, state in list(self._motion_states.items()):
+                    key = (camera_id, 0)
+                    recorder = self._recorders.get(key)
+                    if not recorder or not recorder.active:
+                        continue
+                    
+                    # Get buffer seconds from camera's config in database
+                    camera_config = self._config_dao.get_by_camera_id(camera_id)
+                    if camera_config:
+                        buffer_seconds = (
+                            camera_config.motion_buffer_seconds
+                            if state.get("mode") == "motion"
+                            else camera_config.person_buffer_seconds
+                        )
+                    else:
+                        # Fallback to global config
+                        buffer_seconds = (
+                            self._config.motion_buffer_seconds
+                            if state.get("mode") == "motion"
+                            else self._config.person_buffer_seconds
+                        )
+                    
+                    last_activity = state.get("last_activity_time", 0)
+                    elapsed = now - last_activity
+                    if elapsed > buffer_seconds:
+                        # Log recording stats before stopping
+                        stats = recorder.get_stats()
+                        logger.info("[RecordEngine] %s ended for camera %s after %.1fs buffer "
+                                   "(recorded %d frames, %d bytes, %d segments)",
+                                   state.get("mode", "trigger").capitalize(), camera_id,
+                                   elapsed, stats.get("total_frames", 0),
+                                   stats.get("total_bytes", 0), stats.get("total_segments", 0))
+                        await recorder.stop_recording()
+                        state["detected"] = False
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("[RecordEngine] Error in trigger monitor loop: %s", e)
     
     async def update_config(self, config: RecordingConfig) -> bool:
         """Update recording configuration for a camera."""
@@ -234,6 +445,9 @@ class RecordEngine:
         if key in self._recorders:
             await self._recorders[key].stop_recording()
             del self._recorders[key]
+        
+        # Clean up motion state
+        self._motion_states.pop(camera_id, None)
         
         return self._config_dao.delete(camera_id)
     
@@ -362,13 +576,20 @@ async def init_record_engine() -> RecordEngine:
     global _record_engine
     
     # Create configuration
+    logger.info("[RecordEngine] Loading config from RECORDING_CONFIG: %s", RECORDING_CONFIG)
+    
     config = RecordEngineConfig(
         segment_duration=int(RECORDING_CONFIG.get("segment_duration", 300)),
         pre_buffer_seconds=float(RECORDING_CONFIG.get("pre_buffer_seconds", 5.0)),
         retention_days=int(RECORDING_CONFIG.get("retention_days", 7)),
         motion_buffer_seconds=float(RECORDING_CONFIG.get("motion_buffer_seconds", 5.0)),
         person_buffer_seconds=float(RECORDING_CONFIG.get("person_buffer_seconds", 5.0)),
+        motion_threshold=int(RECORDING_CONFIG.get("motion_threshold", 5)),
+        motion_check_interval=float(RECORDING_CONFIG.get("motion_check_interval", 1.0)),
     )
+    
+    logger.info("[RecordEngine] Config loaded: motion_buffer=%.1fs, person_buffer=%.1fs, threshold=%d",
+               config.motion_buffer_seconds, config.person_buffer_seconds, config.motion_threshold)
     
     # Create storage manager
     storage_path = STORAGE_DIR / "recordings"

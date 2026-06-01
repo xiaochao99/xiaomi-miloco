@@ -36,9 +36,19 @@ class CheckImgMotionByDHash:
             return None
 
     @staticmethod
-    def is_image_changed(image1_src, image2_src) -> tuple[bool, int]:
+    def is_image_changed(image1_src, image2_src, threshold: int = THRESHOLD) -> tuple[bool, int]:
         """
         Check if two images have changed
+        
+        Args:
+            image1_src: First image (bytes or file path)
+            image2_src: Second image (bytes or file path)
+            threshold: DHash distance threshold for motion detection (default: 5)
+                      Lower values = more sensitive (detect smaller changes)
+                      Higher values = less sensitive (only detect larger changes)
+        
+        Returns:
+            Tuple of (changed: bool, distance: int)
         """
         hash1 = CheckImgMotionByDHash._calculate_dhash(image1_src)
         hash2 = CheckImgMotionByDHash._calculate_dhash(image2_src)
@@ -46,7 +56,7 @@ class CheckImgMotionByDHash:
             return (False, -1)  # Processing failed
         # Calculate Hamming distance, imagehash library supports direct hash subtraction
         distance = hash1 - hash2
-        changed = distance > THRESHOLD
+        changed = distance > threshold
         return (changed, distance)
 
 

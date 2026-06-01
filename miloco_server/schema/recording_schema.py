@@ -41,6 +41,11 @@ class RecordingConfig(BaseModel):
     )
     retention_days: int = Field(default=7, description="Recording retention days", ge=1, le=365)
     segment_duration: int = Field(default=300, description="Segment duration in seconds", ge=60, le=3600)
+    # Motion/Person detection settings
+    motion_buffer_seconds: float = Field(default=25.0, description="Continue recording after motion stops (seconds)", ge=5, le=300)
+    person_buffer_seconds: float = Field(default=30.0, description="Continue recording after person leaves (seconds)", ge=5, le=300)
+    motion_threshold: int = Field(default=5, description="DHash distance threshold for motion detection (1-20, lower=more sensitive)", ge=1, le=20)
+    motion_check_interval: float = Field(default=1.0, description="Motion detection check interval in seconds", ge=0.5, le=10)
 
 
 class RecordingConfigUpdate(BaseModel):
@@ -53,6 +58,11 @@ class RecordingConfigUpdate(BaseModel):
     )
     retention_days: Optional[int] = Field(default=None, description="Recording retention days", ge=1, le=365)
     segment_duration: Optional[int] = Field(default=None, description="Segment duration in seconds", ge=60, le=3600)
+    # Motion/Person detection settings
+    motion_buffer_seconds: Optional[float] = Field(default=None, description="Continue recording after motion stops (seconds)", ge=5, le=300)
+    person_buffer_seconds: Optional[float] = Field(default=None, description="Continue recording after person leaves (seconds)", ge=5, le=300)
+    motion_threshold: Optional[int] = Field(default=None, description="DHash distance threshold for motion detection (1-20, lower=more sensitive)", ge=1, le=20)
+    motion_check_interval: Optional[float] = Field(default=None, description="Motion detection check interval in seconds", ge=0.5, le=10)
 
 
 class RecordingSegment(BaseModel):
@@ -61,7 +71,7 @@ class RecordingSegment(BaseModel):
     camera_id: str = Field(..., description="Camera device ID")
     start_time: datetime = Field(..., description="Recording start time")
     end_time: Optional[datetime] = Field(default=None, description="Recording end time (None if still recording)")
-    duration_seconds: int = Field(..., description="Duration in seconds")
+    duration_seconds: float = Field(..., description="Duration in seconds")
     file_path: str = Field(..., description="Relative file path")
     file_size_bytes: int = Field(default=0, description="File size in bytes")
     recording_mode: RecordingMode = Field(..., description="Recording mode when segment was created")

@@ -340,6 +340,24 @@ class SQLiteConnector:
             cursor.execute("ALTER TABLE recording_config ADD COLUMN segment_duration INTEGER DEFAULT 300")
             conn.commit()
             logger.info("segment_duration column added successfully")
+        
+        # Add motion/person detection columns if they don't exist
+        new_columns = [
+            ("motion_buffer_seconds", "REAL DEFAULT 25.0"),
+            ("person_buffer_seconds", "REAL DEFAULT 30.0"),
+            ("motion_threshold", "INTEGER DEFAULT 5"),
+            ("motion_check_interval", "REAL DEFAULT 1.0"),
+        ]
+        
+        for col_name, col_type in new_columns:
+            try:
+                cursor.execute(f"SELECT {col_name} FROM recording_config LIMIT 1")
+                logger.debug(f"{col_name} column already exists in recording_config table")
+            except sqlite3.OperationalError:
+                logger.info(f"Adding {col_name} column to recording_config table")
+                cursor.execute(f"ALTER TABLE recording_config ADD COLUMN {col_name} {col_type}")
+                conn.commit()
+                logger.info(f"{col_name} column added successfully")
 
     def _create_recording_segments_table(self, conn: sqlite3.Connection) -> None:
         """Create recording segments table"""

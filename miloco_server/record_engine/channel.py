@@ -98,8 +98,15 @@ class PreRecordingBuffer:
     Ensures buffer data starts with a keyframe to avoid garbled playback.
     """
     
-    def __init__(self, duration_seconds: float = 5.0):
+    def __init__(self, duration_seconds: float = 5.0, max_bytes: int = 50 * 1024 * 1024):
+        """Initialize the pre-recording buffer.
+        
+        Args:
+            duration_seconds: Maximum duration to keep in buffer
+            max_bytes: Maximum buffer size in bytes (default 50MB)
+        """
         self.duration_seconds = duration_seconds
+        self.max_bytes = max_bytes
         # List of (timestamp, data_bytes, is_keyframe) tuples
         self._frames: Deque[Tuple[float, bytes, bool]] = deque()
         self._total_bytes = 0
@@ -114,6 +121,28 @@ class PreRecordingBuffer:
         while self._frames and self._frames[0][0] < cutoff_time:
             _, old_data, _ = self._frames.popleft()
             self._total_bytes -= len(old_data)
+        
+        # Also remove frames if buffer exceeds max bytes (keep at least 1 keyframe)
+        while self._frames and self._total_bytes > self.max_bytes:
+            # Find the second keyframe to keep at least one
+            first_keyframe_idx = -1
+            for i, (_, _, is_kf) in enumerate(self._frames):
+                if is_kf:
+                    if first_keyframe_idx == -1:
+                        first_keyframe_idx = i
+                    else:
+                        # Found second keyframe, remove everything before it
+                        break
+            
+            if first_keyframe_idx > 0:
+                # Remove frames up to (but not including) the first keyframe
+                for _ in range(first_keyframe_idx):
+                    _, old_data, _ = self._frames.popleft()
+                    self._total_bytes -= len(old_data)
+            else:
+                # Only one or zero keyframes, remove oldest frame
+                _, old_data, _ = self._frames.popleft()
+                self._total_bytes -= len(old_data)
     
     def get_buffer_data_from_keyframe(self) -> List[Tuple[float, bytes, bool]]:
         """Get buffer data starting from the first keyframe.
@@ -166,11 +195,13 @@ class ChannelRecorder:
         segment_duration: int = 300,
         pre_buffer_seconds: float = 5.0,
         output_dir: Path = Path("recordings"),
+        recording_mode: str = "continuous",
     ):
         self.camera_id = camera_id
         self.channel = channel
         self.segment_duration = segment_duration
         self.output_dir = output_dir
+        self.recording_mode = recording_mode  # "continuous", "motion", "person"
         
         # Pre-recording buffer
         self.pre_buffer = PreRecordingBuffer(duration_seconds=pre_buffer_seconds)
@@ -185,6 +216,7 @@ class ChannelRecorder:
         self._last_rotate_time: Optional[float] = None
         self._frame_count = 0
         self._awaiting_keyframe = False
+        self._first_pts_offset: Optional[float] = None  # 保证 PTS 从 0 开始
         
         # Codec headers
         self._vps_data: Optional[bytes] = None
@@ -216,11 +248,17 @@ class ChannelRecorder:
         return self._estimated_fps
     
     def _get_segment_path(self) -> Path:
-        """Generate path for new segment."""
+        """Generate path for new segment.
+        
+        Filename format: {HH-MM-SS}_{index}_{mode}.ts
+        mode is: c (continuous), m (motion), p (person)
+        """
         now = datetime.now()
         date_dir = now.strftime("%Y-%m-%d")
         time_str = now.strftime("%H-%M-%S")
-        segment_id = f"{time_str}_{self._total_segments:04d}"
+        # Encode mode in filename: continuous->c, motion->m, person->p
+        mode_short = {"continuous": "c", "motion": "m", "person": "p"}.get(self.recording_mode, "c")
+        segment_id = f"{time_str}_{self._total_segments:04d}_{mode_short}"
         
         camera_dir = self.output_dir / self.camera_id / date_dir
         os.makedirs(camera_dir, exist_ok=True)
@@ -263,6 +301,7 @@ class ChannelRecorder:
             self._last_rotate_time = time.time()
             self._frame_count = 0
             self._awaiting_keyframe = True
+            self._first_pts_offset = None  # 新 segment 重置 PTS 偏移基准
             self._total_segments += 1
             
             logger.info("[ChannelRecorder] Opened segment: %s", self._segment_path)
@@ -320,10 +359,14 @@ class ChannelRecorder:
             packet.stream = self._stream
             
             # Calculate PTS in stream timebase (90kHz)
-            # Use relative time from segment start
+            # 以第一个写入帧的时间为基准，确保 PTS 严格从 0 开始
             if self._segment_start_time is not None:
                 relative_time = timestamp - self._segment_start_time
-                pts = int(relative_time * 90000)  # Convert to 90kHz timebase
+                if self._first_pts_offset is None:
+                    self._first_pts_offset = relative_time
+                # 减去第一个帧的偏移，保证 PTS 从 0 起算
+                normalized_time = relative_time - self._first_pts_offset
+                pts = int(normalized_time * 90000)  # Convert to 90kHz timebase
             else:
                 pts = self._frame_count * 6000  # Assume 15fps
             
@@ -447,8 +490,8 @@ class ChannelRecorder:
                           self.camera_id, self.channel)
             return
         
-        logger.info("[ChannelRecorder] Starting recording for camera %s channel %d", 
-                   self.camera_id, self.channel)
+        logger.info("[ChannelRecorder] Starting recording for camera %s channel %d (mode: %s)", 
+                   self.camera_id, self.channel, self.recording_mode)
         
         # Open first segment
         if self._open_segment():
@@ -457,8 +500,10 @@ class ChannelRecorder:
             # Mux pre-buffer data
             pre_buffer_frames = self.pre_buffer.get_buffer_data_from_keyframe()
             if pre_buffer_frames:
-                logger.info("[ChannelRecorder] Muxing %d pre-buffer frames for camera %s", 
-                           len(pre_buffer_frames), self.camera_id)
+                buffer_duration = self.pre_buffer.get_duration()
+                buffer_size_mb = self.pre_buffer._total_bytes / (1024 * 1024)
+                logger.info("[ChannelRecorder] Muxing %d pre-buffer frames for camera %s (%.1fs, %.2fMB)", 
+                           len(pre_buffer_frames), self.camera_id, buffer_duration, buffer_size_mb)
                 for timestamp, data, is_kf in pre_buffer_frames:
                     self._mux_frame(data, timestamp, is_kf)
             

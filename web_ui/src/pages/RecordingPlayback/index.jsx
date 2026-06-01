@@ -11,6 +11,7 @@ import {
   Checkbox,
   Empty,
   Drawer,
+  Badge,
 } from 'antd';
 import { useTranslation } from 'react-i18next';
 import {
@@ -27,6 +28,8 @@ import {
   StepBackwardOutlined,
   StepForwardOutlined,
   UnorderedListOutlined,
+  WifiOutlined,
+  VideoCameraFilled,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -40,9 +43,36 @@ import {
   getRecordingPlaybackUrl,
   getRecordingThumbnailUrl,
   getRecordingHlsUrl,
+  getRecordingTranscodeUrl,
 } from '@/api';
 import TimelineBar from './components/TimelineBar';
+import VideoPlayer from '@/pages/Instant/components/VideoPlayer';
 import styles from './index.module.less';
+
+/**
+ * 将 dayjs 时间转换为当天秒数（从 00:00:00 开始）
+ */
+const dayjsToSeconds = (dt) => {
+  return dt.hour() * 3600 + dt.minute() * 60 + dt.second() + dt.millisecond() / 1000;
+};
+
+/**
+ * 检测浏览器是否支持 H265/HEVC 解码（HLS.js 依赖 MSE）
+ */
+const isHevcSupported = () => {
+  const ms = window.MediaSource || window.WebKitMediaSource;
+  if (ms && ms.isTypeSupported) {
+    return (
+      ms.isTypeSupported('video/mp4; codecs="hev1.1.6.L93.B0"') ||
+      ms.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"')
+    );
+  }
+  const video = document.createElement('video');
+  return (
+    video.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"') === 'probably' ||
+    video.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') === 'probably'
+  );
+};
 
 const RecordingPlayback = () => {
   const { t } = useTranslation();
@@ -64,23 +94,47 @@ const RecordingPlayback = () => {
 
   // 播放器状态
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [zoomLevel, setZoomLevel] = useState(0);
   const [segmentDrawerVisible, setSegmentDrawerVisible] = useState(false);
 
+  // 全局播放时间（当天秒数，从 00:00:00 开始计算）
+  const [globalTime, setGlobalTime] = useState(0);
+
+  // 直播/回看模式状态
+  const [playbackMode, setPlaybackMode] = useState('idle'); // 'idle' | 'playback' | 'live' | 'switching'
+  const [liveCanvasRef, setLiveCanvasRef] = useState(null);
+  const [hoverProgress, setHoverProgress] = useState(null); // { x, time } for hover preview
+
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
+  // 排序后的播放队列
+  const playbackQueueRef = useRef([]);
+  // 当前播放的片段在队列中的索引
+  const currentQueueIndexRef = useRef(-1);
+  // 预加载的下一个视频元素
+  const preloadVideoRef = useRef(null);
 
-  // hls.js 播放器：TS 文件通过 m3u8 播放，其他格式原生播放
+  // ── 按时间排序的播放队列 ─────────────────────────────────────────────
+  const sortedQueue = useMemo(() => {
+    return [...allSegments].sort(
+      (a, b) => dayjs(a.start_time).valueOf() - dayjs(b.start_time).valueOf(),
+    );
+  }, [allSegments]);
+
+  // 同步到 ref
   useEffect(() => {
-    if (!activeSegment) return;
+    playbackQueueRef.current = sortedQueue;
+  }, [sortedQueue]);
 
-    let cancelled = false;
+  /**
+   * 加载指定片段到播放器
+   */
+  const loadSegmentToPlayer = useCallback((segment, shouldPlay = true) => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !segment) return;
 
     // 清理上一次的 hls 实例
     if (hlsRef.current) {
@@ -88,61 +142,103 @@ const RecordingPlayback = () => {
       hlsRef.current = null;
     }
 
-    const playbackUrl = getRecordingPlaybackUrl(activeSegment.id);
-    const isTs = (activeSegment.file_path || '').toLowerCase().endsWith('.ts');
+    const playbackUrl = getRecordingPlaybackUrl(segment.id);
+    const isTs = (segment.file_path || '').toLowerCase().endsWith('.ts');
 
     if (!isTs) {
       video.src = playbackUrl;
-      if (isPlaying) video.play().catch(() => {});
-      return () => { video.src = ''; };
+      video.load();
+      if (shouldPlay) video.play().catch(() => {});
+      return;
     }
 
-    // TS 文件：使用 hls.js
+    // TS 文件：浏览器不支持 H265 时直接走转码 MP4，避免 HLS bufferAddCodecError
+    if (!isHevcSupported()) {
+      video.src = getRecordingTranscodeUrl(segment.id);
+      video.load();
+      if (shouldPlay) video.play().catch(() => {});
+      return;
+    }
+
+    // TS 文件且浏览器支持 H265：使用 hls.js
     const setupHls = async () => {
       try {
         const Hls = (await import('hls.js')).default;
-        if (cancelled) return;
-
         const hls = new Hls({ enableWorker: false });
         hls.attachMedia(video);
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (cancelled) return;
-          setDuration(hls.levels?.[0]?.details?.totalduration || activeSegment.duration_seconds || 0);
-          if (isPlaying) video.play().catch(() => {});
+          setDuration(hls.levels?.[0]?.details?.totalduration || segment.duration_seconds || 0);
+          if (shouldPlay) video.play().catch(() => {});
         });
 
         hls.on(Hls.Events.ERROR, (_event, data) => {
-          if (cancelled || !data.fatal) return;
+          if (!data.fatal) return;
           console.warn('[HLS] Fatal error:', data.details);
+          hls.detachMedia();
           hls.destroy();
           hlsRef.current = null;
-          // 回退到服务端转码
-          video.src = `/api/recording/transcode/${activeSegment.id}`;
-          video.play().catch(() => {});
+          video.src = getRecordingTranscodeUrl(segment.id);
+          video.load();
+          if (shouldPlay) video.play().catch(() => {});
         });
 
-        hls.loadSource(getRecordingHlsUrl(activeSegment.id));
+        hls.loadSource(getRecordingHlsUrl(segment.id));
         hlsRef.current = hls;
       } catch (e) {
         console.error('[HLS] Init error:', e);
-        if (!cancelled) {
-          video.src = `/api/recording/transcode/${activeSegment.id}`;
-          video.play().catch(() => {});
-        }
+        video.src = getRecordingTranscodeUrl(segment.id);
+        video.load();
+        if (shouldPlay) video.play().catch(() => {});
       }
     };
 
     setupHls();
+  }, []);
+
+  /**
+   * 预加载下一个片段（在后台创建临时 video 元素触发浏览器缓存）
+   */
+  const preloadNextSegment = useCallback((nextSegment) => {
+    if (!nextSegment) return;
+    // 清理旧的预加载
+    if (preloadVideoRef.current) {
+      preloadVideoRef.current.pause();
+      preloadVideoRef.current.removeAttribute('src');
+      preloadVideoRef.current = null;
+    }
+    const isTs = (nextSegment.file_path || '').toLowerCase().endsWith('.ts');
+    // 对 TS 片段，若浏览器不支持 H265 则预加载转码后的 MP4
+    const url = isTs && !isHevcSupported()
+      ? getRecordingTranscodeUrl(nextSegment.id)
+      : getRecordingPlaybackUrl(nextSegment.id);
+    if (!isTs || !isHevcSupported()) {
+      const v = document.createElement('video');
+      v.preload = 'auto';
+      v.src = url;
+      v.load();
+      preloadVideoRef.current = v;
+    }
+  }, []);
+
+  // ── 播放器加载 activeSegment ──────────────────────────────────────────
+  useEffect(() => {
+    if (!activeSegment) return;
+    loadSegmentToPlayer(activeSegment, isPlaying);
 
     return () => {
-      cancelled = true;
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
     };
-  }, [activeSegment?.id, isPlaying]);
+  }, [activeSegment?.id]);
+
+  // ── 播放速率同步 ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) video.playbackRate = playbackRate;
+  }, [playbackRate]);
 
   useEffect(() => {
     fetchCameras();
@@ -342,27 +438,77 @@ const RecordingPlayback = () => {
     setActiveSegment(null);
   };
 
+  /**
+   * 点击片段：切换到该片段并播放，更新全局时间
+   */
   const handleSegmentClick = useCallback((segment) => {
     setActiveSegment(segment);
     setIsPlaying(true);
-    setCurrentTime(0);
+    setPlaybackMode('playback');
+    // 设置全局时间为片段的起始时间
+    const startSec = dayjsToSeconds(dayjs(segment.start_time));
+    setGlobalTime(startSec);
+    // 更新队列索引
+    const queue = playbackQueueRef.current;
+    const idx = queue.findIndex((s) => s.id === segment.id);
+    currentQueueIndexRef.current = idx;
+    // 预加载下一个
+    if (idx >= 0 && idx < queue.length - 1) {
+      preloadNextSegment(queue[idx + 1]);
+    }
+  }, [preloadNextSegment]);
+
+  /**
+   * 播放下一个片段（无缝衔接）
+   */
+  const handlePlayNext = useCallback(() => {
+    const queue = playbackQueueRef.current;
+    const currentIdx = currentQueueIndexRef.current;
+    const nextIdx = currentIdx + 1;
+
+    if (nextIdx >= 0 && nextIdx < queue.length) {
+      const nextSegment = queue[nextIdx];
+      currentQueueIndexRef.current = nextIdx;
+      setActiveSegment(nextSegment);
+      setGlobalTime(dayjsToSeconds(dayjs(nextSegment.start_time)));
+      setPlaybackMode('playback');
+      // 预加载下下一个
+      if (nextIdx + 1 < queue.length) {
+        preloadNextSegment(queue[nextIdx + 1]);
+      }
+    } else {
+      // 没有更多片段，切换到直播
+      handleSwitchToLive();
+    }
+  }, [preloadNextSegment]);
+
+  const handleSwitchToLive = useCallback(() => {
+    setActiveSegment(null);
+    setIsPlaying(false);
+    setGlobalTime(0);
+    setDuration(0);
+    setPlaybackMode('switching');
+    setTimeout(() => {
+      setPlaybackMode('live');
+    }, 800);
   }, []);
 
-  const handlePlayNext = useCallback(() => {
-    const idx = segments.findIndex((s) => s.id === activeSegment?.id);
-    if (idx >= 0 && idx < segments.length - 1) {
-      setActiveSegment(segments[idx + 1]);
-      setCurrentTime(0);
-    }
-  }, [segments, activeSegment]);
-
+  /**
+   * 播放上一个片段
+   */
   const handlePlayPrev = useCallback(() => {
-    const idx = segments.findIndex((s) => s.id === activeSegment?.id);
-    if (idx > 0) {
-      setActiveSegment(segments[idx - 1]);
-      setCurrentTime(0);
+    const queue = playbackQueueRef.current;
+    const currentIdx = currentQueueIndexRef.current;
+    const prevIdx = currentIdx - 1;
+
+    if (prevIdx >= 0 && prevIdx < queue.length) {
+      const prevSegment = queue[prevIdx];
+      currentQueueIndexRef.current = prevIdx;
+      setActiveSegment(prevSegment);
+      setGlobalTime(dayjsToSeconds(dayjs(prevSegment.start_time)));
+      setPlaybackMode('playback');
     }
-  }, [segments, activeSegment]);
+  }, []);
 
   const handleTogglePlay = useCallback(() => {
     const video = videoRef.current;
@@ -382,6 +528,80 @@ const RecordingPlayback = () => {
     const nextIndex = (currentIndex + 1) % speeds.length;
     setPlaybackRate(speeds[nextIndex]);
   }, [playbackRate]);
+
+  /**
+   * 进度条点击：将点击位置转换为当前片段内的秒数进行 seek
+   */
+  const handleProgressBarClick = useCallback((e) => {
+    const bar = e.currentTarget;
+    const rect = bar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const seekTime = ratio * duration;
+    const video = videoRef.current;
+    if (video && duration > 0) {
+      video.currentTime = seekTime;
+      // 更新全局时间
+      if (activeSegment) {
+        const segmentStartSec = dayjsToSeconds(dayjs(activeSegment.start_time));
+        setGlobalTime(segmentStartSec + seekTime);
+      }
+    }
+  }, [duration, activeSegment]);
+
+  const handleProgressBarHover = useCallback((e) => {
+    const bar = e.currentTarget;
+    const rect = bar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const hoverTime = ratio * duration;
+    const x = e.clientX - rect.left;
+    setHoverProgress({ x, time: hoverTime });
+  }, [duration]);
+
+  const handleProgressBarLeave = useCallback(() => {
+    setHoverProgress(null);
+  }, []);
+
+  /**
+   * 时间轴 seek：接收全局时间（当天秒数），定位到对应片段并设置 offset
+   */
+  const handleTimelineSeek = useCallback((globalTimeSec) => {
+    const queue = playbackQueueRef.current;
+    // 找到包含该全局时间的片段
+    const targetSegment = queue.find((seg) => {
+      const startSec = dayjsToSeconds(dayjs(seg.start_time));
+      const endSec = dayjsToSeconds(dayjs(seg.end_time));
+      return globalTimeSec >= startSec && globalTimeSec <= endSec;
+    });
+
+    if (targetSegment) {
+      const segmentStartSec = dayjsToSeconds(dayjs(targetSegment.start_time));
+      const offset = globalTimeSec - segmentStartSec;
+
+      if (targetSegment.id !== activeSegment?.id) {
+        // 需要切换片段
+        setActiveSegment(targetSegment);
+        const idx = queue.findIndex((s) => s.id === targetSegment.id);
+        currentQueueIndexRef.current = idx;
+        // 切换后在 useEffect 中加载视频，然后 seek
+        // 使用 setTimeout 等视频加载后再 seek
+        setTimeout(() => {
+          const video = videoRef.current;
+          if (video) {
+            video.currentTime = offset;
+            if (isPlaying) video.play().catch(() => {});
+          }
+        }, 100);
+      } else {
+        // 同一片段内 seek
+        const video = videoRef.current;
+        if (video && duration > 0) {
+          const clampedOffset = Math.max(0, Math.min(offset, duration));
+          video.currentTime = clampedOffset;
+        }
+      }
+      setGlobalTime(globalTimeSec);
+    }
+  }, [activeSegment, duration, isPlaying]);
 
   const formatFileSize = (bytes) => {
     if (!bytes) return '0 B';
@@ -448,22 +668,101 @@ const RecordingPlayback = () => {
 
 
   const renderPlayer = () => {
-    if (!activeSegment) {
+    // Mode indicator badge
+    const renderModeBadge = () => {
+      if (playbackMode === 'playback') {
+        return (
+          <div className={`${styles.modeBadge} ${styles.modeBadgePlayback}`}>
+            <VideoCameraFilled />
+            <span>{t('recording.playback.modePlayback')}</span>
+          </div>
+        );
+      }
+      if (playbackMode === 'live') {
+        return (
+          <div className={`${styles.modeBadge} ${styles.modeBadgeLive}`}>
+            <WifiOutlined />
+            <span>{t('recording.playback.modeLive')}</span>
+          </div>
+        );
+      }
+      if (playbackMode === 'switching') {
+        return (
+          <div className={`${styles.modeBadge} ${styles.modeBadgeSwitching}`}>
+            <Spin size="small" />
+            <span>{t('recording.playback.switchingToLive')}</span>
+          </div>
+        );
+      }
+      return null;
+    };
+
+    // Live stream mode
+    if (playbackMode === 'live' || playbackMode === 'switching') {
+      return (
+        <div className={styles.playerContainer}>
+          <div className={styles.liveContainer}>
+            {playbackMode === 'switching' ? (
+              <div className={styles.switchingOverlay}>
+                <Spin size="large" />
+                <span className={styles.switchingText}>
+                  {t('recording.playback.switchingToLive')}
+                </span>
+              </div>
+            ) : (
+              selectedCamera && (
+                <VideoPlayer
+                  cameraId={selectedCamera}
+                  channel={0}
+                  onCanvasRef={setLiveCanvasRef}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              )
+            )}
+          </div>
+          {renderModeBadge()}
+          <div className={styles.liveOverlayControls}>
+            <Button
+              icon={<PlayCircleOutlined />}
+              onClick={() => setPlaybackMode('idle')}
+              className={styles.backToPlaybackBtn}
+            >
+              {t('recording.playback.backToPlayback')}
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    // Idle state (no segment selected, no live)
+    if (!activeSegment || playbackMode === 'idle') {
       return (
         <div className={styles.emptyState}>
           <PlayCircleOutlined className={styles.emptyIcon} />
           <span className={styles.emptyText}>
             {t('recording.playback.selectSegment')}
           </span>
+          {selectedCamera && segments.length > 0 && (
+            <Button
+              type="primary"
+              icon={<WifiOutlined />}
+              onClick={handleSwitchToLive}
+              className={styles.liveButton}
+            >
+              {t('recording.playback.modeLive')}
+            </Button>
+          )}
         </div>
       );
     }
 
+    // Playback mode
     const playbackUrl = getRecordingPlaybackUrl(activeSegment.id);
     const isTs = (activeSegment.file_path || '').toLowerCase().endsWith('.ts');
 
     return (
       <div className={styles.playerContainer}>
+        {renderModeBadge()}
         <video
           ref={videoRef}
           className={styles.playerVideo}
@@ -472,16 +771,41 @@ const RecordingPlayback = () => {
           loop={false}
           volume={volume}
           playbackRate={playbackRate}
-          onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
-          onLoadedMetadata={(e) => setDuration(e.target.duration)}
+          onTimeUpdate={(e) => {
+            const localTime = e.target.currentTime;
+            if (activeSegment) {
+              const segmentStartSec = dayjsToSeconds(dayjs(activeSegment.start_time));
+              setGlobalTime(segmentStartSec + localTime);
+            }
+          }}
+          onLoadedMetadata={(e) => setDuration(e.target.duration || activeSegment?.duration_seconds || 0)}
           onEnded={handlePlayNext}
         />
         <div className={styles.playerControls}>
-          <div className={styles.progressBar}>
+          <div
+            className={styles.progressBarClickable}
+            onClick={handleProgressBarClick}
+            onMouseMove={handleProgressBarHover}
+            onMouseLeave={handleProgressBarLeave}
+          >
             <div
               className={styles.progressFill}
-              style={{ width: `${(currentTime / duration) * 100}%` }}
+              style={{ width: `${duration > 0 ? (Math.min(activeSegment ? globalTime - dayjsToSeconds(dayjs(activeSegment.start_time)) : 0, duration) / duration) * 100 : 0}%` }}
             />
+            {hoverProgress && (
+              <>
+                <div
+                  className={styles.progressHoverLine}
+                  style={{ left: `${hoverProgress.x}px` }}
+                />
+                <div
+                  className={styles.progressHoverTime}
+                  style={{ left: `${hoverProgress.x}px` }}
+                >
+                  {formatTime(hoverProgress.time)}
+                </div>
+              </>
+            )}
           </div>
           <div className={styles.controlButtons}>
             <div className={styles.controlLeft}>
@@ -509,7 +833,7 @@ const RecordingPlayback = () => {
                 </span>
               </Tooltip>
               <span className={styles.timeDisplay}>
-                {formatTime(currentTime)} / {formatTime(duration)}
+                {formatTime(activeSegment ? Math.min(globalTime - dayjsToSeconds(dayjs(activeSegment.start_time)), duration) : 0)} / {formatTime(duration)}
               </span>
             </div>
             <div className={styles.controlRight}>
@@ -526,6 +850,11 @@ const RecordingPlayback = () => {
               <Tooltip title={t('recording.playback.fullscreen')}>
                 <span className={styles.controlBtn}>
                   <FullscreenOutlined />
+                </span>
+              </Tooltip>
+              <Tooltip title={t('recording.playback.modeLive')}>
+                <span className={styles.controlBtn} onClick={handleSwitchToLive}>
+                  <WifiOutlined />
                 </span>
               </Tooltip>
             </div>
@@ -756,10 +1085,13 @@ const RecordingPlayback = () => {
           <TimelineBar
             segments={allSegments}
             activeSegmentId={activeSegment?.id}
-            currentTime={currentTime}
+            activeSegment={activeSegment}
+            globalTime={globalTime}
+            selectedDate={selectedDate}
             zoom={zoomLevel}
             onZoomChange={setZoomLevel}
             onSegmentClick={handleSegmentClick}
+            onSeek={handleTimelineSeek}
           />
         </div>
 

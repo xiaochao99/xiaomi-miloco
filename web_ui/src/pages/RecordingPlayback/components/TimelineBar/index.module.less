@@ -81,26 +81,7 @@
   position: relative;
 }
 
-/* 刻度标签行 */
-.tickRow {
-  position: relative;
-  height: 22px;
-  overflow: hidden;
-
-  .tickLabel {
-    position: absolute;
-    transform: translateX(-50%);
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.4);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    pointer-events: none;
-    line-height: 1;
-    top: 0;
-  }
-}
-
-/* 可滚动区域 */
+/* ── 可滚动区域（刻度标签 + 刻度线 + 片段全部在此容器内） ── */
 .timelineScroll {
   width: 100%;
   overflow-x: auto;
@@ -129,13 +110,74 @@
   }
 }
 
+/* 内部轨道：宽度由 zoomRatio 动态控制 */
 .timelineTrackInner {
   position: relative;
-  height: 36px;
   min-width: 100%;
+  height: 64px;
 }
 
-/* 刻度竖线 */
+/* ── 刻度标签行 ──────────────────────────────────────────────────────── */
+.tickRow {
+  position: relative;
+  height: 24px;
+  overflow: visible;
+
+  .tickLabel {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: auto;
+    line-height: 1;
+    top: 0;
+    transition: opacity 0.2s ease, color 0.15s ease;
+    cursor: default;
+    z-index: 1;
+
+    &:hover {
+      color: rgba(255, 255, 255, 0.8);
+    }
+  }
+
+  .tickLabelHidden {
+    opacity: 0;
+    pointer-events: none;
+
+    // 悬停附近时渐显
+    &:hover {
+      opacity: 1;
+    }
+  }
+
+  .tickLabelHovered {
+    color: rgba(0, 229, 255, 0.95) !important;
+    opacity: 1 !important;
+    font-weight: 500;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.75);
+    padding: 2px 6px;
+    border-radius: 3px;
+    pointer-events: auto;
+  }
+
+  .tickLabelDots {
+    font-size: 8px;
+    opacity: 0.4;
+    margin-left: 1px;
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  .tickLabelRotated {
+    /* 标签始终保持水平平放，不再使用旋转 */
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+}
+
+/* ── 刻度竖线（6 级视觉层次） ──────────────────────────────────────── */
 .tickLines {
   position: absolute;
   top: 0;
@@ -150,29 +192,57 @@
     bottom: 0;
     width: 1px;
 
-    &_major {
-      background: rgba(255, 255, 255, 0.15);
+    // 整点：最粗 + 高亮
+    &_hour {
+      background: rgba(255, 255, 255, 0.22);
+      width: 2px;
     }
 
-    &_minor {
+    // 半小时：中粗
+    &_halfHour {
+      background: rgba(255, 255, 255, 0.14);
+      width: 1.5px;
+    }
+
+    // 刻度标签步长（15 分钟/10 分钟/5 分钟等）：中等
+    &_quarter {
+      background: rgba(255, 255, 255, 0.09);
+      width: 1px;
+    }
+
+    // 5分钟刻度
+    &_fiveMinute {
       background: rgba(255, 255, 255, 0.07);
+      width: 1px;
+    }
+
+    // 1分钟刻度
+    &_minute {
+      background: rgba(255, 255, 255, 0.05);
+      width: 1px;
+    }
+
+    // 最小刻度（秒级）
+    &_minor {
+      background: rgba(255, 255, 255, 0.03);
+      width: 0.5px;
     }
   }
 }
 
-/* 轨道背景 */
+/* ── 轨道背景 ──────────────────────────────────────────────────────── */
 .segmentTrack {
   position: absolute;
-  top: 6px;
+  top: 28px; // 标签行 24px + 4px 间距
   left: 0;
   right: 0;
-  bottom: 6px;
+  height: 36px;
   background: rgba(255, 255, 255, 0.06);
   border-radius: 4px;
   overflow: visible;
 }
 
-/* 片段填充色块 */
+/* ── 片段填充色块 ──────────────────────────────────────────────────── */
 .segmentFill {
   position: absolute;
   top: 0;
@@ -186,13 +256,28 @@
     box-shadow: 0 0 6px rgba(255, 255, 255, 0.15);
     z-index: 2;
   }
+
+  &.segmentFillActive {
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
+    z-index: 3;
+    animation: activeSegmentPulse 2s ease-in-out infinite;
+  }
 }
 
-/* 播放指示线 */
+@keyframes activeSegmentPulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(0, 229, 255, 0.65);
+  }
+}
+
+/* ── 播放指示线 ────────────────────────────────────────────────────── */
 .playheadLine {
   position: absolute;
-  top: -6px;
-  bottom: -6px;
+  top: -28px;
+  bottom: -4px;
   width: 2px;
   background: #00e5ff;
   z-index: 10;
@@ -200,7 +285,7 @@
 
   .playheadDot {
     position: absolute;
-    top: -5px;
+    top: 24px;
     left: 50%;
     transform: translateX(-50%);
     width: 12px;
@@ -213,7 +298,7 @@
 
   .playheadBubble {
     position: absolute;
-    top: -26px;
+    top: 0;
     left: 50%;
     transform: translateX(-50%);
     background: #00e5ff;
@@ -241,20 +326,22 @@
   }
 }
 
-/* 悬停指示线 */
+/* ── 悬停指示线 ────────────────────────────────────────────────────── */
 .hoverLine {
   position: absolute;
-  top: -6px;
-  bottom: -6px;
+  top: -28px;
+  bottom: -4px;
   width: 1px;
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.3);
   z-index: 5;
   pointer-events: none;
+  transition: background 0.15s ease;
 
   .hoverLabel {
-    position: fixed;
-    top: 50%;
-    transform: translate(-50%, -100%);
+    position: absolute;
+    top: -30px;
+    left: 0;
+    transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.8);
     color: rgba(255, 255, 255, 0.85);
     font-size: 10px;
@@ -263,11 +350,25 @@
     border-radius: 3px;
     white-space: nowrap;
     pointer-events: none;
-    margin-top: -8px;
+
+    .seekHint {
+      color: #00e5ff;
+      font-size: 9px;
+    }
+  }
+
+  &.hoverLineSeekable {
+    background: rgba(0, 229, 255, 0.5);
+    width: 2px;
+
+    .hoverLabel {
+      background: rgba(0, 229, 255, 0.9);
+      color: #0d0d1a;
+    }
   }
 }
 
-/* ── 底部信息 ──────────────────────────────────────────────────────────── */
+/* ── 底部信息 ──────────────────────────────────────────────────────── */
 
 .timelineFooter {
   display: flex;
