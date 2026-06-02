@@ -57,22 +57,33 @@ const dayjsToSeconds = (dt) => {
 };
 
 /**
- * 检测浏览器是否支持 H265/HEVC 解码（HLS.js 依赖 MSE）
+ * 检测浏览器是否真正支持 H265/HEVC 通过 MSE 播放
+ * MediaSource.isTypeSupported 在 Windows 上可能误报 true，但实际 MSE buffer append 会失败
+ * 需要同时检查 video.canPlayType 确认解码器可用
  */
 const isHevcSupported = () => {
+  // 先检查 MSE 容器支持
   const ms = window.MediaSource || window.WebKitMediaSource;
-  if (ms && ms.isTypeSupported) {
-    return (
-      ms.isTypeSupported('video/mp4; codecs="hev1.1.6.L93.B0"') ||
-      ms.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"')
-    );
-  }
+  const mseOk = ms && ms.isTypeSupported && (
+    ms.isTypeSupported('video/mp4; codecs="hev1.1.6.L93.B0"') ||
+    ms.isTypeSupported('video/mp4; codecs="hvc1.1.6.L93.B0"')
+  );
+  if (!mseOk) return false;
+
+  // 再检查 video 元素是否真正能解码 HEVC（Windows 上 MSE 可能误报）
   const video = document.createElement('video');
-  return (
+  const canPlay = (
     video.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"') === 'probably' ||
     video.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') === 'probably'
   );
+  // 如果 MSE 说支持但 video.canPlayType 返回空字符串或 maybe，说明解码器实际不可用
+  if (!canPlay) return false;
+
+  return true;
 };
+
+// 运行时 HEVC 失败标记：HLS 路径失败后直接走转码，避免反复 bufferAddCodecError
+let hevcRuntimeFailed = false;
 
 const RecordingPlayback = () => {
   const { t } = useTranslation();
@@ -152,15 +163,15 @@ const RecordingPlayback = () => {
       return;
     }
 
-    // TS 文件：浏览器不支持 H265 时直接走转码 MP4，避免 HLS bufferAddCodecError
-    if (!isHevcSupported()) {
+    // TS 文件：浏览器不支持 H265 或运行时已失败 → 直接走转码 MP4
+    if (!isHevcSupported() || hevcRuntimeFailed) {
       video.src = getRecordingTranscodeUrl(segment.id);
       video.load();
       if (shouldPlay) video.play().catch(() => {});
       return;
     }
 
-    // TS 文件且浏览器支持 H265：使用 hls.js
+    // TS 文件且浏览器支持 H265：尝试 hls.js
     const setupHls = async () => {
       try {
         const Hls = (await import('hls.js')).default;
@@ -173,6 +184,18 @@ const RecordingPlayback = () => {
         });
 
         hls.on(Hls.Events.ERROR, (_event, data) => {
+          // bufferAddCodecError 是确定性的失败，立即标记并切换转码，不等 hls.js 重试
+          if (data.details === 'bufferAddCodecError') {
+            console.warn('[HLS] bufferAddCodecError — HEVC MSE 解码不可用，切换转码路径');
+            hevcRuntimeFailed = true;
+            hls.detachMedia();
+            hls.destroy();
+            hlsRef.current = null;
+            video.src = getRecordingTranscodeUrl(segment.id);
+            video.load();
+            if (shouldPlay) video.play().catch(() => {});
+            return;
+          }
           if (!data.fatal) return;
           console.warn('[HLS] Fatal error:', data.details);
           hls.detachMedia();
@@ -208,11 +231,12 @@ const RecordingPlayback = () => {
       preloadVideoRef.current = null;
     }
     const isTs = (nextSegment.file_path || '').toLowerCase().endsWith('.ts');
-    // 对 TS 片段，若浏览器不支持 H265 则预加载转码后的 MP4
-    const url = isTs && !isHevcSupported()
+    // 对 TS 片段，若浏览器不支持 H265 或运行时已失败 → 预加载转码后的 MP4
+    const needTranscode = isTs && (!isHevcSupported() || hevcRuntimeFailed);
+    const url = needTranscode
       ? getRecordingTranscodeUrl(nextSegment.id)
       : getRecordingPlaybackUrl(nextSegment.id);
-    if (!isTs || !isHevcSupported()) {
+    if (!isTs || !isHevcSupported() || hevcRuntimeFailed) {
       const v = document.createElement('video');
       v.preload = 'auto';
       v.src = url;
@@ -224,9 +248,22 @@ const RecordingPlayback = () => {
   // ── 播放器加载 activeSegment ──────────────────────────────────────────
   useEffect(() => {
     if (!activeSegment) return;
+    // 切换片段时立即用后端 duration_seconds 作为初始值，避免显示 00:00:00
+    setDuration(activeSegment.duration_seconds || 0);
     loadSegmentToPlayer(activeSegment, isPlaying);
 
+    // 兜底：如果 1s 后 duration 仍为 0，再次强制使用后端返回的 duration_seconds
+    const timer = setTimeout(() => {
+      setDuration((prev) => {
+        if (prev <= 0 && activeSegment?.duration_seconds > 0) {
+          return activeSegment.duration_seconds;
+        }
+        return prev;
+      });
+    }, 1000);
+
     return () => {
+      clearTimeout(timer);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -246,13 +283,6 @@ const RecordingPlayback = () => {
     fetchRecordingStatuses();
   }, []);
 
-  useEffect(() => {
-    if (selectedCamera) {
-      fetchSegments();
-      setSelectedSegmentIds(new Set());
-    }
-  }, [selectedCamera, selectedDate, modeFilter]);
-
   const fetchCameras = async () => {
     try {
       const res = await getCameraList();
@@ -267,7 +297,8 @@ const RecordingPlayback = () => {
     }
   };
 
-  const fetchSegments = async () => {
+  const fetchSegments = useCallback(async () => {
+    if (!selectedCamera) return;
     setLoading(true);
     try {
       const dateStr = selectedDate.format('YYYY-MM-DD');
@@ -276,18 +307,47 @@ const RecordingPlayback = () => {
         start_time: `${dateStr}T00:00:00`,
         end_time: `${dateStr}T23:59:59`,
         page: 1,
-        page_size: 100,
+        page_size: 1000,
+        fast: true,  // 跳过 ffprobe，仅文件大小估算时长，大幅加速
       };
       if (modeFilter) params.mode = modeFilter;
 
       const res = await getRecordingSegments(params);
       if (res && res.code === 0) {
         const segs = res.data?.segments || [];
-        setSegments(segs);
-        setTotal(res.data?.total || segs.length);
-        setCameraSegmentCounts((prev) => ({ ...prev, [selectedCamera]: res.data?.total || segs.length }));
+        // DEBUG: 输出前5个片段的时长信息，确认后端返回的 duration_seconds 是否正确
+        if (segs.length > 0) {
+          console.group('[DEBUG] Recording segments durations');
+          segs.slice(0, 5).forEach((s, i) => {
+            console.log(`[${i}] id=${s.id?.slice(-20)}`, {
+              duration_seconds: s.duration_seconds,
+              file_size_bytes: s.file_size_bytes,
+              start_time: s.start_time,
+              end_time: s.end_time,
+              estimated_by_size: s.file_size_bytes > 0 ? Math.round(s.file_size_bytes / (150 * 1024)) : 0,
+            });
+          });
+          console.log(`... total ${segs.length} segments`);
+          console.groupEnd();
+        }
+        // 前端兜底：若后端返回 duration_seconds 为 0，用 file_size_bytes 估算
+        const repairedSegs = segs.map((s) => {
+          if ((typeof s.duration_seconds !== 'number' || s.duration_seconds <= 0) && s.file_size_bytes > 0) {
+            return {
+              ...s,
+              duration_seconds: Math.max(1, Math.round(s.file_size_bytes / (150 * 1024))),
+            };
+          }
+          return s;
+        });
+        // 同时更新抽屉列表和时间轴
+        setSegments(repairedSegs);
+        setAllSegments(repairedSegs);
+        setTotal(res.data?.total || repairedSegs.length);
+        setCameraSegmentCounts((prev) => ({ ...prev, [selectedCamera]: res.data?.total || repairedSegs.length }));
       } else {
         setSegments([]);
+        setAllSegments([]);
         setTotal(0);
       }
     } catch (error) {
@@ -296,30 +356,14 @@ const RecordingPlayback = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const fetchAllDaySegments = useCallback(async () => {
-    if (!selectedCamera) return;
-    try {
-      const dateStr = selectedDate.format('YYYY-MM-DD');
-      const res = await getRecordingSegments({
-        camera_id: selectedCamera,
-        start_time: `${dateStr}T00:00:00`,
-        end_time: `${dateStr}T23:59:59`,
-        page: 1,
-        page_size: 100,
-      });
-      if (res && res.code === 0) {
-        setAllSegments(res.data?.segments || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch all segments:', error);
-    }
-  }, [selectedCamera, selectedDate]);
+  }, [selectedCamera, selectedDate, modeFilter]);
 
   useEffect(() => {
-    fetchAllDaySegments();
-  }, [fetchAllDaySegments]);
+    if (selectedCamera) {
+      fetchSegments();
+      setSelectedSegmentIds(new Set());
+    }
+  }, [fetchSegments]);
 
   const fetchStorageStats = async () => {
     try {
@@ -356,7 +400,6 @@ const RecordingPlayback = () => {
           setActiveSegment(null);
         }
         fetchSegments();
-        fetchAllDaySegments();
         fetchStorageStats();
       } else {
         message.error(t('recording.playback.deleteFailed'));
@@ -380,7 +423,6 @@ const RecordingPlayback = () => {
           setActiveSegment(null);
         }
         fetchSegments();
-        fetchAllDaySegments();
         fetchStorageStats();
       } else {
         message.error(t('recording.playback.deleteFailed'));
@@ -420,7 +462,6 @@ const RecordingPlayback = () => {
       if (res && res.code === 0) {
         message.success(t('recording.playback.cleanupSuccess'));
         fetchSegments();
-        fetchAllDaySegments();
         fetchStorageStats();
       } else {
         message.error(t('recording.playback.cleanupFailed'));
@@ -566,10 +607,13 @@ const RecordingPlayback = () => {
    */
   const handleTimelineSeek = useCallback((globalTimeSec) => {
     const queue = playbackQueueRef.current;
-    // 找到包含该全局时间的片段
+    // 找到包含该全局时间的片段（使用 duration_seconds 计算结束时间，与 segmentBlocks 保持一致）
     const targetSegment = queue.find((seg) => {
       const startSec = dayjsToSeconds(dayjs(seg.start_time));
-      const endSec = dayjsToSeconds(dayjs(seg.end_time));
+      const durationSec = typeof seg.duration_seconds === 'number' && seg.duration_seconds > 0
+        ? seg.duration_seconds
+        : Math.max(0, dayjsToSeconds(dayjs(seg.end_time)) - startSec);
+      const endSec = startSec + durationSec;
       return globalTimeSec >= startSec && globalTimeSec <= endSec;
     });
 
@@ -778,7 +822,15 @@ const RecordingPlayback = () => {
               setGlobalTime(segmentStartSec + localTime);
             }
           }}
-          onLoadedMetadata={(e) => setDuration(e.target.duration || activeSegment?.duration_seconds || 0)}
+          onLoadedMetadata={(e) => {
+            const videoDuration = e.target.duration;
+            const fallback = activeSegment?.duration_seconds || 0;
+            // NaN/Infinity 都视为无效，强制回退到后端返回的 duration_seconds
+            const validDuration = (typeof videoDuration === 'number' && Number.isFinite(videoDuration) && videoDuration > 0)
+              ? videoDuration
+              : fallback;
+            setDuration(validDuration);
+          }}
           onEnded={handlePlayNext}
         />
         <div className={styles.playerControls}>
@@ -878,6 +930,8 @@ const RecordingPlayback = () => {
           <img
             src={thumbnailUrl}
             alt={segment.id}
+            loading="lazy"
+            decoding="async"
             onError={(e) => {
               e.target.style.display = 'none';
               e.target.parentElement.innerHTML = '<span style="font-size: 24px; color: var(--text-color-149);"><svg viewBox="64 64 896 896" focusable="false" data-icon="video-camera" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M912 302.3L784 376V224c0-35.3-28.7-64-64-64H128c-35.3 0-64 28.7-64 64v576c0 35.3 28.7 64 64 64h592c35.3 0 64-28.7 64-64V648l128 73.7c21.3 12.3 48-3.1 48-27.6V330c0-24.6-26.7-40-48-27.7zM712 792H128V224h584v568z"></path></svg></span>';
@@ -1023,7 +1077,6 @@ const RecordingPlayback = () => {
                   icon={<ReloadOutlined />}
                   onClick={() => {
                     fetchSegments();
-                    fetchAllDaySegments();
                     fetchStorageStats();
                   }}
                   loading={loading}

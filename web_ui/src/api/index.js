@@ -187,3 +187,5 @@ export const getRecordingVideoInfo = (segmentId) => getApi(`/api/recording/info/
 export const getRecordingTranscodeUrl = (segmentId) => `/api/recording/transcode/${segmentId}`;
 export const getRecordingStorage = () => getApi('/api/recording/storage');
 export const cleanupRecordingExpired = () => postApi('/api/recording/cleanup');
+export const getRecordingSegmentsDurations = (segmentIds) =>
+  postApi('/api/recording/segments/durations', { segment_ids: segmentIds });

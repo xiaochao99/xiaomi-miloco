@@ -196,12 +196,14 @@ class ChannelRecorder:
         pre_buffer_seconds: float = 5.0,
         output_dir: Path = Path("recordings"),
         recording_mode: str = "continuous",
+        base_path: Optional[Path] = None,
     ):
         self.camera_id = camera_id
         self.channel = channel
         self.segment_duration = segment_duration
         self.output_dir = output_dir
         self.recording_mode = recording_mode  # "continuous", "motion", "person"
+        self._base_path = base_path  # 用于计算相对路径
         
         # Pre-recording buffer
         self.pre_buffer = PreRecordingBuffer(duration_seconds=pre_buffer_seconds)
@@ -217,6 +219,10 @@ class ChannelRecorder:
         self._frame_count = 0
         self._awaiting_keyframe = False
         self._first_pts_offset: Optional[float] = None  # 保证 PTS 从 0 开始
+        
+        # Database sync
+        self._segment_dao = None
+        self._current_segment_id: Optional[str] = None
         
         # Codec headers
         self._vps_data: Optional[bytes] = None
@@ -234,6 +240,10 @@ class ChannelRecorder:
         self._total_segments = 0
         
         logger.info("[ChannelRecorder] Initialized for camera %s channel %d", camera_id, channel)
+    
+    def set_segment_dao(self, dao):
+        """Set the segment DAO for database synchronization."""
+        self._segment_dao = dao
     
     @property
     def active(self) -> bool:
@@ -304,6 +314,9 @@ class ChannelRecorder:
             self._first_pts_offset = None  # 新 segment 重置 PTS 偏移基准
             self._total_segments += 1
             
+            # Sync to database
+            self._sync_segment_to_db()
+            
             logger.info("[ChannelRecorder] Opened segment: %s", self._segment_path)
             return True
             
@@ -312,15 +325,73 @@ class ChannelRecorder:
             self._close_container()
             return False
     
+    def _sync_segment_to_db(self):
+        """Sync current segment metadata to database."""
+        if not self._segment_dao or not self._segment_path:
+            return
+        
+        try:
+            # Import here to avoid circular import
+            from miloco_server.controller.recording_controller import segment_id_from_path
+            from miloco_server.schema.recording_schema import RecordingSegment, RecordingMode
+            
+            # Parse path to get components
+            # Path format: {base_path}/{camera_id}/{date}/{filename}.ts
+            relative_path = self._segment_path.relative_to(self._base_path) if self._base_path else self._segment_path
+            parts = relative_path.parts  # (camera_id, date, filename)
+            if len(parts) >= 3:
+                camera_id = parts[0]
+                date_str = parts[1]
+                filename = parts[2]
+                segment_id = segment_id_from_path(camera_id, date_str, filename)
+                
+                mode_map = {"continuous": RecordingMode.CONTINUOUS, "motion": RecordingMode.MOTION, "person": RecordingMode.PERSON}
+                
+                self._current_segment_id = segment_id
+                self._segment_dao.create(RecordingSegment(
+                    id=segment_id,
+                    camera_id=camera_id,
+                    start_time=self._segment_start,
+                    end_time=self._segment_start,  # 初始等于 start，关闭时更新
+                    duration_seconds=0,
+                    file_path=f"{camera_id}/{date_str}/{filename}",
+                    file_size_bytes=0,
+                    recording_mode=mode_map.get(self.recording_mode, RecordingMode.CONTINUOUS),
+                ))
+                logger.debug("[ChannelRecorder] Synced segment to DB: %s", segment_id)
+        except Exception as e:
+            logger.warning("[ChannelRecorder] Failed to sync segment to DB: %s", e)
+            self._current_segment_id = None
+    
     def _close_container(self):
-        """Close the current container."""
+        """Close the current container and update database."""
         if self._container:
+            # Update database before closing
+            self._update_segment_in_db()
+            
             try:
                 self._container.close()
             except Exception as e:
                 logger.warning("[ChannelRecorder] Error closing container: %s", e)
             self._container = None
             self._stream = None
+    
+    def _update_segment_in_db(self):
+        """Update segment duration and file size in database."""
+        if not self._segment_dao or not self._current_segment_id or not self._segment_path:
+            return
+        
+        try:
+            duration = time.time() - self._segment_start_time if self._segment_start_time else 0
+            file_size = self._segment_path.stat().st_size if self._segment_path.exists() else 0
+            
+            self._segment_dao.update_duration(self._current_segment_id, duration, file_size)
+            logger.debug("[ChannelRecorder] Updated segment in DB: %s (duration=%.1fs, size=%d)", 
+                        self._current_segment_id, duration, file_size)
+        except Exception as e:
+            logger.warning("[ChannelRecorder] Failed to update segment in DB: %s", e)
+        finally:
+            self._current_segment_id = None
     
     def _build_h265_extradata(self) -> Optional[bytes]:
         """Build HEVCDecoderConfigurationRecord from VPS/SPS/PPS."""

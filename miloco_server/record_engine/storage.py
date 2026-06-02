@@ -28,12 +28,17 @@ class StorageManager:
     def __init__(self, base_path: Path, retention_days: int = 7):
         self.base_path = base_path
         self.retention_days = retention_days
+        self._segment_dao = None
         
         # Create base directory
         os.makedirs(self.base_path, exist_ok=True)
         
         logger.info("[StorageManager] Initialized with base_path: %s, retention: %d days", 
                    self.base_path, self.retention_days)
+    
+    def set_segment_dao(self, dao):
+        """Set the segment DAO for database synchronization."""
+        self._segment_dao = dao
     
     def get_camera_dir(self, camera_id: str, date: Optional[datetime] = None) -> Path:
         """Get directory for camera recordings."""
@@ -134,6 +139,14 @@ class StorageManager:
             
             if total_deleted > 0:
                 logger.info("[StorageManager] Cleaned up %d expired recording files", total_deleted)
+            
+            # Sync database: delete expired records
+            if self._segment_dao and total_deleted > 0:
+                try:
+                    db_deleted = self._segment_dao.delete_expired(self.retention_days)
+                    logger.info("[StorageManager] Cleaned up %d expired records from database", db_deleted)
+                except Exception as e:
+                    logger.warning("[StorageManager] Failed to cleanup database records: %s", e)
             
             return total_deleted
             

@@ -292,6 +292,34 @@ class RecordingSegmentDAO:
             logger.error("Error updating file size for segment %s: %s", segment_id, e)
             return False
 
+    def update_duration(self, segment_id: str, duration_seconds: float, file_size_bytes: int) -> bool:
+        """Update duration and file size for a segment after recording completes."""
+        sql = """
+            UPDATE recording_segments 
+            SET duration_seconds = ?, 
+                file_size_bytes = ?,
+                end_time = datetime(start_time, '+' || ? || ' seconds')
+            WHERE id = ?
+        """
+        try:
+            self.db_connector.execute_update(sql, (round(duration_seconds, 1), file_size_bytes, round(duration_seconds), segment_id))
+            return True
+        except Exception as e:
+            logger.error("Error updating duration for segment %s: %s", segment_id, e)
+            return False
+
+    def exists(self, segment_id: str) -> bool:
+        """Check if a segment record exists."""
+        sql = "SELECT 1 FROM recording_segments WHERE id = ?"
+        rows = self.db_connector.execute_query(sql, (segment_id,))
+        return len(rows) > 0
+
+    def get_all_ids(self) -> set:
+        """Get all segment IDs in database."""
+        sql = "SELECT id FROM recording_segments"
+        rows = self.db_connector.execute_query(sql)
+        return {row["id"] for row in rows}
+
     def get_storage_stats(self, camera_id: Optional[str] = None) -> Dict[str, Any]:
         """Get storage statistics."""
         if camera_id:

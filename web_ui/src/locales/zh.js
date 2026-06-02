@@ -1069,6 +1069,7 @@ export default {
       liveStreamDesc: '实时画面',
       playbackEnded: '录像已播完，正在切换到直播',
       clickToSeek: '点击定位',
+      seeking: '拖拽定位中',
       liveIndicator: '直播',
       playbackIndicator: '回看',
       backToPlayback: '返回回看',

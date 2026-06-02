@@ -1053,6 +1053,7 @@ export default {
       liveStreamDesc: 'Live view',
       playbackEnded: 'Playback ended, switching to live',
       clickToSeek: 'Click to seek',
+      seeking: 'Seeking...',
       liveIndicator: 'LIVE',
       playbackIndicator: 'REC',
       backToPlayback: 'Back to Playback',

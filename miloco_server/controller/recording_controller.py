@@ -70,7 +70,7 @@ def _resolve_full_path(segment_id: str) -> Path:
     return engine._storage.resolve_path(relative_path)
 
 
-def _segment_from_file(camera_id: str, date_str: str, filename: str, full_path: Path) -> Optional[RecordingSegment]:
+def _segment_from_file(camera_id: str, date_str: str, filename: str, full_path: Path, fast: bool = False) -> Optional[RecordingSegment]:
     """Build a RecordingSegment from a file system path."""
     try:
         stat = full_path.stat()
@@ -99,11 +99,14 @@ def _segment_from_file(camera_id: str, date_str: str, filename: str, full_path: 
         
         start_time = datetime.fromisoformat(f"{date_str}T{time_part.replace('-', ':')}:00")
 
-        # 优先用 ffprobe 读取真实视频时长，避免文件大小估算误差（尤其对 20fps 视频）
-        duration = _detect_duration_from_file(full_path)
-        if duration <= 0:
-            # fallback：按文件大小粗略估算
-            duration = max(1, int(file_size / (150 * 1024)))
+        # fast 模式：跳过 ffprobe，仅用文件大小估算时长，大幅加速首屏加载
+        # 非 fast 模式：优先用 ffprobe 读取真实视频时长，带缓存
+        if fast:
+            duration = max(1, round(file_size / (150 * 1024), 1))
+        else:
+            duration = _detect_duration_from_file(full_path)
+            if duration <= 0:
+                duration = max(1, round(file_size / (150 * 1024), 1))
 
         segment_id = segment_id_from_path(camera_id, date_str, filename)
         relative_path = f"{camera_id}/{date_str}/{filename}"
@@ -124,18 +127,29 @@ def _segment_from_file(camera_id: str, date_str: str, filename: str, full_path: 
         return None
 
 
+# ── ffprobe duration cache ─────────────────────────────────────────────────
+# key: (str(path), file_mtime) -> duration_seconds
+_duration_cache: dict = {}
+_DURATION_CACHE_MAX = 2000
+
+
 def _detect_duration_from_file(full_path: Path) -> float:
-    """用 ffprobe 读取视频文件的真实时长（秒），失败返回 0。"""
+    """用 ffprobe 读取视频文件的真实时长（秒），带缓存，失败返回 0。"""
     import json
     import subprocess
     try:
+        stat = full_path.stat()
+        cache_key = (str(full_path), stat.st_mtime)
+        if cache_key in _duration_cache:
+            return _duration_cache[cache_key]
+
         cmd = [
             'ffprobe', '-v', 'quiet',
             '-print_format', 'json',
             '-show_format', '-show_streams',
             str(full_path),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
         if result.returncode != 0:
             return 0.0
         data = json.loads(result.stdout)
@@ -143,6 +157,12 @@ def _detect_duration_from_file(full_path: Path) -> float:
         fmt = data.get('format', {})
         duration = float(fmt.get('duration', 0))
         if duration > 0:
+            if len(_duration_cache) >= _DURATION_CACHE_MAX:
+                # evict oldest ~25% entries
+                keys = list(_duration_cache.keys())
+                for k in keys[: len(keys) // 4]:
+                    _duration_cache.pop(k, None)
+            _duration_cache[cache_key] = duration
             return duration
         # 备选：从视频流读取
         for stream in data.get('streams', []):
@@ -153,13 +173,12 @@ def _detect_duration_from_file(full_path: Path) -> float:
                     num, den = r_frame_rate.split('/')
                     fps = int(num) / int(den)
                     if fps > 0:
-                        return int(nb_frames) / fps
+                        d = int(nb_frames) / fps
+                        _duration_cache[cache_key] = d
+                        return d
         return 0.0
     except FileNotFoundError:
         logger.warning("ffprobe not found, skip duration detection for %s", full_path)
-        return 0.0
-    except Exception as e:
-        logger.warning("Failed to detect duration from %s: %s", full_path, e)
         return 0.0
     except Exception as e:
         logger.warning("Failed to detect duration from %s: %s", full_path, e)
@@ -173,6 +192,7 @@ def scan_segments(
     end_time: Optional[datetime] = None,
     page: int = 1,
     page_size: int = 20,
+    fast: bool = False,
 ) -> Tuple[List[RecordingSegment], int]:
     """Scan filesystem for recording segments."""
     segments: List[RecordingSegment] = []
@@ -202,7 +222,7 @@ def scan_segments(
                 if not ts_file.is_file() or not ts_file.suffix == ".ts":
                     continue
 
-                segment = _segment_from_file(cid, date_str, ts_file.name, ts_file)
+                segment = _segment_from_file(cid, date_str, ts_file.name, ts_file, fast=fast)
                 if segment:
                     # Filter by time range
                     if start_time and segment.end_time and segment.end_time < start_time:
@@ -369,17 +389,67 @@ async def query_recording_segments(
     start_time: Optional[str] = Query(None, description="Filter by start time (e.g., 2026-05-13T00:00:00)"),
     end_time: Optional[str] = Query(None, description="Filter by end time (e.g., 2026-05-13T23:59:59)"),
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Page size"),
+    page_size: int = Query(20, ge=1, le=1000, description="Page size"),
+    fast: bool = Query(False, description="Fast mode: skip ffprobe, use file-size estimation for duration"),
     current_user: str = Depends(verify_token),
 ):
-    """Query recording segments from filesystem (no database dependency)."""
+    """Query recording segments. Uses database for fast queries, falls back to filesystem."""
     try:
-        engine = get_record_engine()
-        base_path = engine._storage.base_path
-
+        from miloco_server.dao.recording_dao import RecordingSegmentDAO
+        
         start_dt = datetime.fromisoformat(start_time) if start_time else None
         end_dt = datetime.fromisoformat(end_time) if end_time else None
-
+        
+        # Try database query first (fast path)
+        try:
+            dao = RecordingSegmentDAO()
+            segments, total = dao.query(
+                camera_id=camera_id,
+                start_time=start_dt,
+                end_time=end_dt,
+                page=page,
+                page_size=page_size,
+            )
+            
+            # If database has data, return it
+            if total > 0:
+                # Repair zero-duration records on-the-fly
+                for seg in segments:
+                    if seg.duration_seconds <= 0:
+                        # Try file_size_bytes estimation first
+                        if seg.file_size_bytes > 0:
+                            seg.duration_seconds = max(1, round(seg.file_size_bytes / (150 * 1024), 1))
+                            seg.end_time = seg.start_time + timedelta(seconds=seg.duration_seconds)
+                        else:
+                            # file_size_bytes also zero — try to get from filesystem
+                            try:
+                                engine = get_record_engine()
+                                full_path = engine._storage.resolve_path(seg.file_path)
+                                if full_path.exists():
+                                    file_size = full_path.stat().st_size
+                                    seg.duration_seconds = max(1, round(file_size / (150 * 1024), 1))
+                                    seg.end_time = seg.start_time + timedelta(seconds=seg.duration_seconds)
+                                    seg.file_size_bytes = file_size
+                            except Exception:
+                                pass
+                response = RecordingSegmentListResponse(
+                    total=total,
+                    page=page,
+                    page_size=page_size,
+                    segments=segments,
+                )
+                return NormalResponse(
+                    code=0,
+                    message="Recording segments retrieved successfully",
+                    data=response.model_dump(),
+                )
+        except Exception as db_error:
+            logger.warning("Database query failed, falling back to filesystem: %s", db_error)
+        
+        # Fallback: filesystem query (slow path)
+        engine = get_record_engine()
+        base_path = engine._storage.base_path
+        
         segments, total = scan_segments(
             base_path=base_path,
             camera_id=camera_id,
@@ -387,6 +457,7 @@ async def query_recording_segments(
             end_time=end_dt,
             page=page,
             page_size=page_size,
+            fast=fast,
         )
 
         response = RecordingSegmentListResponse(
@@ -397,7 +468,7 @@ async def query_recording_segments(
         )
         return NormalResponse(
             code=0,
-            message="Recording segments retrieved successfully",
+            message="Recording segments retrieved successfully (filesystem)",
             data=response.model_dump(),
         )
     except Exception as e:
@@ -427,6 +498,43 @@ async def get_segment_detail(segment_id: str, current_user: str = Depends(verify
         raise
     except Exception as e:
         logger.error("Failed to get segment %s: %s", segment_id, e, exc_info=True)
+        return NormalResponse(code=1, message=str(e), data=None)
+
+
+@router.post("/segments/durations", summary="Batch get accurate durations via ffprobe", response_model=NormalResponse)
+async def batch_get_segment_durations(request: Request, current_user: str = Depends(verify_token)):
+    """Batch query accurate durations for segments using ffprobe (with cache).
+
+    Accepts a list of segment IDs, returns a map of {segment_id: duration_seconds}.
+    Results are cached by (path, mtime), so repeated calls are fast.
+    """
+    try:
+        body = await request.json()
+        segment_ids = body.get("segment_ids", [])
+        if not segment_ids or not isinstance(segment_ids, list):
+            raise HTTPException(status_code=400, detail="segment_ids must be a non-empty list")
+
+        durations = {}
+        for segment_id in segment_ids:
+            try:
+                full_path = _resolve_full_path(segment_id)
+                if not full_path.exists():
+                    continue
+                duration = _detect_duration_from_file(full_path)
+                if duration > 0:
+                    durations[segment_id] = duration
+            except Exception as e:
+                logger.warning("Failed to get duration for %s: %s", segment_id, e)
+
+        return NormalResponse(
+            code=0,
+            message=f"Retrieved durations for {len(durations)}/{len(segment_ids)} segments",
+            data=durations,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to batch get durations: %s", e, exc_info=True)
         return NormalResponse(code=1, message=str(e), data=None)
 
 

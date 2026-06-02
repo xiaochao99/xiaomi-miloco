@@ -16,7 +16,7 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Coroutine, Dict, List, Optional, Set, Tuple
 
@@ -100,6 +100,12 @@ class RecordEngine:
         self._running = True
         self._start_time = time.time()
         
+        # Set DAO for storage manager
+        self._storage.set_segment_dao(self._segment_dao)
+        
+        # Sync existing files to database on startup
+        await self._sync_files_to_database()
+        
         # Restore enabled cameras from database
         enabled_configs = self._config_dao.get_enabled()
         logger.info("[RecordEngine] Initializing with %d enabled recording configs", len(enabled_configs))
@@ -113,6 +119,139 @@ class RecordEngine:
         self._trigger_monitor_task = asyncio.create_task(self._trigger_monitor_loop())
         
         logger.info("[RecordEngine] Initialization complete")
+    
+    async def _sync_files_to_database(self):
+        """Sync existing recording files to database on startup."""
+        try:
+            # Run in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._sync_files_to_database_sync)
+        except Exception as e:
+            logger.error("[RecordEngine] Failed to sync files to database: %s", e)
+    
+    def _sync_files_to_database_sync(self):
+        """Synchronous file-to-database sync."""
+        import json
+        import subprocess
+        
+        base_path = self._storage.base_path
+        if not base_path.exists():
+            return
+        
+        # Get existing segment IDs from database
+        existing_ids = self._segment_dao.get_all_ids()
+        logger.info("[RecordEngine] Database has %d segment records", len(existing_ids))
+        
+        # Scan filesystem for segments
+        from miloco_server.controller.recording_controller import segment_id_from_path
+        
+        synced_count = 0
+        skipped_count = 0
+        
+        for camera_dir in base_path.iterdir():
+            if not camera_dir.is_dir():
+                continue
+            camera_id = camera_dir.name
+            
+            for date_dir in camera_dir.iterdir():
+                if not date_dir.is_dir():
+                    continue
+                date_str = date_dir.name
+                
+                for ts_file in date_dir.iterdir():
+                    if not ts_file.is_file() or not ts_file.suffix == ".ts":
+                        continue
+                    
+                    filename = ts_file.name
+                    segment_id = segment_id_from_path(camera_id, date_str, filename)
+                    
+                    # Skip if already in database with valid data
+                    if segment_id in existing_ids:
+                        # Check if the record needs repair (duration or file_size is zero)
+                        existing = self._segment_dao.get_by_id(segment_id)
+                        needs_repair = (
+                            existing
+                            and (existing.duration_seconds <= 0 or existing.file_size_bytes <= 0)
+                        )
+                        if needs_repair:
+                            # Re-detect duration from filesystem
+                            file_size = ts_file.stat().st_size
+                            duration = self._detect_duration_for_sync(ts_file)
+                            if duration <= 0:
+                                duration = max(1, round(file_size / (150 * 1024), 1))
+                            self._segment_dao.update_duration(segment_id, duration, file_size)
+                            synced_count += 1
+                            logger.info("[RecordEngine] Repaired segment %s: duration=%.1fs, size=%d",
+                                       segment_id, duration, file_size)
+                        else:
+                            skipped_count += 1
+                        continue
+                    
+                    # Parse filename for metadata
+                    try:
+                        name_without_ext = filename.rsplit(".", 1)[0]
+                        parts = name_without_ext.split("_")
+                        
+                        if len(parts) >= 3:
+                            time_part = parts[0]
+                            mode_char = parts[-1]
+                            mode_map = {"c": RecordingMode.CONTINUOUS, "m": RecordingMode.MOTION, "p": RecordingMode.PERSON}
+                            recording_mode = mode_map.get(mode_char, RecordingMode.CONTINUOUS)
+                        else:
+                            time_part = parts[0]
+                            recording_mode = RecordingMode.CONTINUOUS
+                        
+                        if time_part.count("-") != 2:
+                            continue
+                        
+                        start_time = datetime.fromisoformat(f"{date_str}T{time_part.replace('-', ':')}:00")
+                        file_size = ts_file.stat().st_size
+                        
+                        # Detect duration with ffprobe
+                        duration = self._detect_duration_for_sync(ts_file)
+                        if duration <= 0:
+                            duration = max(1, round(file_size / (150 * 1024), 1))
+                        
+                        # Create segment record
+                        segment = RecordingSegment(
+                            id=segment_id,
+                            camera_id=camera_id,
+                            start_time=start_time,
+                            end_time=start_time + timedelta(seconds=duration),
+                            duration_seconds=duration,
+                            file_path=f"{camera_id}/{date_str}/{filename}",
+                            file_size_bytes=file_size,
+                            recording_mode=recording_mode,
+                            created_at=datetime.fromtimestamp(ts_file.stat().st_mtime),
+                        )
+                        self._segment_dao.create(segment)
+                        synced_count += 1
+                        
+                    except Exception as e:
+                        logger.warning("[RecordEngine] Failed to sync segment %s: %s", ts_file, e)
+        
+        if synced_count > 0:
+            logger.info("[RecordEngine] Synced %d new segments to database (skipped %d existing)", synced_count, skipped_count)
+        else:
+            logger.info("[RecordEngine] All %d segments already in database", skipped_count)
+    
+    def _detect_duration_for_sync(self, file_path: Path) -> float:
+        """Detect video duration using ffprobe for sync."""
+        try:
+            cmd = [
+                'ffprobe', '-v', 'quiet',
+                '-print_format', 'json',
+                '-show_format',
+                str(file_path),
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            if result.returncode != 0:
+                return 0.0
+            data = json.loads(result.stdout)
+            duration = float(data.get('format', {}).get('duration', 0))
+            return duration
+        except Exception:
+            return 0.0
     
     async def shutdown(self):
         """Shutdown the recording engine."""
@@ -199,7 +338,9 @@ class RecordEngine:
             pre_buffer_seconds=self._config.pre_buffer_seconds,
             output_dir=self._storage.base_path,
             recording_mode=config.mode.value if config.mode else "continuous",
+            base_path=self._storage.base_path,
         )
+        recorder.set_segment_dao(self._segment_dao)
         
         key = (camera_id, 0)
         self._recorders[key] = recorder

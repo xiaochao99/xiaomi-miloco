@@ -88,7 +88,7 @@
   overflow-y: hidden;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
-  cursor: pointer;
+  cursor: col-resize;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.03);
 
@@ -202,6 +202,12 @@
     &_halfHour {
       background: rgba(255, 255, 255, 0.14);
       width: 1.5px;
+    }
+
+    // 10分钟刻度
+    &_tenMinute {
+      background: rgba(255, 255, 255, 0.1);
+      width: 1px;
     }
 
     // 刻度标签步长（15 分钟/10 分钟/5 分钟等）：中等
@@ -364,6 +370,18 @@
     .hoverLabel {
       background: rgba(0, 229, 255, 0.9);
       color: #0d0d1a;
+    }
+  }
+
+  // Seek 拖拽时高亮
+  &.hoverLineSeeking {
+    background: rgba(0, 229, 255, 0.7);
+    width: 2px;
+
+    .hoverLabel {
+      background: rgba(0, 229, 255, 0.95);
+      color: #0d0d1a;
+      font-weight: 600;
     }
   }
 }
