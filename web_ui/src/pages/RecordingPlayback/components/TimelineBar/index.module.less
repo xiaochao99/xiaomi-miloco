@@ -7,7 +7,6 @@
 }
 
 /* ── 头部 ──────────────────────────────────────────────────────────────── */
-
 .timelineHeader {
   display: flex;
   align-items: center;
@@ -76,45 +75,30 @@
 }
 
 /* ── 主体 ──────────────────────────────────────────────────────────────── */
-
 .timelineBody {
   position: relative;
 }
 
-/* ── 可滚动区域（刻度标签 + 刻度线 + 片段全部在此容器内） ── */
-.timelineScroll {
+/* ── 视口容器（隐藏滚动条，通过拖拽平移） ── */
+.timelineViewport {
   width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
-  cursor: col-resize;
+  overflow: hidden;           // 完全隐藏原生滚动条
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.03);
+  position: relative;
+  cursor: default;
 
-  &::-webkit-scrollbar {
-    height: 5px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.25);
-    }
+  &.panning {
+    cursor: grabbing;
   }
 }
 
-/* 内部轨道：宽度由 zoomRatio 动态控制 */
+/* 内部轨道：通过 transform 平移，宽度由 zoomRatio 动态控制 */
 .timelineTrackInner {
   position: relative;
   min-width: 100%;
   height: 64px;
+  will-change: transform;     // GPU 加速
 }
 
 /* ── 刻度标签行 ──────────────────────────────────────────────────────── */
@@ -146,7 +130,6 @@
     opacity: 0;
     pointer-events: none;
 
-    // 悬停附近时渐显
     &:hover {
       opacity: 1;
     }
@@ -169,15 +152,9 @@
     margin-left: 1px;
     color: rgba(255, 255, 255, 0.3);
   }
-
-  .tickLabelRotated {
-    /* 标签始终保持水平平放，不再使用旋转 */
-    transform: translateX(-50%);
-    white-space: nowrap;
-  }
 }
 
-/* ── 刻度竖线（6 级视觉层次） ──────────────────────────────────────── */
+/* ── 刻度竖线 ──────────────────────────────────────────────────────── */
 .tickLines {
   position: absolute;
   top: 0;
@@ -192,43 +169,26 @@
     bottom: 0;
     width: 1px;
 
-    // 整点：最粗 + 高亮
     &_hour {
       background: rgba(255, 255, 255, 0.22);
       width: 2px;
     }
 
-    // 半小时：中粗
     &_halfHour {
       background: rgba(255, 255, 255, 0.14);
       width: 1.5px;
     }
 
-    // 10分钟刻度
     &_tenMinute {
       background: rgba(255, 255, 255, 0.1);
       width: 1px;
     }
 
-    // 刻度标签步长（15 分钟/10 分钟/5 分钟等）：中等
-    &_quarter {
-      background: rgba(255, 255, 255, 0.09);
-      width: 1px;
-    }
-
-    // 5分钟刻度
-    &_fiveMinute {
-      background: rgba(255, 255, 255, 0.07);
-      width: 1px;
-    }
-
-    // 1分钟刻度
     &_minute {
       background: rgba(255, 255, 255, 0.05);
       width: 1px;
     }
 
-    // 最小刻度（秒级）
     &_minor {
       background: rgba(255, 255, 255, 0.03);
       width: 0.5px;
@@ -239,13 +199,13 @@
 /* ── 轨道背景 ──────────────────────────────────────────────────────── */
 .segmentTrack {
   position: absolute;
-  top: 28px; // 标签行 24px + 4px 间距
+  top: 28px;
   left: 0;
   right: 0;
   height: 36px;
   background: rgba(255, 255, 255, 0.06);
   border-radius: 4px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 /* ── 片段填充色块 ──────────────────────────────────────────────────── */
@@ -253,141 +213,183 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  border-radius: 4px;
+  border-radius: 3px;
   cursor: pointer;
-  transition: opacity 0.15s, box-shadow 0.15s;
+  transition: filter 0.12s, opacity 0.12s;
+  will-change: left, width;
 
   &:hover {
-    opacity: 1 !important;
-    box-shadow: 0 0 6px rgba(255, 255, 255, 0.15);
+    filter: brightness(1.3);
     z-index: 2;
   }
 
   &.segmentFillActive {
-    box-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
     z-index: 3;
-    animation: activeSegmentPulse 2s ease-in-out infinite;
+    box-shadow: 0 0 6px rgba(0, 229, 255, 0.5);
   }
 }
 
-@keyframes activeSegmentPulse {
-  0%, 100% {
-    box-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 14px rgba(0, 229, 255, 0.65);
-  }
-}
-
-/* ── 播放指示线 ────────────────────────────────────────────────────── */
+/* ── 播放指示线（可拖拽的快进头） ──────────────────────────────────── */
 .playheadLine {
   position: absolute;
   top: -28px;
   bottom: -4px;
-  width: 2px;
-  background: #00e5ff;
+  width: 0;
   z-index: 10;
   pointer-events: none;
 
-  .playheadDot {
+  // 垂直线
+  &::before {
+    content: '';
     position: absolute;
-    top: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 12px;
-    height: 12px;
-    background: #00e5ff;
-    border: 2px solid #1a1a2e;
-    border-radius: 50%;
-    box-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
-  }
-
-  .playheadBubble {
-    position: absolute;
+    left: 0;
     top: 0;
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: 0;
+    width: 2px;
     background: #00e5ff;
-    color: #0d0d1a;
-    font-size: 10px;
-    font-weight: 600;
-    font-family: 'Consolas', 'Courier New', monospace;
-    padding: 2px 8px;
-    border-radius: 3px;
-    white-space: nowrap;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-
-    &::after {
-      content: '';
-      position: absolute;
-      bottom: -4px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 0;
-      height: 0;
-      border-left: 5px solid transparent;
-      border-right: 5px solid transparent;
-      border-top: 5px solid #00e5ff;
-    }
+    transform: translateX(-50%);
   }
 }
 
-/* ── 悬停指示线 ────────────────────────────────────────────────────── */
+.playheadDot {
+  position: absolute;
+  top: 21px;
+  left: 0;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 12px;
+  background: #00e5ff;
+  border: 2px solid #1a1a2e;
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
+  pointer-events: auto;
+  cursor: ew-resize;
+}
+
+.playheadBubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateX(-50%);
+  background: #00e5ff;
+  color: #0d0d1a;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: 'Consolas', 'Courier New', monospace;
+  padding: 2px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #00e5ff;
+  }
+}
+
+/* ── 播放头时间标签（视口层） ──────────────────────────────────────── */
+.playheadTimeLabel {
+  position: absolute;
+  top: -24px;
+  left: 0;
+  transform: translateX(-50%);
+  z-index: 20;
+  background: #00e5ff;
+  color: #0d0d1a;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #00e5ff;
+  }
+}
+
+/* ── 视口叠加层（不受 transform 影响，像素精确定位） ────────────────── */
+.hoverOverlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 15;
+  pointer-events: none;
+}
+
 .hoverLine {
   position: absolute;
-  top: -28px;
-  bottom: -4px;
-  width: 1px;
-  background: rgba(255, 255, 255, 0.3);
-  z-index: 5;
+  top: 0;
+  bottom: 0;
+  left: 0;                      // 显式设置左边缘为 0，确保 transform 基准正确
+  width: 2px;                   // 2px 宽度，在 retina 屏幕上更清晰
+  background: rgba(255, 255, 255, 0.35);
+  transform: translateX(-50%);  // 以左边缘为基准向左移动 50% 宽度，实现居中
   pointer-events: none;
-  transition: background 0.15s ease;
-
-  .hoverLabel {
-    position: absolute;
-    top: -30px;
-    left: 0;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.8);
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 10px;
-    font-family: 'Consolas', 'Courier New', monospace;
-    padding: 2px 8px;
-    border-radius: 3px;
-    white-space: nowrap;
-    pointer-events: none;
-
-    .seekHint {
-      color: #00e5ff;
-      font-size: 9px;
-    }
-  }
 
   &.hoverLineSeekable {
     background: rgba(0, 229, 255, 0.5);
     width: 2px;
-
-    .hoverLabel {
-      background: rgba(0, 229, 255, 0.9);
-      color: #0d0d1a;
-    }
   }
 
-  // Seek 拖拽时高亮
   &.hoverLineSeeking {
     background: rgba(0, 229, 255, 0.7);
     width: 2px;
+  }
+}
 
-    .hoverLabel {
-      background: rgba(0, 229, 255, 0.95);
+.hoverLabel {
+  position: absolute;
+  top: -22px;
+  left: 0;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 10px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+
+  .seekHint {
+    color: #00e5ff;
+    font-size: 9px;
+  }
+
+  &.hoverLabelSeeking {
+    background: rgba(0, 229, 255, 0.95);
+    color: #0d0d1a;
+    font-weight: 600;
+
+    .seekHint {
       color: #0d0d1a;
-      font-weight: 600;
     }
   }
 }
 
 /* ── 底部信息 ──────────────────────────────────────────────────────── */
-
 .timelineFooter {
   display: flex;
   align-items: center;

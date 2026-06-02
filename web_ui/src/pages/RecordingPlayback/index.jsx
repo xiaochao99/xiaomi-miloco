@@ -315,21 +315,6 @@ const RecordingPlayback = () => {
       const res = await getRecordingSegments(params);
       if (res && res.code === 0) {
         const segs = res.data?.segments || [];
-        // DEBUG: 输出前5个片段的时长信息，确认后端返回的 duration_seconds 是否正确
-        if (segs.length > 0) {
-          console.group('[DEBUG] Recording segments durations');
-          segs.slice(0, 5).forEach((s, i) => {
-            console.log(`[${i}] id=${s.id?.slice(-20)}`, {
-              duration_seconds: s.duration_seconds,
-              file_size_bytes: s.file_size_bytes,
-              start_time: s.start_time,
-              end_time: s.end_time,
-              estimated_by_size: s.file_size_bytes > 0 ? Math.round(s.file_size_bytes / (150 * 1024)) : 0,
-            });
-          });
-          console.log(`... total ${segs.length} segments`);
-          console.groupEnd();
-        }
         // 前端兜底：若后端返回 duration_seconds 为 0，用 file_size_bytes 估算
         const repairedSegs = segs.map((s) => {
           if ((typeof s.duration_seconds !== 'number' || s.duration_seconds <= 0) && s.file_size_bytes > 0) {
