@@ -275,10 +275,13 @@ const TimelineBar = ({
       let durationSec;
       if (typeof seg.duration_seconds === 'number' && seg.duration_seconds > 0) {
         durationSec = seg.duration_seconds;
-      } else if (seg.file_size_bytes > 0) {
-        durationSec = Math.max(1, Math.round(seg.file_size_bytes / (150 * 1024)));
       } else {
+        // 优先用 end_time - start_time 计算准确时长，避免文件大小估算受可变码率影响
         durationSec = Math.max(0, dayjsToSeconds(dayjs(seg.end_time)) - startSec);
+      }
+      // 最后兜底：用文件大小估算
+      if (durationSec <= 0 && seg.file_size_bytes > 0) {
+        durationSec = Math.max(1, Math.round(seg.file_size_bytes / (150 * 1024)));
       }
       if (durationSec <= 0) continue;
 

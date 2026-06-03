@@ -568,6 +568,19 @@ class RecordEngine:
         camera_id = config.camera_id
         key = (camera_id, 0)
         
+        # Clean up motion/person state and JPEG callback when switching away from these modes
+        # Otherwise _trigger_monitor_loop will stop the continuous recorder
+        if config.mode not in (RecordingMode.MOTION, RecordingMode.PERSON):
+            self._motion_states.pop(camera_id, None)
+            handler = self._camera_handlers.get(camera_id)
+            if handler and hasattr(handler, 'unregister_jpeg_stream'):
+                try:
+                    await handler.unregister_jpeg_stream(channel=0)
+                    logger.info("[RecordEngine] Unregistered JPEG motion detection for camera %s (switched to %s)",
+                               camera_id, config.mode.value)
+                except Exception as e:
+                    logger.warning("[RecordEngine] Failed to unregister JPEG stream for %s: %s", camera_id, e)
+        
         # Stop existing recorder
         if key in self._recorders:
             await self._recorders[key].stop_recording()
@@ -587,8 +600,14 @@ class RecordEngine:
             await self._recorders[key].stop_recording()
             del self._recorders[key]
         
-        # Clean up motion state
+        # Clean up motion state and JPEG callback
         self._motion_states.pop(camera_id, None)
+        handler = self._camera_handlers.get(camera_id)
+        if handler and hasattr(handler, 'unregister_jpeg_stream'):
+            try:
+                await handler.unregister_jpeg_stream(channel=0)
+            except Exception as e:
+                logger.warning("[RecordEngine] Failed to unregister JPEG stream for %s: %s", camera_id, e)
         
         return self._config_dao.delete(camera_id)
     

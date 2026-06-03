@@ -273,6 +273,18 @@ class RecordingSegmentDAO:
             logger.error("Error deleting recording segment %s: %s", segment_id, e)
             return False
 
+    def delete_by_ids(self, segment_ids: List[str]) -> int:
+        """Delete multiple recording segments by ID in a single query."""
+        if not segment_ids:
+            return 0
+        placeholders = ",".join(["?" for _ in segment_ids])
+        sql = f"DELETE FROM recording_segments WHERE id IN ({placeholders})"
+        try:
+            return self.db_connector.execute_update(sql, tuple(segment_ids))
+        except Exception as e:
+            logger.error("Error batch deleting %d recording segments: %s", len(segment_ids), e)
+            return 0
+
     def delete_by_camera_id(self, camera_id: str) -> int:
         """Delete all segments for a camera."""
         sql = "DELETE FROM recording_segments WHERE camera_id = ?"

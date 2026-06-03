@@ -34,6 +34,7 @@ from miloco_server.schema.recording_schema import (
     TimePeriod,
 )
 from miloco_server.record_engine import get_record_engine
+from miloco_server.service.recording_service import get_recording_service
 
 logger = logging.getLogger(__name__)
 
@@ -322,6 +323,12 @@ async def update_recording_config(
         logger.info(f"Updating recording config for {camera_id}: enabled={enabled}, mode={mode}, motion_buffer={motion_buffer_seconds}, person_buffer={person_buffer_seconds}")
         success = await engine.update_config(config)
         if success:
+            # Also sync RecordingService state (handles motion/person callback lifecycle)
+            try:
+                recording_service = get_recording_service()
+                await recording_service.update_config(config)
+            except Exception as svc_err:
+                logger.warning("Failed to sync RecordingService for %s: %s", camera_id, svc_err)
             logger.info(f"Recording config updated successfully for {camera_id}")
             return NormalResponse(
                 code=0,
@@ -342,6 +349,12 @@ async def delete_recording_config(camera_id: str, current_user: str = Depends(ve
         engine = get_record_engine()
         success = await engine.delete_config(camera_id)
         if success:
+            # Also sync RecordingService (stop recording, unregister callbacks)
+            try:
+                recording_service = get_recording_service()
+                await recording_service.delete_config(camera_id)
+            except Exception as svc_err:
+                logger.warning("Failed to sync RecordingService delete for %s: %s", camera_id, svc_err)
             return NormalResponse(code=0, message="Recording configuration deleted successfully", data=None)
         return NormalResponse(code=1, message="No recording config found for camera", data=None)
     except Exception as e:
@@ -414,10 +427,15 @@ async def query_recording_segments(
             # If database has data, return it
             if total > 0:
                 # Repair zero-duration records on-the-fly
+                # Priority: end_time - start_time (DB metadata) > file_size estimation (variable bitrate)
                 for seg in segments:
                     if seg.duration_seconds <= 0:
-                        # Try file_size_bytes estimation first
-                        if seg.file_size_bytes > 0:
+                        # Prefer end_time - start_time for accurate duration
+                        time_diff = (seg.end_time - seg.start_time).total_seconds()
+                        if time_diff > 0:
+                            seg.duration_seconds = time_diff
+                        elif seg.file_size_bytes > 0:
+                            # Fall back to file size estimation (150KB/s is approximate)
                             seg.duration_seconds = max(1, round(seg.file_size_bytes / (150 * 1024), 1))
                             seg.end_time = seg.start_time + timedelta(seconds=seg.duration_seconds)
                         else:
@@ -803,7 +821,7 @@ async def get_hls_playlist(segment_id: str):
 
 @router.delete("/segments/{segment_id}", summary="Delete recording segment", response_model=NormalResponse)
 async def delete_recording_segment(segment_id: str, current_user: str = Depends(verify_token)):
-    """Delete a recording segment file from disk."""
+    """Delete a recording segment file from disk and database."""
     try:
         engine = get_record_engine()
         relative_path = segment_id_to_path(segment_id)
@@ -812,6 +830,8 @@ async def delete_recording_segment(segment_id: str, current_user: str = Depends(
             raise HTTPException(status_code=404, detail="Recording segment not found")
         
         await engine._storage.delete_segment(relative_path)
+        # Also delete the database record
+        engine._segment_dao.delete_by_id(segment_id)
         return NormalResponse(code=0, message="Recording segment deleted successfully", data=None)
     except HTTPException:
         raise
@@ -822,7 +842,7 @@ async def delete_recording_segment(segment_id: str, current_user: str = Depends(
 
 @router.post("/segments/batch-delete", summary="Batch delete recording segments", response_model=NormalResponse)
 async def batch_delete_recording_segments(request: Request, current_user: str = Depends(verify_token)):
-    """Delete multiple recording segment files from disk."""
+    """Delete multiple recording segment files from disk and database."""
     try:
         body = await request.json()
         segment_ids = body.get("segment_ids", [])
@@ -830,7 +850,7 @@ async def batch_delete_recording_segments(request: Request, current_user: str = 
             raise HTTPException(status_code=400, detail="segment_ids must be a non-empty list")
 
         engine = get_record_engine()
-        deleted_count = 0
+        deleted_ids = []
         errors = []
 
         for segment_id in segment_ids:
@@ -841,15 +861,19 @@ async def batch_delete_recording_segments(request: Request, current_user: str = 
                     errors.append(f"Segment file not found: {segment_id}")
                     continue
                 await engine._storage.delete_segment(relative_path)
-                deleted_count += 1
+                deleted_ids.append(segment_id)
             except Exception as e:
                 errors.append(f"Failed to delete {segment_id}: {str(e)}")
                 logger.error("Failed to delete segment %s: %s", segment_id, e, exc_info=True)
 
+        # Batch delete database records
+        if deleted_ids:
+            engine._segment_dao.delete_by_ids(deleted_ids)
+
         return NormalResponse(
             code=0,
-            message=f"Successfully deleted {deleted_count} segments" + (f", {len(errors)} errors" if errors else ""),
-            data={"deleted_count": deleted_count, "errors": errors},
+            message=f"Successfully deleted {len(deleted_ids)} segments" + (f", {len(errors)} errors" if errors else ""),
+            data={"deleted_count": len(deleted_ids), "errors": errors},
         )
     except HTTPException:
         raise

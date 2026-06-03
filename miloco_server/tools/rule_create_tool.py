@@ -23,6 +23,7 @@ from miloco_server.schema.trigger_schema import (
     TriggerConditionV2,
     TriggerTargetV2,
     ExecuteInfo,
+    ExecuteInfoDetail,
     ExecuteType,
     ConditionType,
 )
@@ -156,6 +157,9 @@ class RuleCreateTool(Actor):
                 automation_actions=matched_actions,
                 notify=Notify(content=notify)
             )
+
+            choosed_mcp_list = await self._choose_mcp_list()
+            execute_info = ExecuteInfoDetail.from_execute_info(execute_info, choosed_mcp_list)
 
             trigger_rule_v2 = TriggerRuleV2(
                 name=name,

@@ -108,7 +108,8 @@
       margin-bottom: 0;
     }
   }
-  
+}
+
 // Condition Type Selector
 .conditionTypeSelector {
   margin-top: 8px;
@@ -128,6 +129,50 @@
   .advancedSelect {
     width: 100%;
   }
+
+.customTimeRangeContainer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.customTimePicker {
+  width: 120px;
+}
+
+.customTimeInput {
+  width: 120px;
+  height: 32px;
+  padding: 4px 11px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-color-85);
+  background-color: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  outline: none;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #4096ff;
+  }
+
+  &:focus {
+    border-color: #4096ff;
+    box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1);
+  }
+
+  &:disabled {
+    color: rgba(0, 0, 0, 0.25);
+    background-color: rgba(0, 0, 0, 0.04);
+    border-color: #d9d9d9;
+    cursor: not-allowed;
+  }
+}
+
+.customTimeSeparator {
+  color: var(--text-color-6);
+  font-size: 14px;
 }
 
 .triggerIntervalDescription,

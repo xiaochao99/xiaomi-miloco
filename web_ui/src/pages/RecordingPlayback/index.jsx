@@ -8,16 +8,11 @@ import {
   DatePicker,
   Spin,
   Tooltip,
-  Checkbox,
-  Empty,
-  Drawer,
-  Badge,
 } from 'antd';
 import { useTranslation } from 'react-i18next';
 import {
   ReloadOutlined,
   ClearOutlined,
-  DeleteOutlined,
   CalendarOutlined,
   DashboardOutlined,
   VideoCameraOutlined,
@@ -27,7 +22,6 @@ import {
   SoundOutlined,
   StepBackwardOutlined,
   StepForwardOutlined,
-  UnorderedListOutlined,
   WifiOutlined,
   VideoCameraFilled,
 } from '@ant-design/icons';
@@ -37,11 +31,8 @@ import {
   getRecordingSegments,
   getRecordingStorage,
   cleanupRecordingExpired,
-  deleteRecordingSegment,
-  deleteRecordingSegmentsBatch,
   getRecordingStatus,
   getRecordingPlaybackUrl,
-  getRecordingThumbnailUrl,
   getRecordingHlsUrl,
   getRecordingTranscodeUrl,
 } from '@/api';
@@ -100,8 +91,6 @@ const RecordingPlayback = () => {
   const [recordingStatuses, setRecordingStatuses] = useState({});
   const [cameraSegmentCounts, setCameraSegmentCounts] = useState({});
   const [modeFilter, setModeFilter] = useState(null);
-  const [selectedSegmentIds, setSelectedSegmentIds] = useState(new Set());
-  const [deleting, setDeleting] = useState(false);
 
   // 播放器状态
   const [isPlaying, setIsPlaying] = useState(false);
@@ -109,7 +98,6 @@ const RecordingPlayback = () => {
   const [volume, setVolume] = useState(0.8);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [zoomLevel, setZoomLevel] = useState(0);
-  const [segmentDrawerVisible, setSegmentDrawerVisible] = useState(false);
 
   // 全局播放时间（当天秒数，从 00:00:00 开始计算）
   const [globalTime, setGlobalTime] = useState(0);
@@ -315,9 +303,21 @@ const RecordingPlayback = () => {
       const res = await getRecordingSegments(params);
       if (res && res.code === 0) {
         const segs = res.data?.segments || [];
-        // 前端兜底：若后端返回 duration_seconds 为 0，用 file_size_bytes 估算
+        // 前端兜底：若后端返回 duration_seconds 为 0，优先用 end_time - start_time 计算
+        // 文件大小估算（固定码率 150KB/s）不可靠，尤其是画面变动与持续录制的码率不同
         const repairedSegs = segs.map((s) => {
-          if ((typeof s.duration_seconds !== 'number' || s.duration_seconds <= 0) && s.file_size_bytes > 0) {
+          if (typeof s.duration_seconds === 'number' && s.duration_seconds > 0) {
+            return s;
+          }
+          // 优先用起止时间差计算准确时长
+          const startSec = dayjsToSeconds(dayjs(s.start_time));
+          const endSec = dayjsToSeconds(dayjs(s.end_time));
+          const timeBased = Math.max(0, endSec - startSec);
+          if (timeBased > 0) {
+            return { ...s, duration_seconds: timeBased };
+          }
+          // 最后才用文件大小估算兜底
+          if (s.file_size_bytes > 0) {
             return {
               ...s,
               duration_seconds: Math.max(1, Math.round(s.file_size_bytes / (150 * 1024))),
@@ -346,7 +346,6 @@ const RecordingPlayback = () => {
   useEffect(() => {
     if (selectedCamera) {
       fetchSegments();
-      setSelectedSegmentIds(new Set());
     }
   }, [fetchSegments]);
 
@@ -375,70 +374,6 @@ const RecordingPlayback = () => {
       console.error('Failed to fetch recording statuses:', error);
     }
   };
-
-  const handleDeleteSegment = async (segmentId) => {
-    try {
-      const res = await deleteRecordingSegment(segmentId);
-      if (res && res.code === 0) {
-        message.success(t('recording.playback.deleted'));
-        if (activeSegment?.id === segmentId) {
-          setActiveSegment(null);
-        }
-        fetchSegments();
-        fetchStorageStats();
-      } else {
-        message.error(t('recording.playback.deleteFailed'));
-      }
-    } catch (error) {
-      console.error('Failed to delete segment:', error);
-      message.error(t('recording.playback.deleteFailed'));
-    }
-  };
-
-  const handleBatchDelete = async () => {
-    if (selectedSegmentIds.size === 0) return;
-    setDeleting(true);
-    try {
-      const ids = Array.from(selectedSegmentIds);
-      const res = await deleteRecordingSegmentsBatch(ids);
-      if (res && res.code === 0) {
-        message.success(t('recording.playback.batchDeleted', { count: ids.length }));
-        setSelectedSegmentIds(new Set());
-        if (ids.includes(activeSegment?.id)) {
-          setActiveSegment(null);
-        }
-        fetchSegments();
-        fetchStorageStats();
-      } else {
-        message.error(t('recording.playback.deleteFailed'));
-      }
-    } catch (error) {
-      console.error('Failed to batch delete:', error);
-      message.error(t('recording.playback.deleteFailed'));
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const handleToggleSelectSegment = useCallback((segmentId, checked) => {
-    setSelectedSegmentIds((prev) => {
-      const next = new Set(prev);
-      if (checked) {
-        next.add(segmentId);
-      } else {
-        next.delete(segmentId);
-      }
-      return next;
-    });
-  }, []);
-
-  const handleSelectAllSegments = useCallback((checked) => {
-    if (checked) {
-      setSelectedSegmentIds(new Set(segments.map((s) => s.id)));
-    } else {
-      setSelectedSegmentIds(new Set());
-    }
-  }, [segments]);
 
   const handleCleanup = async () => {
     setLoading(true);
@@ -901,67 +836,6 @@ const RecordingPlayback = () => {
     );
   };
 
-  const renderSegmentCard = (segment) => {
-    const isActive = activeSegment?.id === segment.id;
-    const isSelected = selectedSegmentIds.has(segment.id);
-    const thumbnailUrl = getRecordingThumbnailUrl(segment.id, 1.0);
-
-    return (
-      <div
-        key={segment.id}
-        className={`${styles.segmentCard} ${isActive ? styles.segmentCardActive : ''}`}
-      >
-        <div className={styles.segmentThumbnail}>
-          <img
-            src={thumbnailUrl}
-            alt={segment.id}
-            loading="lazy"
-            decoding="async"
-            onError={(e) => {
-              e.target.style.display = 'none';
-              e.target.parentElement.innerHTML = '<span style="font-size: 24px; color: var(--text-color-149);"><svg viewBox="64 64 896 896" focusable="false" data-icon="video-camera" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M912 302.3L784 376V224c0-35.3-28.7-64-64-64H128c-35.3 0-64 28.7-64 64v576c0 35.3 28.7 64 64 64h592c35.3 0 64-28.7 64-64V648l128 73.7c21.3 12.3 48-3.1 48-27.6V330c0-24.6-26.7-40-48-27.7zM712 792H128V224h584v568z"></path></svg></span>';
-            }}
-          />
-        </div>
-        <div className={styles.segmentInfo} onClick={() => handleSegmentClick(segment)}>
-          <div className={styles.segmentTime}>
-            {dayjs(segment.start_time).format('HH:mm:ss')} - {dayjs(segment.end_time).format('HH:mm:ss')}
-          </div>
-          <div className={styles.segmentMeta}>
-            <span className={styles.segmentDuration}>
-              {formatDuration(segment.duration_seconds)}
-            </span>
-            <span>·</span>
-            <span className={styles.segmentSize}>
-              {formatFileSize(segment.file_size_bytes)}
-            </span>
-            <span className={`${styles.segmentMode} ${getModeClassName(segment.recording_mode)}`}>
-              {getModeLabel(segment.recording_mode)}
-            </span>
-          </div>
-        </div>
-        <div className={styles.segmentActions}>
-          <div className={styles.segmentCheckbox}>
-            <Checkbox
-              checked={isSelected}
-              onChange={(e) => handleToggleSelectSegment(segment.id, e.target.checked)}
-            />
-          </div>
-          <Popconfirm
-            title={t('recording.playback.confirmDelete')}
-            onConfirm={() => handleDeleteSegment(segment.id)}
-            okText={t('common.confirm')}
-            cancelText={t('common.cancel')}
-          >
-            <span className={styles.segmentDeleteBtn}>
-              <DeleteOutlined />
-            </span>
-          </Popconfirm>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className={styles.playbackContainer}>
       {/* 左侧摄像头面板 */}
@@ -1073,31 +947,6 @@ const RecordingPlayback = () => {
             <span className={styles.segmentCount}>
               {t('recording.playback.totalSegments')}: {total}
             </span>
-            <Tooltip title={t('recording.playback.segmentList')}>
-              <Button
-                icon={<UnorderedListOutlined />}
-                onClick={() => setSegmentDrawerVisible(true)}
-              >
-                {t('recording.playback.segmentList')}
-              </Button>
-            </Tooltip>
-            {selectedSegmentIds.size > 0 && (
-              <Popconfirm
-                title={t('recording.playback.batchDeleteConfirm', { count: selectedSegmentIds.size })}
-                onConfirm={handleBatchDelete}
-                okText={t('common.confirm')}
-                cancelText={t('common.cancel')}
-              >
-                <Button
-                  danger
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  loading={deleting}
-                >
-                  {t('recording.playback.batchDelete')} ({selectedSegmentIds.size})
-                </Button>
-              </Popconfirm>
-            )}
             <Popconfirm
               title={t('recording.playback.confirmCleanup')}
               onConfirm={handleCleanup}
@@ -1134,65 +983,6 @@ const RecordingPlayback = () => {
         </div>
 
       </div>
-
-      {/* 片段列表抽屉 */}
-      <Drawer
-        title={
-          <div className={styles.drawerTitle}>
-            <UnorderedListOutlined />
-            <span>{t('recording.playback.segmentList')}</span>
-            <span className={styles.drawerCount}>({total})</span>
-          </div>
-        }
-        placement="right"
-        width={400}
-        open={segmentDrawerVisible}
-        onClose={() => setSegmentDrawerVisible(false)}
-        className={styles.segmentDrawer}
-      >
-        <Spin spinning={loading}>
-          {segments.length > 0 ? (
-            <>
-              <div className={styles.drawerToolbar}>
-                <Checkbox
-                  checked={selectedSegmentIds.size === segments.length}
-                  indeterminate={selectedSegmentIds.size > 0 && selectedSegmentIds.size < segments.length}
-                  onChange={(e) => handleSelectAllSegments(e.target.checked)}
-                >
-                  <span style={{ fontSize: 12, color: 'var(--text-color-149)' }}>
-                    {t('recording.playback.selectAll')}
-                  </span>
-                </Checkbox>
-                {selectedSegmentIds.size > 0 && (
-                  <Popconfirm
-                    title={t('recording.playback.batchDeleteConfirm', { count: selectedSegmentIds.size })}
-                    onConfirm={handleBatchDelete}
-                    okText={t('common.confirm')}
-                    cancelText={t('common.cancel')}
-                  >
-                    <Button
-                      danger
-                      size="small"
-                      icon={<DeleteOutlined />}
-                      loading={deleting}
-                    >
-                      {t('recording.playback.batchDelete')} ({selectedSegmentIds.size})
-                    </Button>
-                  </Popconfirm>
-                )}
-              </div>
-              <div className={styles.drawerSegmentList}>
-                {segments.map(renderSegmentCard)}
-              </div>
-            </>
-          ) : (
-            <Empty
-              description={t('recording.playback.noSegments')}
-              style={{ padding: '80px 0' }}
-            />
-          )}
-        </Spin>
-      </Drawer>
     </div>
   );
 };

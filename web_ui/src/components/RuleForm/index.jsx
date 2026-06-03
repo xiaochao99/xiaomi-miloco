@@ -14,6 +14,7 @@ import DetectionConditionForm from '@/components/DetectionConditionForm';
 import {
   TRIGGER_PERIOD_OPTIONS,
   TRIGGER_INTERVAL_OPTIONS,
+  WEEKDAY_OPTIONS,
   formDataUtils,
 } from '@/utils/ruleFormUtils';
 import { useRuleFormData, convertFormDataToBackend } from '@/hooks/useRuleFormData';
@@ -68,6 +69,7 @@ const translations = {
 
 const [form] = Form.useForm();
   const { openModal } = useLogViewerStore();
+
   const {
     availableMcpServices,
     haDeviceOptions: globalHaDeviceOptions,
@@ -587,6 +589,9 @@ const [form] = Form.useForm();
   const [triggerIntervalHours, setTriggerIntervalHours] = useState(0);
   const [triggerIntervalMinutes, setTriggerIntervalMinutes] = useState(0);
   const [triggerIntervalSeconds, setTriggerIntervalSeconds] = useState(2);
+  const [customStartTime, setCustomStartTime] = useState('08:00');
+  const [customEndTime, setCustomEndTime] = useState('18:00');
+  const [triggerWeekdays, setTriggerWeekdays] = useState([]);
 
   useEffect(() => {
     if (mode === 'readonly') {
@@ -721,6 +726,9 @@ useEffect(() => {
         setTriggerIntervalHours(filterData.triggerIntervalHours || 0);
         setTriggerIntervalMinutes(filterData.triggerIntervalMinutes || 0);
         setTriggerIntervalSeconds(filterData.triggerIntervalSeconds || 2);
+        setCustomStartTime(filterData.customStartTime || '08:00');
+        setCustomEndTime(filterData.customEndTime || '18:00');
+        setTriggerWeekdays(filterData.triggerWeekdays || []);
         // setAdvancedOptionsVisible(true);
       }
     }
@@ -947,6 +955,9 @@ useEffect(() => {
         triggerIntervalHours,
         triggerIntervalMinutes,
         triggerIntervalSeconds,
+        customStartTime,
+        customEndTime,
+        triggerWeekdays,
       },
       mcp_list: checkedMcpServices
         .map(service => availableMcpServices.find(mcp => mcp?.server_name && mcp?.client_id && `${mcp.server_name}#${mcp.client_id}` === service))
@@ -1424,26 +1435,24 @@ useEffect(() => {
         })()}
       >
         <div className={styles.actionGroup}>
-          {mode !== 'readonly' && mode !== 'queryEdit' && (
-            <div className={styles.actionItem}>
-              <div className={styles.actionLabel}>MCP</div>
-              <Select
-                disabled={isSubmitDisabled}
-                mode="multiple"
-                placeholder={t('smartCenter.pleaseSelectMcp')}
-                value={checkedMcpServices}
-                options={availableMcpServices.map(service => ({
-                  label: `${service?.server_name}#${service?.client_id}`,
-                  value: `${service?.server_name}#${service?.client_id}`,
-                }))}
-                onChange={(values) => {
-                  setCheckedMcpServices(values)
-                  setAiRecommendActions([]);
-                  setAiRecommendExecuteType('dynamic');
-                }}
-              />
-            </div>
-          )}
+          <div className={styles.actionItem}>
+            <div className={styles.actionLabel}>MCP</div>
+            <Select
+              disabled={isSubmitDisabled}
+              mode="multiple"
+              placeholder={t('smartCenter.pleaseSelectMcp')}
+              value={checkedMcpServices}
+              options={availableMcpServices.map(service => ({
+                label: `${service?.server_name}#${service?.client_id}`,
+                value: `${service?.server_name}#${service?.client_id}`,
+              }))}
+              onChange={(values) => {
+                setCheckedMcpServices(values)
+                setAiRecommendActions([]);
+                setAiRecommendExecuteType('dynamic');
+              }}
+            />
+          </div>
           <div className={styles.actionItem}>
             <div className={styles.actionLabel}>
               <span>
@@ -1471,7 +1480,10 @@ useEffect(() => {
                 className={styles.actionControlButton}
                 onClick={() => {
                   setActionDescriptionError(false);
-                  const cameras = form.getFieldValue('cameras')
+                  const triggerDevices = form.getFieldValue('trigger_devices') || form.getFieldValue('cameras') || [];
+                  const cameras = triggerDevices
+                    .filter(item => typeof item === 'object' || cameraOptions.some(opt => opt.did === item))
+                    .map(item => typeof item === 'object' ? item.did : item);
                   if (checkedMcpServices.length === 0) {
                     message.error(t('smartCenter.pleaseSelectMcp'));
                     return;
@@ -1674,13 +1686,59 @@ useEffect(() => {
               <Select
                 placeholder={t('smartCenter.nonRequired')}
                 value={triggerPeriod}
-                onChange={setTriggerPeriod}
+                onChange={(value) => {
+                  setTriggerPeriod(value);
+                  // Reset custom time when switching away from custom
+                  if (value !== 'custom') {
+                    setCustomStartTime('08:00');
+                    setCustomEndTime('18:00');
+                  }
+                }}
                 options={TRIGGER_PERIOD_OPTIONS}
                 className={styles.advancedSelect}
                 allowClear
                 disabled={isSubmitDisabled}
               />
             </div>
+
+            <div className={styles.advancedOptionItem}>
+              <div className={styles.advancedOptionLabel}>{t('smartCenter.triggerWeekdays')}:</div>
+              <Select
+                mode="multiple"
+                placeholder={t('smartCenter.allWeekdays')}
+                value={triggerWeekdays}
+                onChange={setTriggerWeekdays}
+                options={WEEKDAY_OPTIONS}
+                className={styles.advancedSelect}
+                allowClear
+                disabled={isSubmitDisabled}
+                maxTagCount={3}
+                maxTagPlaceholder={(omittedValues) => `+${omittedValues.length}`}
+              />
+            </div>
+
+            {triggerPeriod === 'custom' && (
+              <div className={styles.advancedOptionItem}>
+                <div className={styles.advancedOptionLabel}>{t('smartCenter.customTimeRange')}:</div>
+                <div className={styles.customTimeRangeContainer}>
+                  <input
+                    type="time"
+                    value={customStartTime}
+                    onChange={(e) => setCustomStartTime(e.target.value)}
+                    disabled={isSubmitDisabled}
+                    className={styles.customTimeInput}
+                  />
+                  <span className={styles.customTimeSeparator}>{t('smartCenter.to')}</span>
+                  <input
+                    type="time"
+                    value={customEndTime}
+                    onChange={(e) => setCustomEndTime(e.target.value)}
+                    disabled={isSubmitDisabled}
+                    className={styles.customTimeInput}
+                  />
+                </div>
+              </div>
+            )}
 
             <div className={styles.advancedOptionItem}>
               <div className={styles.advancedOptionLabel}>{t('smartCenter.triggerInterval')}:</div>
