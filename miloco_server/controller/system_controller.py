@@ -23,6 +23,11 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from miloco_server.schema.common_schema import NormalResponse
 
+
+class ApplyUpdateRequest(BaseModel):
+    version: Optional[str] = None
+    update_config: bool = False
+
 try:
     import httpx
     HAS_HTTPX = True
@@ -165,6 +170,23 @@ async def check_for_updates():
     try:
         _update_status.last_check = datetime.now().isoformat()
         
+        # Re-read current version from files (it resets to "unknown" after restart)
+        version_paths = [
+            "/app/VERSION",
+            os.path.join(os.path.dirname(__file__), "..", "..", "VERSION"),
+            os.path.expanduser("~/.miloco/.hot_update_version"),
+        ]
+        for vp in version_paths:
+            try:
+                if os.path.exists(vp):
+                    with open(vp, 'r') as f:
+                        ver = f.read().strip()
+                        if ver:
+                            _update_status.current_version = ver
+                            break
+            except Exception:
+                continue
+        
         if not HAS_HTTPX:
             # Fallback to shell script
             returncode, stdout, stderr = await _run_hot_update_command("check")
@@ -234,12 +256,30 @@ async def check_for_updates():
                 "release_url": release_data.get("html_url", ""),
                 "release_body": release_data.get("body", ""),
                 "published_at": release_data.get("published_at", ""),
+                "has_config": False,
                 "assets": [
                     {"name": a["name"], "size": a["size"], "url": a["browser_download_url"]}
                     for a in release_data.get("assets", [])
-                    if "hotfix" in a.get("name", "")
+                    if "hotfix" in a.get("name", "") or a.get("name") == "manifest.json"
                 ]
             }
+            
+            # Try to download manifest.json from release assets to check has_config
+            if update_available:
+                manifest_asset = next(
+                    (a for a in release_data.get("assets", []) if a.get("name") == "manifest.json"),
+                    None
+                )
+                if manifest_asset:
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0) as mc:
+                            mresp = await mc.get(manifest_asset["browser_download_url"], headers=headers)
+                            mresp.raise_for_status()
+                            mdata = mresp.json()
+                            data["has_config"] = mdata.get("changes", {}).get("backend", {}).get("has_config", False)
+                    except Exception as me:
+                        logger.debug(f"Failed to fetch manifest.json: {me}")
+            
             return NormalResponse(code=0, message="success", data=data)
     
     except httpx.HTTPError as e:
@@ -275,7 +315,7 @@ async def _download_file(url: str, dest: str, auth_headers: dict = None) -> None
                     f.write(chunk)
 
 
-async def _apply_update_internal(version: str) -> dict:
+async def _apply_update_internal(version: str, update_config: bool = False) -> dict:
     """Core update logic - download package & apply files in-container"""
     global _update_status
     log_lines = []
@@ -355,6 +395,7 @@ async def _apply_update_internal(version: str) -> dict:
         
         # 6. Apply files - copy from package to /app
         copy_count = 0
+        skip_config = not update_config
         for root, dirs, files in os.walk(content_dir):
             for fn in files:
                 if fn in ("manifest.json", "checksums.sha256"):
@@ -370,6 +411,11 @@ async def _apply_update_internal(version: str) -> dict:
                 # Resolve target based on source structure
                 if target_rel.startswith("backend/"):
                     target_rel = target_rel[len("backend/"):]
+                
+                # Skip config files if user chose not to update config
+                if skip_config and target_rel.startswith("config/"):
+                    log_lines.append(f"  Skipped (config): {target_rel}")
+                    continue
                 
                 target_path = os.path.join(APP_BASE_DIR, target_rel)
                 
@@ -422,15 +468,18 @@ async def _apply_update_internal(version: str) -> dict:
 
 
 @router.post("/system/update/apply", response_model=NormalResponse)
-async def apply_update(background_tasks: BackgroundTasks, version: Optional[str] = None):
+async def apply_update(background_tasks: BackgroundTasks, req: ApplyUpdateRequest = None):
     """Apply available update"""
     global _update_status
+    
+    if req is None:
+        req = ApplyUpdateRequest()
     
     if _update_status.is_updating:
         raise HTTPException(status_code=409, detail="Update already in progress")
     
     # Determine version
-    target_version = version or _update_status.latest_version
+    target_version = req.version or _update_status.latest_version
     if not target_version:
         raise HTTPException(status_code=400, detail="No version specified and no latest version available")
     
@@ -438,7 +487,7 @@ async def apply_update(background_tasks: BackgroundTasks, version: Optional[str]
     async def run_update():
         global _update_status
         try:
-            result = await _apply_update_internal(target_version)
+            result = await _apply_update_internal(target_version, update_config=req.update_config)
             _update_status.update_log = result.get("message", "")
             # Trigger restart after a short delay (let the response finish)
             await asyncio.sleep(2)

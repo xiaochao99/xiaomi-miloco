@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
-import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typography, Segmented, Table, Popconfirm, Tag, Tooltip, Alert, Upload, List, Spin} from 'antd';
+import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typography, Segmented, Table, Popconfirm, Tag, Tooltip, Alert, Upload, List, Spin, Checkbox} from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined, PlusOutlined, CopyOutlined, DeleteOutlined, VideoCameraOutlined, UploadOutlined, AudioOutlined, SoundOutlined, ExperimentOutlined } from '@ant-design/icons';
@@ -66,6 +66,7 @@ const Setting = () => {
   const [rollbackModalVisible, setRollbackModalVisible] = useState(false);
   const [updateContentVisible, setUpdateContentVisible] = useState(false);
   const [updateContentData, setUpdateContentData] = useState(null);
+  const [updateConfigChecked, setUpdateConfigChecked] = useState(false);
 
   // Camera config states
   const [cameraConfig, setCameraConfig] = useState({
@@ -285,8 +286,10 @@ const Setting = () => {
             release_body: res.data.release_body || '',
             release_name: res.data.release_name || '',
             release_url: res.data.release_url || '',
-            published_at: res.data.published_at || ''
+            published_at: res.data.published_at || '',
+            has_config: res.data.has_config || false
           });
+          setUpdateConfigChecked(false);
           setUpdateContentVisible(true);
         } else {
           message.info(t('setting.noUpdateAvailable'));
@@ -302,10 +305,10 @@ const Setting = () => {
     }
   };
 
-  const handleApplyUpdate = async (version = null) => {
+  const handleApplyUpdate = async (version = null, updateConfig = false) => {
     setLoadingUpdate(true);
     try {
-      const res = await applyUpdate(version);
+      const res = await applyUpdate(version, updateConfig);
       if (res && res.code === 0) {
         message.success(t('setting.updateStarted'));
         // Poll for update status
@@ -1974,7 +1977,7 @@ const Setting = () => {
             key="update"
             type="primary"
             onClick={() => {
-              handleApplyUpdate(updateContentData?.latest_version);
+              handleApplyUpdate(updateContentData?.latest_version, updateConfigChecked);
               setUpdateContentVisible(false);
             }}
           >
@@ -1998,6 +2001,16 @@ const Setting = () => {
                 </Text>
               )}
             </div>
+            {updateContentData.has_config && (
+              <div style={{ marginBottom: 12 }}>
+                <Checkbox
+                  checked={updateConfigChecked}
+                  onChange={(e) => setUpdateConfigChecked(e.target.checked)}
+                >
+                  {t('setting.updateConfigCheckbox')}
+                </Checkbox>
+              </div>
+            )}
             <div style={{
               background: '#f6f8fa',
               border: '1px solid #e1e4e8',

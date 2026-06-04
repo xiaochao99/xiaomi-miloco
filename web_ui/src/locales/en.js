@@ -800,6 +800,7 @@ export default {
     updateNewVersionDesc: 'Current {{current}} → Latest {{latest}}',
     updateLater: 'Later',
     updateNow: 'Update Now',
+    updateConfigCheckbox: 'Also update configuration files',
     releaseNotes: 'Release Notes',
   },
 

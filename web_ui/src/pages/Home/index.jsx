@@ -3,9 +3,9 @@
  * This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
  */
 
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
-import { Modal, Button, Typography } from 'antd';
+import { Modal, Button, Typography, Checkbox } from 'antd';
 import ReactMarkdown from 'react-markdown';
 import { LoadingScreen, ErrorRetry, ConsentModal, AuthCodeModal } from '@/components';
 import { useAuth, useLayout } from './hooks/index';
@@ -21,7 +21,6 @@ const { Text } = Typography;
  */
 const Home = () => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const {
     userInfo,
     loading,
@@ -38,11 +37,14 @@ const Home = () => {
     showUpdateNotify,
     updateNotifyData,
     closeUpdateNotify,
+    handleApplyUpdate,
   } = useAuth(t)
 
   const {
     selectedMenuKey,
   } = useLayout()
+
+  const [updateConfigChecked, setUpdateConfigChecked] = useState(false);
 
   if (loading && !showConsentModal && !showAuthCodeModal) {
     return (
@@ -104,14 +106,11 @@ const Home = () => {
             {t('setting.updateLater')}
           </Button>,
           <Button
-            key="view"
+            key="update"
             type="primary"
-            onClick={() => {
-              closeUpdateNotify();
-              navigate('/home/setting');
-            }}
+            onClick={() => handleApplyUpdate(updateConfigChecked)}
           >
-            {t('setting.checkUpdates')}
+            {t('setting.updateNow')}
           </Button>
         ]}
         width={640}
@@ -130,6 +129,16 @@ const Home = () => {
                 })}
               </Text>
             </div>
+            {updateNotifyData.has_config && (
+              <div style={{ marginBottom: 12 }}>
+                <Checkbox
+                  checked={updateConfigChecked}
+                  onChange={(e) => setUpdateConfigChecked(e.target.checked)}
+                >
+                  {t('setting.updateConfigCheckbox')}
+                </Checkbox>
+              </div>
+            )}
             <div style={{
               background: '#f6f8fa',
               border: '1px solid #e1e4e8',

@@ -6,7 +6,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { message } from 'antd';
-import { getUserInfo, getUserLoginStatus, getUserLoginOut, setLanguage, getRefreshMiotAllInfo, refreshMiotCamera, refreshMiotScenes, refreshHaAutomation, authorizeMiot, checkForUpdates } from '@/api';
+import { getUserInfo, getUserLoginStatus, getUserLoginOut, setLanguage, getRefreshMiotAllInfo, refreshMiotCamera, refreshMiotScenes, refreshHaAutomation, authorizeMiot, checkForUpdates, applyUpdate } from '@/api';
 import { useSettingStore } from '@/stores/settingStore';
 import { AUTH_CONFIG } from '@/constants/homeConfigTypes';
 
@@ -138,7 +138,8 @@ export const useAuth = (t) => {
           release_body: res.data.release_body || '',
           release_name: res.data.release_name || '',
           release_url: res.data.release_url || '',
-          published_at: res.data.published_at || ''
+          published_at: res.data.published_at || '',
+          has_config: res.data.has_config || false
         });
         setShowUpdateNotify(true);
       }
@@ -151,6 +152,23 @@ export const useAuth = (t) => {
   /** Close update notification */
   const closeUpdateNotify = () => {
     setShowUpdateNotify(false);
+  };
+
+  /** Apply update from notification modal */
+  const handleApplyUpdate = async (updateConfig = false) => {
+    const version = updateNotifyData?.latest_version || null;
+    setShowUpdateNotify(false);
+    try {
+      const res = await applyUpdate(version, updateConfig);
+      if (res?.code === 0) {
+        message.success(t('setting.updateStarted'));
+      } else {
+        message.error(res?.message || t('setting.updateFailed'));
+      }
+    } catch (error) {
+      console.error('Failed to apply update:', error);
+      message.error(t('setting.updateFailed'));
+    }
   };
 
   /**
@@ -253,5 +271,6 @@ export const useAuth = (t) => {
     showUpdateNotify,
     updateNotifyData,
     closeUpdateNotify,
+    handleApplyUpdate,
   };
 };

@@ -815,6 +815,7 @@ export default {
     updateNewVersionDesc: '当前版本 {{current}}，最新版本 {{latest}}',
     updateLater: '稍后再说',
     updateNow: '立即更新',
+    updateConfigCheckbox: '同时更新配置文件',
     releaseNotes: '更新说明',
   },
 
