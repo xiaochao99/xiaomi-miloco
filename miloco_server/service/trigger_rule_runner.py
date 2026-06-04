@@ -676,7 +676,7 @@ class TriggerRuleRunner:
                 # Camera based filter
                 # camera_info should be present if rule.cameras is set, but check safety
                 execable = any([
-                    trigger_filter.post_filter(rule_id, condition_result.result)
+                    trigger_filter.post_filter(rule_id, getattr(condition_result.camera_info, 'did', f"camera_{condition_result.channel}"), condition_result.result)
                     for condition_result in condition_result_list
                 ])
             else:

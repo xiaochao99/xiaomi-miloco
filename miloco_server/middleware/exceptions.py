@@ -66,6 +66,7 @@ class ConflictException(BusinessException):
     """Resource conflict exception (such as name duplication, etc.) - 2002"""
     def __init__(self, message: str):
         super().__init__(message, code=2002)
+        self.http_status = status.HTTP_409_CONFLICT
 
 
 class ExternalServiceException(BusinessException):

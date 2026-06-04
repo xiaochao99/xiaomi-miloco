@@ -106,7 +106,7 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
     async def create_trigger_rule_v2(self, trigger_rule: TriggerRuleV2) -> str:
         """Create trigger rule using v2 schema/table."""
         if self._trigger_rule_dao.exists_by_name_v2(trigger_rule.name):
-            raise ConflictException(f"Trigger rule name '{trigger_rule.name}' already exists")
+            raise ConflictException(f"规则名称 '{trigger_rule.name}' 已存在")
         await self._validate_trigger_rule_v2(trigger_rule)
         if trigger_rule.execute_info and trigger_rule.execute_info.notify:
             await self._check_notify(trigger_rule.execute_info.notify)
@@ -134,7 +134,7 @@ class TriggerRuleService(DetectionTriggerServiceMixin):
         if not self._trigger_rule_dao.exists_v2(trigger_rule.id):
             raise ResourceNotFoundException(f"Trigger rule with ID '{trigger_rule.id}' not found")
         if self._trigger_rule_dao.exists_by_name_v2(trigger_rule.name, trigger_rule.id):
-            raise ConflictException(f"Trigger rule name '{trigger_rule.name}' already exists")
+            raise ConflictException(f"规则名称 '{trigger_rule.name}' 已存在")
         await self._validate_trigger_rule_v2(trigger_rule)
         if trigger_rule.execute_info and trigger_rule.execute_info.notify:
             await self._check_notify(trigger_rule.execute_info.notify)

@@ -189,3 +189,12 @@ export const getRecordingStorage = () => getApi('/api/recording/storage');
 export const cleanupRecordingExpired = () => postApi('/api/recording/cleanup');
 export const getRecordingSegmentsDurations = (segmentIds) =>
   postApi('/api/recording/segments/durations', { segment_ids: segmentIds });
+
+// System Update API
+export const getUpdateStatus = () => getApi('/api/system/update/status');
+export const checkForUpdates = () => getApi('/api/system/update/check');
+export const applyUpdate = (version = null) => postApi('/api/system/update/apply', { version });
+export const getUpdateLog = () => getApi('/api/system/update/log');
+export const listBackups = () => getApi('/api/system/backups');
+export const rollbackToBackup = (backupName) => postApi('/api/system/rollback', { backup_name: backupName });
+export const getSystemStatus = () => getApi('/api/system/status');

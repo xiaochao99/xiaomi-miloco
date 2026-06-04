@@ -6,7 +6,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { message } from 'antd';
-import { getUserInfo, getUserLoginStatus, getUserLoginOut, setLanguage, getRefreshMiotAllInfo, refreshMiotCamera, refreshMiotScenes, refreshHaAutomation, authorizeMiot } from '@/api';
+import { getUserInfo, getUserLoginStatus, getUserLoginOut, setLanguage, getRefreshMiotAllInfo, refreshMiotCamera, refreshMiotScenes, refreshHaAutomation, authorizeMiot, checkForUpdates } from '@/api';
 import { useSettingStore } from '@/stores/settingStore';
 import { AUTH_CONFIG } from '@/constants/homeConfigTypes';
 
@@ -30,6 +30,10 @@ export const useAuth = (t) => {
   const goToOhCodeRef = useRef(false);
   const loginUrlRef = useRef('');
   const { MAX_RETRY_ATTEMPTS, RETRY_INTERVAL } = AUTH_CONFIG;
+
+  // Update notification state
+  const [showUpdateNotify, setShowUpdateNotify] = useState(false);
+  const [updateNotifyData, setUpdateNotifyData] = useState(null);
 
   /**
    * Get user information
@@ -89,6 +93,8 @@ export const useAuth = (t) => {
         const success = await fetchUserInfo();
         if (success) {
           setLoading(false);
+          // Auto-check for updates in background
+          checkUpdateOnLogin();
           return;
         }
       }
@@ -117,6 +123,34 @@ export const useAuth = (t) => {
       setNeedRetryAuth(true);
       setLoading(false);
     }
+  };
+
+  /**
+   * Check for updates after login - runs silently in background
+   */
+  const checkUpdateOnLogin = async () => {
+    try {
+      const res = await checkForUpdates();
+      if (res?.code === 0 && res.data?.update_available) {
+        setUpdateNotifyData({
+          latest_version: res.data.latest_version,
+          current_version: res.data.current_version,
+          release_body: res.data.release_body || '',
+          release_name: res.data.release_name || '',
+          release_url: res.data.release_url || '',
+          published_at: res.data.published_at || ''
+        });
+        setShowUpdateNotify(true);
+      }
+    } catch (error) {
+      // Silently ignore - don't block login
+      console.debug('Background update check failed:', error);
+    }
+  };
+
+  /** Close update notification */
+  const closeUpdateNotify = () => {
+    setShowUpdateNotify(false);
   };
 
   /**
@@ -216,5 +250,8 @@ export const useAuth = (t) => {
     handleAuthCodeSubmit,
     handleAuthCodeCancel,
     loginUrl: loginUrlRef?.current,
+    showUpdateNotify,
+    updateNotifyData,
+    closeUpdateNotify,
   };
 };

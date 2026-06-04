@@ -1,0 +1,495 @@
+name: Release Hotfix (Incremental Update)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.0.5). Leave empty to auto-increment.'
+        required: false
+        type: string
+      force_full_rebuild:
+        description: 'Force full rebuild instead of incremental update'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  # ============================================================
+  # Job 1: Detect changes and determine update type
+  # ============================================================
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      update_type: ${{ steps.analyze.outputs.update_type }}
+      backend_changed: ${{ steps.analyze.outputs.backend_changed }}
+      ai_engine_changed: ${{ steps.analyze.outputs.ai_engine_changed }}
+      frontend_changed: ${{ steps.analyze.outputs.frontend_changed }}
+      python_changed: ${{ steps.analyze.outputs.python_changed }}
+      config_changed: ${{ steps.analyze.outputs.config_changed }}
+      dependency_changed: ${{ steps.analyze.outputs.dependency_changed }}
+      cpp_changed: ${{ steps.analyze.outputs.cpp_changed }}
+      version: ${{ steps.version.outputs.version }}
+      prev_version: ${{ steps.version.outputs.prev_version }}
+      commit_sha: ${{ steps.version.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          CURRENT_VERSION=$(cat VERSION)
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            # Auto-increment patch version
+            BASE_VERSION="${CURRENT_VERSION#v}"
+            MAJOR=$(echo "$BASE_VERSION" | cut -d. -f1)
+            MINOR=$(echo "$BASE_VERSION" | cut -d. -f2)
+            PATCH=$(echo "$BASE_VERSION" | cut -d. -f3)
+            PATCH=$((PATCH + 1))
+            VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "prev_version=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+          echo "commit_sha=${COMMIT_SHA}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION} (prev: ${CURRENT_VERSION})"
+
+      - name: Find previous release tag
+        id: prev_tag
+        run: |
+          # Get the latest release tag
+          PREV_TAG=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
+            | jq -r '.tag_name // empty')
+
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "null" ]; then
+            # Fallback: find the latest tag
+            PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          fi
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous release found, treating as full build"
+            echo "prev_tag=" >> $GITHUB_OUTPUT
+          else
+            echo "Previous release tag: ${PREV_TAG}"
+            echo "prev_tag=${PREV_TAG}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Analyze changes
+        id: analyze
+        run: |
+          PREV_TAG="${{ steps.prev_tag.outputs.prev_tag }}"
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag, will do full build"
+            echo "update_type=full" >> $GITHUB_OUTPUT
+            echo "backend_changed=true" >> $GITHUB_OUTPUT
+            echo "ai_engine_changed=true" >> $GITHUB_OUTPUT
+            echo "frontend_changed=true" >> $GITHUB_OUTPUT
+            echo "python_changed=true" >> $GITHUB_OUTPUT
+            echo "config_changed=true" >> $GITHUB_OUTPUT
+            echo "dependency_changed=true" >> $GITHUB_OUTPUT
+            echo "cpp_changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ "${{ inputs.force_full_rebuild }}" = "true" ]; then
+            echo "Force full rebuild requested"
+            echo "update_type=full" >> $GITHUB_OUTPUT
+            echo "backend_changed=true" >> $GITHUB_OUTPUT
+            echo "ai_engine_changed=true" >> $GITHUB_OUTPUT
+            echo "frontend_changed=true" >> $GITHUB_OUTPUT
+            echo "python_changed=true" >> $GITHUB_OUTPUT
+            echo "config_changed=true" >> $GITHUB_OUTPUT
+            echo "dependency_changed=true" >> $GITHUB_OUTPUT
+            echo "cpp_changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get changed files between previous tag and current HEAD
+          CHANGED_FILES=$(git diff --name-only ${PREV_TAG}..HEAD 2>/dev/null || echo "")
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No changes detected"
+            echo "update_type=none" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Categorize changes
+          BACKEND_PYTHON=$(echo "$CHANGED_FILES" | grep -E '^(miloco_server|miot_kit)/.*\.py$' || true)
+          AI_ENGINE_PYTHON=$(echo "$CHANGED_FILES" | grep -E '^miloco_ai_engine/.*\.py$' || true)
+          FRONTEND=$(echo "$CHANGED_FILES" | grep -E '^web_ui/' || true)
+          CONFIG=$(echo "$CHANGED_FILES" | grep -E '^config/.*\.yaml$' || true)
+          STARTUP_SCRIPTS=$(echo "$CHANGED_FILES" | grep -E '^scripts/start_.*\.py$' || true)
+          DEPENDENCY=$(echo "$CHANGED_FILES" | grep -E '(pyproject\.toml|requirements.*\.txt)' || true)
+          CPP=$(echo "$CHANGED_FILES" | grep -E '\.(cpp|h|cu|comp)$' || true)
+          DOCKERFILE=$(echo "$CHANGED_FILES" | grep -E '^docker/' || true)
+
+          # Determine flags
+          BACKEND_CHANGED="false"
+          AI_ENGINE_CHANGED="false"
+          FRONTEND_CHANGED="false"
+          PYTHON_CHANGED="false"
+          CONFIG_CHANGED="false"
+          DEPENDENCY_CHANGED="false"
+          CPP_CHANGED="false"
+
+          [ -n "$BACKEND_PYTHON" ] && { BACKEND_CHANGED="true"; PYTHON_CHANGED="true"; }
+          [ -n "$AI_ENGINE_PYTHON" ] && { AI_ENGINE_CHANGED="true"; PYTHON_CHANGED="true"; }
+          [ -n "$FRONTEND" ] && { FRONTEND_CHANGED="true"; BACKEND_CHANGED="true"; }
+          [ -n "$CONFIG" ] && { CONFIG_CHANGED="true"; BACKEND_CHANGED="true"; AI_ENGINE_CHANGED="true"; }
+          [ -n "$STARTUP_SCRIPTS" ] && { BACKEND_CHANGED="true"; AI_ENGINE_CHANGED="true"; PYTHON_CHANGED="true"; }
+          [ -n "$DEPENDENCY" ] && DEPENDENCY_CHANGED="true"
+          [ -n "$CPP" ] && CPP_CHANGED="true"
+          [ -n "$DOCKERFILE" ] && DEPENDENCY_CHANGED="true"
+
+          echo "backend_changed=${BACKEND_CHANGED}" >> $GITHUB_OUTPUT
+          echo "ai_engine_changed=${AI_ENGINE_CHANGED}" >> $GITHUB_OUTPUT
+          echo "frontend_changed=${FRONTEND_CHANGED}" >> $GITHUB_OUTPUT
+          echo "python_changed=${PYTHON_CHANGED}" >> $GITHUB_OUTPUT
+          echo "config_changed=${CONFIG_CHANGED}" >> $GITHUB_OUTPUT
+          echo "dependency_changed=${DEPENDENCY_CHANGED}" >> $GITHUB_OUTPUT
+          echo "cpp_changed=${CPP_CHANGED}" >> $GITHUB_OUTPUT
+
+          # Determine update type
+          if [ "$DEPENDENCY_CHANGED" = "true" ] || [ "$CPP_CHANGED" = "true" ]; then
+            echo "update_type=full" >> $GITHUB_OUTPUT
+            echo "Update type: FULL (dependencies or C++ changed)"
+          elif [ "$PYTHON_CHANGED" = "true" ] || [ "$FRONTEND_CHANGED" = "true" ] || [ "$CONFIG_CHANGED" = "true" ]; then
+            echo "update_type=incremental" >> $GITHUB_OUTPUT
+            echo "Update type: INCREMENTAL"
+          else
+            echo "update_type=none" >> $GITHUB_OUTPUT
+            echo "Update type: NONE (no hot-updatable changes)"
+          fi
+
+  # ============================================================
+  # Job 2: Build frontend (conditional)
+  # ============================================================
+  build-frontend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend_changed == 'true' && needs.detect-changes.outputs.update_type == 'incremental'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web_ui/package-lock.json
+
+      - name: Build frontend
+        working-directory: web_ui
+        run: |
+          npm ci
+          npm run build
+          echo "Frontend build completed"
+          ls -la dist/
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: web_ui/dist/
+          retention-days: 1
+
+  # ============================================================
+  # Job 3: Create incremental update package
+  # ============================================================
+  create-incremental-package:
+    needs: [detect-changes, build-frontend]
+    if: needs.detect-changes.outputs.update_type == 'incremental'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend artifact
+        if: needs.detect-changes.outputs.frontend_changed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist/
+
+      - name: Prepare incremental package
+        id: package
+        run: |
+          VERSION="${{ needs.detect-changes.outputs.version }}"
+          COMMIT_SHA="${{ needs.detect-changes.outputs.commit_sha }}"
+          PACKAGE_DIR="miloco-hotfix-${VERSION}"
+
+          mkdir -p ${PACKAGE_DIR}/backend
+          mkdir -p ${PACKAGE_DIR}/ai_engine
+
+          # Get the previous tag for diff
+          PREV_TAG=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
+            | jq -r '.tag_name // empty')
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "null" ]; then
+            PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          fi
+
+          CHANGED_FILES=""
+          if [ -n "$PREV_TAG" ]; then
+            CHANGED_FILES=$(git diff --name-only ${PREV_TAG}..HEAD 2>/dev/null || echo "")
+          fi
+
+          # Collect backend Python changes
+          BACKEND_PY_FILES=$(echo "$CHANGED_FILES" | grep -E '^(miloco_server|miot_kit)/.*\.py$' || true)
+          AI_ENGINE_PY_FILES=$(echo "$CHANGED_FILES" | grep -E '^miloco_ai_engine/.*\.py$' || true)
+          CONFIG_FILES=$(echo "$CHANGED_FILES" | grep -E '^config/.*\.yaml$' || true)
+          STARTUP_FILES=$(echo "$CHANGED_FILES" | grep -E '^scripts/start_.*\.py$' || true)
+
+          # Copy backend Python files
+          if [ -n "$BACKEND_PY_FILES" ]; then
+            echo "$BACKEND_PY_FILES" | while read -r file; do
+              if [ -f "$file" ]; then
+                mkdir -p "${PACKAGE_DIR}/backend/$(dirname "$file")"
+                cp "$file" "${PACKAGE_DIR}/backend/$file"
+              fi
+            done
+          fi
+
+          # Copy miot_kit files to backend
+          MIOT_FILES=$(echo "$CHANGED_FILES" | grep -E '^miot_kit/.*\.py$' || true)
+          if [ -n "$MIOT_FILES" ]; then
+            echo "$MIOT_FILES" | while read -r file; do
+              if [ -f "$file" ]; then
+                mkdir -p "${PACKAGE_DIR}/backend/$(dirname "$file")"
+                cp "$file" "${PACKAGE_DIR}/backend/$file"
+              fi
+            done
+          fi
+
+          # Copy AI engine Python files
+          if [ -n "$AI_ENGINE_PY_FILES" ]; then
+            echo "$AI_ENGINE_PY_FILES" | while read -r file; do
+              if [ -f "$file" ]; then
+                mkdir -p "${PACKAGE_DIR}/ai_engine/$(dirname "$file")"
+                cp "$file" "${PACKAGE_DIR}/ai_engine/$file"
+              fi
+            done
+          fi
+
+          # Copy config files to both backend and ai_engine
+          if [ -n "$CONFIG_FILES" ]; then
+            echo "$CONFIG_FILES" | while read -r file; do
+              if [ -f "$file" ]; then
+                mkdir -p "${PACKAGE_DIR}/backend/config"
+                cp "$file" "${PACKAGE_DIR}/backend/config/"
+                mkdir -p "${PACKAGE_DIR}/ai_engine/config"
+                cp "$file" "${PACKAGE_DIR}/ai_engine/config/"
+              fi
+            done
+          fi
+
+          # Copy startup scripts
+          if [ -n "$STARTUP_FILES" ]; then
+            echo "$STARTUP_FILES" | while read -r file; do
+              if [ -f "$file" ]; then
+                if echo "$file" | grep -q "server"; then
+                  cp "$file" "${PACKAGE_DIR}/backend/"
+                elif echo "$file" | grep -q "ai_engine"; then
+                  cp "$file" "${PACKAGE_DIR}/ai_engine/"
+                fi
+              fi
+            done
+          fi
+
+          # Copy frontend build artifacts
+          if [ -d "frontend-dist" ] && [ "${{ needs.detect-changes.outputs.frontend_changed }}" = "true" ]; then
+            mkdir -p "${PACKAGE_DIR}/backend/static"
+            cp -r frontend-dist/* "${PACKAGE_DIR}/backend/static/"
+          fi
+
+          # Generate checksums
+          cd ${PACKAGE_DIR}
+          find . -type f ! -name 'checksums.sha256' ! -name 'manifest.json' -exec sha256sum {} \; > checksums.sha256
+          cd ..
+
+          echo "package_dir=${PACKAGE_DIR}" >> $GITHUB_OUTPUT
+
+      - name: Generate manifest.json
+        run: |
+          VERSION="${{ needs.detect-changes.outputs.version }}"
+          COMMIT_SHA="${{ needs.detect-changes.outputs.commit_sha }}"
+          PACKAGE_DIR="${{ steps.package.outputs.package_dir }}"
+          BUILD_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Collect file lists
+          BACKEND_PY_FILES=$(cd ${PACKAGE_DIR}/backend && find . -name '*.py' -path '*/miloco_server/*' -o -name '*.py' -path '*/miot_kit/*' 2>/dev/null | sed 's|^./||' | jq -R . | jq -s .)
+          AI_ENGINE_PY_FILES=$(cd ${PACKAGE_DIR}/ai_engine && find . -name '*.py' -path '*/miloco_ai_engine/*' 2>/dev/null | sed 's|^./||' | jq -R . | jq -s .)
+          BACKEND_CONFIG=$(cd ${PACKAGE_DIR}/backend && find . -name '*.yaml' -path '*/config/*' 2>/dev/null | sed 's|^./||' | jq -R . | jq -s .)
+          AI_ENGINE_CONFIG=$(cd ${PACKAGE_DIR}/ai_engine && find . -name '*.yaml' -path '*/config/*' 2>/dev/null | sed 's|^./||' | jq -R . | jq -s .)
+          FRONTEND_REBUILT=$([ -d "${PACKAGE_DIR}/backend/static" ] && echo "true" || echo "false")
+          BACKEND_STARTUP=$(ls ${PACKAGE_DIR}/backend/start_server.py 2>/dev/null && echo '["start_server.py"]' || echo '[]')
+          AI_ENGINE_STARTUP=$(ls ${PACKAGE_DIR}/ai_engine/start_ai_engine.py 2>/dev/null && echo '["start_ai_engine.py"]' || echo '[]')
+
+          # Generate checksums map
+          CHECKSUMS=$(cd ${PACKAGE_DIR} && find . -type f ! -name 'checksums.sha256' ! -name 'manifest.json' \
+            -exec sha256sum {} \; | jq -R 'split("  ") | {(.[1]): ("sha256:" + .[0])}' | jq -s 'add // {}')
+
+          # Build manifest
+          cat > ${PACKAGE_DIR}/manifest.json << EOF
+          {
+            "schema_version": "1.0",
+            "version": "${VERSION}",
+            "commit_sha": "${COMMIT_SHA}",
+            "commit_message": $(git log -1 --pretty=%B | head -1 | jq -R .),
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "build_url": "${BUILD_URL}",
+            "requires_full_rebuild": false,
+            "changes": {
+              "backend": {
+                "has_changes": $([ "${{ needs.detect-changes.outputs.backend_changed }}" = "true" ] && echo "true" || echo "false"),
+                "python_files": ${BACKEND_PY_FILES},
+                "miot_kit_files": [],
+                "frontend_rebuilt": ${FRONTEND_REBUILT},
+                "config_files": ${BACKEND_CONFIG},
+                "startup_scripts": ${BACKEND_STARTUP}
+              },
+              "ai_engine": {
+                "has_changes": $([ "${{ needs.detect-changes.outputs.ai_engine_changed }}" = "true" ] && echo "true" || echo "false"),
+                "python_files": ${AI_ENGINE_PY_FILES},
+                "config_files": ${AI_ENGINE_CONFIG},
+                "startup_scripts": ${AI_ENGINE_STARTUP}
+              }
+            },
+            "checksums": ${CHECKSUMS}
+          }
+          EOF
+
+          echo "Generated manifest.json:"
+          cat ${PACKAGE_DIR}/manifest.json | jq .
+
+      - name: Create tar.gz package
+        run: |
+          VERSION="${{ needs.detect-changes.outputs.version }}"
+          PACKAGE_DIR="${{ steps.package.outputs.package_dir }}"
+
+          tar -czf "miloco-hotfix-${VERSION}.tar.gz" ${PACKAGE_DIR}/
+          ls -lh "miloco-hotfix-${VERSION}.tar.gz"
+
+          # Generate checksum for the package itself
+          sha256sum "miloco-hotfix-${VERSION}.tar.gz" > "miloco-hotfix-${VERSION}.tar.gz.sha256"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hotfix-package
+          path: |
+            miloco-hotfix-*.tar.gz
+            miloco-hotfix-*.tar.gz.sha256
+          retention-days: 1
+
+  # ============================================================
+  # Job 4: Create GitHub Release
+  # ============================================================
+  create-release:
+    needs: [detect-changes, create-incremental-package]
+    if: needs.detect-changes.outputs.update_type == 'incremental'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: hotfix-package
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          VERSION="${{ needs.detect-changes.outputs.version }}"
+          COMMIT_SHA="${{ needs.detect-changes.outputs.commit_sha }}"
+
+          # Build release notes
+          NOTES="## Miloco Hotfix ${VERSION}\n\n"
+          NOTES+="**Commit**: \`${COMMIT_SHA}\`\n"
+          NOTES+="**Type**: Incremental Update (Hot Update)\n\n"
+
+          NOTES+="### Changes\n\n"
+
+          if [ "${{ needs.detect-changes.outputs.backend_changed }}" = "true" ]; then
+            NOTES+="#### Backend\n"
+            if [ "${{ needs.detect-changes.outputs.python_changed }}" = "true" ]; then
+              NOTES+="- Python code updates\n"
+            fi
+            if [ "${{ needs.detect-changes.outputs.frontend_changed }}" = "true" ]; then
+              NOTES+="- Frontend UI updates\n"
+            fi
+            if [ "${{ needs.detect-changes.outputs.config_changed }}" = "true" ]; then
+              NOTES+="- Configuration updates\n"
+            fi
+            NOTES+="\n"
+          fi
+
+          if [ "${{ needs.detect-changes.outputs.ai_engine_changed }}" = "true" ]; then
+            NOTES+="#### AI Engine\n"
+            NOTES+="- Python code updates\n\n"
+          fi
+
+          NOTES+="### Installation\n\n"
+          NOTES+="**Hot Update (Recommended)**\n"
+          NOTES+="\`\`\`bash\n"
+          NOTES+="# Download and apply incremental update\n"
+          NOTES+="bash <(curl -s https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/hot_update.sh) update\n"
+          NOTES+="# Or check for updates first\n"
+          NOTES+="bash <(curl -s https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/hot_update.sh) check\n"
+          NOTES+="# \`\`\`\n\n"
+          NOTES+="**Full Docker Image Update**\n"
+          NOTES+="# \`\`\`bash\n"
+          NOTES+="# Pull latest images\n"
+          NOTES+="# docker compose pull\n"
+          NOTES+="# docker compose up -d\n"
+          NOTES+="# \`\`\`\n\n"
+
+          NOTES+="### Verification\n\n"
+          NOTES+="- Health check endpoint: \`GET /api/health\`\n"
+          NOTES+="- Check container logs: \`docker logs miloco-backend\`\n"
+
+          # Write to file for the release
+          echo -e "$NOTES" > release_notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.detect-changes.outputs.version }}
+          name: Miloco ${{ needs.detect-changes.outputs.version }}
+          body_path: release_notes.md
+          files: |
+            miloco-hotfix-${{ needs.detect-changes.outputs.version }}.tar.gz
+            miloco-hotfix-${{ needs.detect-changes.outputs.version }}.tar.gz.sha256
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================
+  # Job 5: Notify no update needed
+  # ============================================================
+  notify-no-update:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.update_type == 'none'
+    runs-on: ubuntu-latest
+    steps:
+      - name: No changes to release
+        run: |
+          echo "No hot-updatable changes detected between versions."
+          echo "Version: ${{ needs.detect-changes.outputs.version }}"
+          echo "No release will be created."

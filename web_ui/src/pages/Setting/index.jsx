@@ -4,11 +4,12 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
 import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typography, Segmented, Table, Popconfirm, Tag, Tooltip, Alert, Upload, List, Spin} from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined, PlusOutlined, CopyOutlined, DeleteOutlined, VideoCameraOutlined, UploadOutlined, AudioOutlined, SoundOutlined, ExperimentOutlined } from '@ant-design/icons';
-import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig, getRTSPServerConfig, setRTSPServerConfig, getXiaoAIConfig, updateXiaoAIConfig, restartXiaoAI, listVoiceClones, uploadVoiceClone, deleteVoiceClone, synthesizeWithVoiceClone, voiceDesignTTS } from '@/api';
+import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig, getRTSPServerConfig, setRTSPServerConfig, getXiaoAIConfig, updateXiaoAIConfig, restartXiaoAI, listVoiceClones, uploadVoiceClone, deleteVoiceClone, synthesizeWithVoiceClone, voiceDesignTTS, getUpdateStatus, checkForUpdates, applyUpdate, getUpdateLog, listBackups, rollbackToBackup, getSystemStatus } from '@/api';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSettingStore } from '@/stores/settingStore';
 import { Card, Header } from '@/components';
@@ -47,6 +48,24 @@ const Setting = () => {
   const [createdToken, setCreatedToken] = useState(null);
   const [tokenDetailModalVisible, setTokenDetailModalVisible] = useState(false);
   const [loadingTokens, setLoadingTokens] = useState(false);
+
+  // System Update states
+  const [updateStatus, setUpdateStatus] = useState({
+    current_version: 'unknown',
+    latest_version: null,
+    update_available: false,
+    last_check: null,
+    last_update: null,
+    is_updating: false,
+    update_log: null
+  });
+  const [backups, setBackups] = useState([]);
+  const [loadingUpdate, setLoadingUpdate] = useState(false);
+  const [updateLogVisible, setUpdateLogVisible] = useState(false);
+  const [updateLog, setUpdateLog] = useState('');
+  const [rollbackModalVisible, setRollbackModalVisible] = useState(false);
+  const [updateContentVisible, setUpdateContentVisible] = useState(false);
+  const [updateContentData, setUpdateContentData] = useState(null);
 
   // Camera config states
   const [cameraConfig, setCameraConfig] = useState({
@@ -214,6 +233,11 @@ const Setting = () => {
     }
   }, [expandedSections.tts, bridgeConfig.tts?.mimo_tts_model]);
 
+  // Load System Update Status
+  useEffect(() => {
+    fetchUpdateStatus();
+  }, []);
+
   const fetchBridgeConfig = async () => {
     setLoadingBridgeConfig(true);
     try {
@@ -229,6 +253,131 @@ const Setting = () => {
     } finally {
       setLoadingBridgeConfig(false);
     }
+  };
+
+  // System Update functions
+  const fetchUpdateStatus = async () => {
+    try {
+      const res = await getUpdateStatus();
+      if (res && res.code === 0) {
+        setUpdateStatus(res.data);
+      }
+    } catch (error) {
+      console.error('Failed to load update status:', error);
+    }
+  };
+
+  const handleCheckUpdates = async () => {
+    setLoadingUpdate(true);
+    try {
+      const res = await checkForUpdates();
+      if (res && res.code === 0) {
+        setUpdateStatus(prev => ({
+          ...prev,
+          update_available: res.data.update_available,
+          latest_version: res.data.latest_version,
+          last_check: res.data.check_time
+        }));
+        if (res.data.update_available) {
+          setUpdateContentData({
+            latest_version: res.data.latest_version,
+            current_version: res.data.current_version,
+            release_body: res.data.release_body || '',
+            release_name: res.data.release_name || '',
+            release_url: res.data.release_url || '',
+            published_at: res.data.published_at || ''
+          });
+          setUpdateContentVisible(true);
+        } else {
+          message.info(t('setting.noUpdateAvailable'));
+        }
+      } else {
+        message.error(res?.message || t('setting.checkUpdateFailed'));
+      }
+    } catch (error) {
+      console.error('Failed to check updates:', error);
+      message.error(t('setting.checkUpdateFailed'));
+    } finally {
+      setLoadingUpdate(false);
+    }
+  };
+
+  const handleApplyUpdate = async (version = null) => {
+    setLoadingUpdate(true);
+    try {
+      const res = await applyUpdate(version);
+      if (res && res.code === 0) {
+        message.success(t('setting.updateStarted'));
+        // Poll for update status
+        const pollInterval = setInterval(async () => {
+          const logRes = await getUpdateLog();
+          if (logRes && logRes.code === 0) {
+            setUpdateLog(logRes.data.log);
+            if (!logRes.data.is_updating) {
+              clearInterval(pollInterval);
+              fetchUpdateStatus();
+              message.success(t('setting.updateCompleted'));
+            }
+          }
+        }, 2000);
+      } else {
+        message.error(res?.message || t('setting.updateFailed'));
+      }
+    } catch (error) {
+      console.error('Failed to apply update:', error);
+      message.error(t('setting.updateFailed'));
+    } finally {
+      setLoadingUpdate(false);
+    }
+  };
+
+  const handleViewLog = async () => {
+    try {
+      const res = await getUpdateLog();
+      if (res && res.code === 0) {
+        setUpdateLog(res.data.log);
+        setUpdateLogVisible(true);
+      }
+    } catch (error) {
+      console.error('Failed to get update log:', error);
+    }
+  };
+
+  const handleListBackups = async () => {
+    try {
+      const res = await listBackups();
+      if (res && res.code === 0) {
+        setBackups(res.data.backups || []);
+        setRollbackModalVisible(true);
+      }
+    } catch (error) {
+      console.error('Failed to list backups:', error);
+    }
+  };
+
+  const handleRollback = async (backupName) => {
+    setLoadingUpdate(true);
+    try {
+      const res = await rollbackToBackup(backupName);
+      if (res && res.code === 0) {
+        message.success(t('setting.rollbackSuccess'));
+        fetchUpdateStatus();
+        setRollbackModalVisible(false);
+      } else {
+        message.error(res?.message || t('setting.rollbackFailed'));
+      }
+    } catch (error) {
+      console.error('Failed to rollback:', error);
+      message.error(t('setting.rollbackFailed'));
+    } finally {
+      setLoadingUpdate(false);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleString();
   };
 
   const handleBridgeConfigChange = (section, key, value) => {
@@ -537,12 +686,6 @@ const Setting = () => {
     }).catch(() => {
       message.error(t('setting.tokenCopyFailed'));
     });
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleString();
   };
 
   // Handle camera config change - video quality
@@ -1593,6 +1736,89 @@ const Setting = () => {
           </div>
         </Card>
 
+        {/* System Update */}
+        <Card className={styles.settingCard} contentClassName={styles.settingCardContent}>
+          <div className={styles.settingCardTitle}>
+            <Space>
+              <ToolOutlined />
+              {t('setting.systemUpdate')}
+            </Space>
+          </div>
+          <div className={styles.settingCardItemList}>
+            {/* Current Version */}
+            <div className={styles.settingItem}>
+              <div className={styles.settingLabel}>
+                <SettingOutlined /> {t('setting.currentVersion')}
+              </div>
+              <Text>{updateStatus.current_version}</Text>
+            </div>
+
+            {/* Update Status */}
+            <div className={styles.settingItem}>
+              <div className={styles.settingLabel}>
+                <SettingOutlined /> {t('setting.updateStatus')}
+              </div>
+              <Space>
+                {updateStatus.update_available ? (
+                  <Tag color="orange">{t('setting.updateAvailable')}</Tag>
+                ) : (
+                  <Tag color="green">{t('setting.upToDate')}</Tag>
+                )}
+                {updateStatus.last_check && (
+                  <Text type="secondary">
+                    {t('setting.lastCheck')}: {formatDate(updateStatus.last_check)}
+                  </Text>
+                )}
+              </Space>
+            </div>
+
+            {/* Latest Version */}
+            {updateStatus.update_available && updateStatus.latest_version && (
+              <div className={styles.settingItem}>
+                <div className={styles.settingLabel}>
+                  <SettingOutlined /> {t('setting.latestVersion')}
+                </div>
+                <Text type="warning">{updateStatus.latest_version}</Text>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: 12, padding: 16, borderTop: '1px solid #f0f0f0', justifyContent: 'flex-end' }}>
+              <Button 
+                onClick={handleCheckUpdates} 
+                loading={loadingUpdate}
+              >
+                {t('setting.checkUpdates')}
+              </Button>
+              
+              {updateStatus.update_available && (
+                <Popconfirm
+                  title={t('setting.confirmUpdate')}
+                  description={t('setting.confirmUpdateDesc')}
+                  onConfirm={() => handleApplyUpdate()}
+                  okText={t('common.confirm')}
+                  cancelText={t('common.cancel')}
+                >
+                  <Button 
+                    type="primary" 
+                    loading={loadingUpdate}
+                  >
+                    {t('setting.applyUpdate')}
+                  </Button>
+                </Popconfirm>
+              )}
+              
+              <Button onClick={handleViewLog}>
+                {t('setting.viewLog')}
+              </Button>
+              
+              <Button onClick={handleListBackups}>
+                {t('setting.rollback')}
+              </Button>
+            </div>
+          </div>
+        </Card>
+
       </div>
 
       {/* Home Assistant authorization configuration modal */}
@@ -1706,6 +1932,136 @@ const Setting = () => {
             <br />
             <Text type="secondary">{t('setting.tokenExpiresAt')}: {formatDate(createdToken?.expires_at)}</Text>
           </div>
+        </div>
+      </Modal>
+
+      {/* Update Log Modal */}
+      <Modal
+        title={t('setting.updateLog')}
+        open={updateLogVisible}
+        onCancel={() => setUpdateLogVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setUpdateLogVisible(false)}>
+            {t('common.close')}
+          </Button>
+        ]}
+        width={800}
+      >
+        <div style={{ 
+          background: '#f5f5f5', 
+          padding: 16, 
+          borderRadius: 4, 
+          maxHeight: '60vh', 
+          overflow: 'auto',
+          fontFamily: 'monospace',
+          fontSize: 12,
+          whiteSpace: 'pre-wrap'
+        }}>
+          {updateLog || t('setting.noUpdateLog')}
+        </div>
+      </Modal>
+
+      {/* Update Content Modal */}
+      <Modal
+        title={t('setting.updateContent')}
+        open={updateContentVisible}
+        onCancel={() => setUpdateContentVisible(false)}
+        footer={[
+          <Button key="later" onClick={() => setUpdateContentVisible(false)}>
+            {t('setting.updateLater')}
+          </Button>,
+          <Button
+            key="update"
+            type="primary"
+            onClick={() => {
+              handleApplyUpdate(updateContentData?.latest_version);
+              setUpdateContentVisible(false);
+            }}
+          >
+            {t('setting.updateNow')}
+          </Button>
+        ]}
+        width={640}
+      >
+        {updateContentData && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <Text>
+                {t('setting.updateNewVersionDesc', {
+                  current: updateContentData.current_version,
+                  latest: updateContentData.latest_version
+                })}
+              </Text>
+              {updateContentData.published_at && (
+                <Text type="secondary" style={{ marginLeft: 12 }}>
+                  {formatDate(updateContentData.published_at)}
+                </Text>
+              )}
+            </div>
+            <div style={{
+              background: '#f6f8fa',
+              border: '1px solid #e1e4e8',
+              borderRadius: 6,
+              padding: 16,
+              maxHeight: 400,
+              overflow: 'auto',
+              fontSize: 14,
+              lineHeight: 1.6
+            }}>
+              {updateContentData.release_body ? (
+                <ReactMarkdown>{updateContentData.release_body}</ReactMarkdown>
+              ) : (
+                t('setting.noUpdateLog')
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Rollback Modal */}
+      <Modal
+        title={t('setting.rollbackToBackup')}
+        open={rollbackModalVisible}
+        onCancel={() => setRollbackModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setRollbackModalVisible(false)}>
+            {t('common.close')}
+          </Button>
+        ]}
+      >
+        <div>
+          {backups.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>
+              {t('setting.noBackupsAvailable')}
+            </div>
+          ) : (
+            <List
+              dataSource={backups}
+              renderItem={(backup) => (
+                <List.Item
+                  actions={[
+                    <Popconfirm
+                      key="rollback"
+                      title={t('setting.confirmRollback')}
+                      description={t('setting.confirmRollbackDesc')}
+                      onConfirm={() => handleRollback(backup)}
+                      okText={t('common.confirm')}
+                      cancelText={t('common.cancel')}
+                    >
+                      <Button type="link" loading={loadingUpdate}>
+                        {t('setting.rollback')}
+                      </Button>
+                    </Popconfirm>
+                  ]}
+                >
+                  <List.Item.Meta
+                    title={backup}
+                    description={t('setting.backupTime', { time: formatDate(backup) })}
+                  />
+                </List.Item>
+              )}
+            />
+          )}
         </div>
       </Modal>
     </div>

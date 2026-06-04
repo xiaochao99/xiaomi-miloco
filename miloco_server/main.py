@@ -25,12 +25,14 @@ from miloco_server.controller import (
     face_recognition_router,
     habit_router,
     ha_router,
+    health_router,
     mcp_router,
     memory_router,
     miot_router,
     model_router,
     openai_compat_router,
     recording_router,
+    system_router,
     trigger_router,
     web_router,
     xiaomi_bridge_router,
@@ -77,6 +79,8 @@ app.include_router(xiaomi_bridge_router, prefix="/api")
 app.include_router(memory_router, prefix="/api")
 app.include_router(habit_router, prefix="/api")
 app.include_router(recording_router, prefix="/api")
+app.include_router(health_router, prefix="/api")
+app.include_router(system_router, prefix="/api")
 
 
 @app.get("/{full_path:path}")

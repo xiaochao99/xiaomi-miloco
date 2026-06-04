@@ -30,7 +30,11 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
     healthcheck:
-      disable: true
+      test: ["CMD", "curl", "-f", "http://localhost:${AI_ENGINE_PORT:-8001}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   backend:
     container_name: miloco-backend
@@ -62,4 +66,8 @@ services:
     #  - ./config/prompt_config.yaml:/app/config/prompt_config.yaml
     restart: unless-stopped
     healthcheck:
-      disable: true
+      test: ["CMD", "curl", "-f", "http://localhost:${BACKEND_PORT:-8000}/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

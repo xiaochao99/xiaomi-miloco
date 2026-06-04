@@ -70,7 +70,7 @@ class RuleTriggerFilter:
 
         return True
 
-    def post_filter(self, rule_id: str, result: bool) -> bool:
+    def post_filter(self, rule_id: str, source: str, result: bool) -> bool:
         """Post Trigger filter."""
         ts_now = int(datetime.datetime.now().timestamp() * 1000)
         self._default_rule_state(rule_id)

@@ -38,6 +38,7 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 htmlcov/
+.codebuddy/
 .tox/
 .nox/
 .coverage
@@ -236,3 +237,5 @@ $RECYCLE.BIN/
 # web ui build static files in miloco_server
 miloco_server/static/
 test_ai_chat_api.py
+scripts/build_hotfix.ps1
+scripts/upload_release_github.ps1

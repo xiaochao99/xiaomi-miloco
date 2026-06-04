@@ -48,9 +48,6 @@ instace.interceptors.response.use(
   },
   (err) => {
     console.error('HTTP Error:', err.config?.url, err.response?.status, err.response?.data, err.message);
-    if(err?.response?.data?.message) {
-      message.error(err?.response?.data?.message)
-    }
     const origin = window.location && window.location.origin ? window.location.origin : '';
     if (err?.response?.status === 401) {
       const { pathname } = window.location
@@ -63,6 +60,7 @@ instace.interceptors.response.use(
     }
 
     // Return error response data if available, otherwise return error object
+    // Error messages are handled by individual callers (e.g. handleSaveRule, handleUpdateRule)
     if (err?.response?.data) {
       return Promise.resolve(err.response.data);
     }
