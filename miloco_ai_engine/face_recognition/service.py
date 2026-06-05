@@ -144,6 +144,12 @@ class FaceRecognitionService:
                             provider_options = [{"device_type": "GPU", "precision": "FP32"}, {}]
                         else:
                             provider_options = [{}, {}]
+                    elif mode in ("cuda", "cuda_gpu"):
+                        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+                        if mode == "cuda_gpu":
+                            # No CPU fallback — for CUDA validation
+                            providers = ["CUDAExecutionProvider"]
+                        provider_options = [{}, {}]
 
                     prep_sig = inspect.signature(app.prepare)
                     prep_kwargs: Dict[str, Any] = {

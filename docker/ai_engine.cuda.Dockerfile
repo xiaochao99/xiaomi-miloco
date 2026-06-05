@@ -187,6 +187,9 @@ RUN set -eux; \
 # Priority: CUDA libs first, then GPU libs, then CPU libs
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/app/output/lib/gpu:/app/output/lib/cpu
 ENV LLAMA_MICO_LIB_MODE=auto
+# Face inference default: cpu (safe for all environments).
+# For GPU acceleration, set at runtime: -e FACE_INFERENCE_PROVIDER=cuda
+ENV FACE_INFERENCE_PROVIDER=cpu
 COPY config/ai_engine_config.yaml /app/config/ai_engine_config.yaml
 COPY config/prompt_config.yaml /app/config/prompt_config.yaml
 COPY miloco_ai_engine /app/miloco_ai_engine
@@ -195,14 +198,36 @@ COPY scripts/start_ai_engine.py /app/start_ai_engine.py
 # Install project.
 # Install project with face recognition extras.
 # This is required for /face/analyze (insightface + onnxruntime).
-RUN pip install --no-build-isolation --break-system-packages -e "/app/miloco_ai_engine[face]" \
-    && pip uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true \
-    && pip install --no-cache-dir --break-system-packages "onnxruntime-openvino>=1.19.0" \
-    && pip install --no-cache-dir --break-system-packages "openvino>=2025.0.0" \
-    && echo "Downloading InsightFace buffalo_l model..." \
-    && mkdir -p /root/.insightface/models/buffalo_l \
-    && python3 -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_l', root='/root/.insightface/models'); app.prepare()" \
-    && python3 -c "import insightface; import onnxruntime; from openvino import Core; print('face deps ok, ov devices=', Core().available_devices)"
+#
+# Build-time ARG to select the face inference backend:
+#   openvino (default): onnxruntime-openvino + openvino  → Intel CPU/iGPU/NPU
+#   cuda:               onnxruntime-gpu                  → NVIDIA CUDA GPU
+#
+# Runtime overrides via env var (no rebuild needed):
+#   FACE_INFERENCE_PROVIDER=cpu|cuda|cuda_gpu|openvino|openvino_gpu
+#   For CUDA builds, default is cpu; set to cuda for GPU acceleration.
+ARG FACE_BACKEND=openvino
+RUN if [ "${FACE_BACKEND}" = "cuda" ]; then \
+        # CUDA backend: install onnxruntime-gpu for NVIDIA GPU inference.
+        # Model download uses CPU provider (no GPU during docker build).
+        pip install --no-build-isolation --break-system-packages -e "/app/miloco_ai_engine[face]" \
+        && pip uninstall -y onnxruntime onnxruntime-gpu onnxruntime-openvino 2>/dev/null || true \
+        && pip install --no-cache-dir --break-system-packages "onnxruntime-gpu>=1.16.0" \
+        && echo "Downloading InsightFace buffalo_l model (CUDA backend)..." \
+        && mkdir -p /root/.insightface/models/buffalo_l \
+        && python3 -c "import onnxruntime; print('face deps ok (CUDA), providers=', onnxruntime.get_available_providers())" \
+        && python3 -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_l', root='/root/.insightface/models'); app.prepare()"; \
+    else \
+        # OpenVINO backend (default): onnxruntime-openvino for Intel CPU/iGPU acceleration
+        pip install --no-build-isolation --break-system-packages -e "/app/miloco_ai_engine[face]" \
+        && pip uninstall -y onnxruntime onnxruntime-gpu 2>/dev/null || true \
+        && pip install --no-cache-dir --break-system-packages "onnxruntime-openvino>=1.19.0" \
+        && pip install --no-cache-dir --break-system-packages "openvino>=2025.0.0" \
+        && echo "Downloading InsightFace buffalo_l model (OpenVINO backend)..." \
+        && mkdir -p /root/.insightface/models/buffalo_l \
+        && python3 -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_l', root='/root/.insightface/models'); app.prepare()" \
+        && python3 -c "import insightface; import onnxruntime; from openvino import Core; print('face deps ok (OpenVINO), ov devices=', Core().available_devices)"; \
+    fi
 
 EXPOSE 8001
 

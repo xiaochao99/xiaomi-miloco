@@ -11,8 +11,12 @@ Environment:
     - cpu: default (InsightFace uses CPUExecutionProvider via ctx_id=-1)
     - openvino: prefer OpenVINOExecutionProvider (Intel CPU/iGPU/NPU), needs onnxruntime-openvino
     - openvino_gpu: same as openvino with GPU + FP16 hint for iGPU
+    - cuda: prefer CUDAExecutionProvider (NVIDIA GPU), needs onnxruntime-gpu
+    - cuda_gpu: CUDA only, no CPU fallback (for validation)
 
-Requires: pip install onnxruntime-openvino (replaces onnxruntime on Intel builds)
+Requires (per backend):
+    openvino: pip install onnxruntime-openvino openvino
+    cuda:     pip install onnxruntime-gpu
 """
 
 from __future__ import annotations
@@ -55,16 +59,84 @@ def apply_face_onnx_providers() -> None:
         _PATCHED_MODE = mode or "cpu"
         return
 
-    if mode not in ("openvino", "openvino_gpu"):
+    if mode not in ("openvino", "openvino_gpu", "cuda", "cuda_gpu"):
         logger.warning("[FaceEngine] Unknown FACE_INFERENCE_PROVIDER=%s, using CPU", mode)
         _PATCHED = False
         _PATCHED_MODE = "cpu"
         return
 
-    # InsightFace's FaceAnalysis.prepare() in our environment does NOT accept
-    # `providers`/`provider_options` (see debug logs: prepare supports ctx_id/det_size/det_thresh only).
-    # To force OpenVINO/CPU providers, we patch ONNX Runtime's InferenceSession.__init__
-    # (keep class identity; avoid replacing ort.InferenceSession itself).
+    # ── CUDA Backend ───────────────────────────────────────────────────
+    if mode in ("cuda", "cuda_gpu"):
+        import onnxruntime as ort  # pylint: disable=import-error
+
+        cuda_available = []
+        try:
+            cuda_available = ort.get_available_providers()
+        except Exception:  # pylint: disable=broad-exception-caught
+            cuda_available = []
+
+        if "CUDAExecutionProvider" not in cuda_available:
+            logger.warning(
+                "[FaceEngine] CUDAExecutionProvider not available (available=%s), keep default providers.",
+                cuda_available,
+            )
+            _PATCHED = False
+            _PATCHED_MODE = mode
+            return
+
+        if _PATCHED and _PATCHED_MODE == mode:
+            return
+
+        if _ORIG_INFERENCESESSION_INIT is None:
+            _ORIG_INFERENCESESSION_INIT = ort.InferenceSession.__init__
+        orig_cuda_init = _ORIG_INFERENCESESSION_INIT
+
+        def _cuda_patched_init(self: Any, *args: Any, **kwargs: Any):
+            global _ORT_DEBUG_LOGGED, _ORT_SESSION_PROVIDERS_LOGGED, _LAST_SESSION_PROVIDERS, _LAST_PROVIDER_OPTIONS  # pylint: disable=global-statement
+            providers = kwargs.get("providers")
+
+            if providers is None:
+                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            elif isinstance(providers, (str, bytes)):
+                providers = [providers]
+            else:
+                providers = list(providers)
+
+            # Ensure CUDA is present; remove incompatible OpenVINO entries
+            if "CUDAExecutionProvider" not in providers:
+                providers = ["CUDAExecutionProvider"] + providers
+            providers = [p for p in providers if "OpenVINO" not in p]
+
+            # cuda_gpu: no CPU fallback (validation/debug mode)
+            if mode == "cuda_gpu":
+                providers = [p for p in providers if p != "CPUExecutionProvider"]
+
+            kwargs["providers"] = providers
+
+            try:
+                if not _ORT_DEBUG_LOGGED:
+                    logger.info("[FaceEngine][debug][ORT][CUDA] providers=%s", kwargs.get("providers"))
+                    _ORT_DEBUG_LOGGED = True
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
+
+            res = orig_cuda_init(self, *args, **kwargs)
+            try:
+                _LAST_SESSION_PROVIDERS = list(self.get_providers())
+                if not _ORT_SESSION_PROVIDERS_LOGGED:
+                    logger.info("[FaceEngine][debug][ORT][CUDA] actual providers=%s", self.get_providers())
+                    _ORT_SESSION_PROVIDERS_LOGGED = True
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
+            return res
+
+        ort.InferenceSession.__init__ = _cuda_patched_init  # type: ignore[assignment]
+        logger.info("[FaceEngine] Patched InferenceSession.__init__ for mode=%s", mode)
+        _PATCHED = True
+        _PATCHED_MODE = mode
+        return
+
+    # ── OpenVINO Backend ───────────────────────────────────────────────
     try:
         import onnxruntime as ort  # pylint: disable=import-error
     except ImportError as e:
