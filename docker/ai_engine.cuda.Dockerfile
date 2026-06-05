@@ -144,7 +144,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         clinfo \
         ocl-icd-libopencl1 \
         intel-opencl-icd \
-        libgl1-mesa-glx \
+        libgl1 \
         libglib2.0-0 \
         libxcb1 \
         libxcb-render0 \
@@ -153,7 +153,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libsm6 \
         libxext6 \
         libxrender1 \
-        || (apt-get clean && rm -rf /var/lib/apt/lists/* && apt-get update && apt-get install -y --no-install-recommends curl python3 python3-pip python3-dev build-essential clinfo ocl-icd-libopencl1 intel-opencl-icd libgl1-mesa-glx libglib2.0-0 libxcb1 libxcb-render0 libxcb-shape0 libxcb-xfixes0 libsm6 libxext6 libxrender1)) \
+        || (apt-get clean && rm -rf /var/lib/apt/lists/* && apt-get update && apt-get install -y --no-install-recommends curl python3 python3-pip python3-dev build-essential clinfo ocl-icd-libopencl1 intel-opencl-icd libgl1 libglib2.0-0 libxcb1 libxcb-render0 libxcb-shape0 libxcb-xfixes0 libsm6 libxext6 libxrender1)) \
     && pip config set global.index-url "${PIP_INDEX_URL}" \
     && pip config set global.timeout 120 \
     && pip install --upgrade --break-system-packages setuptools packaging \
