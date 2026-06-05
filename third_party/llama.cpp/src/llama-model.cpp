@@ -859,6 +859,14 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                     default: type = LLM_TYPE_UNKNOWN;
                 }
             } break;
+        case LLM_ARCH_QWEN35:
+            {
+                // Qwen3.5/3.6 — same hparams layout as QWEN3, just more layers
+                ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
+                switch (hparams.n_layer) {
+                    default: type = LLM_TYPE_UNKNOWN;
+                }
+            } break;
         case LLM_ARCH_QWEN3MOE:
             {
                 ml.get_key(LLM_KV_EXPERT_FEED_FORWARD_LENGTH,        hparams.n_ff_exp, false);
@@ -2531,6 +2539,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     }
                 } break;
             case LLM_ARCH_QWEN3:
+            case LLM_ARCH_QWEN35: // Qwen3.5/3.6 shares identical tensor layout with QWEN3
                 {
                     tok_embd = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), {n_embd, n_vocab}, 0);
 
@@ -7368,6 +7377,9 @@ struct llm_build_qwen3 : public llm_graph_context {
         ggml_build_forward_expand(gf, cur);
     }
 };
+
+// Qwen3.5/3.6 uses identical computation graph as QWEN3
+using llm_build_qwen35 = llm_build_qwen3;
 
 struct llm_build_qwen3moe : public llm_graph_context {
     llm_build_qwen3moe(const llama_model & model, const llm_graph_params & params, ggml_cgraph * gf) : llm_graph_context(params) {
@@ -13901,8 +13913,9 @@ llm_graph_result_ptr llama_model::build_graph(
                 llm = std::make_unique<llm_build_qwen2moe>(*this, params, gf);
             } break;
         case LLM_ARCH_QWEN3:
+        case LLM_ARCH_QWEN35:
             {
-                llm = std::make_unique<llm_build_qwen3>(*this, params, gf);
+                llm = std::make_unique<llm_build_qwen35>(*this, params, gf);
             } break;
         case LLM_ARCH_QWEN3MOE:
             {
@@ -14268,6 +14281,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
         case LLM_ARCH_QWEN2:
         case LLM_ARCH_QWEN2MOE:
         case LLM_ARCH_QWEN3:
+        case LLM_ARCH_QWEN35:
         case LLM_ARCH_QWEN3MOE:
         case LLM_ARCH_OLMO2:
         case LLM_ARCH_OLMOE:

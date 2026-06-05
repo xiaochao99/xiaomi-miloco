@@ -63,7 +63,10 @@ class ModelConfig(BaseModel):
         device = data.get("device", "cpu")
         model_device = ModelDevice(device)
         # MPS backend in ggml uses the same n_gpu_layers semantics as CUDA.
-        self.n_gpu_layers = MAX_CUDA_LAYERS if model_device in (ModelDevice.CUDA, ModelDevice.MPS) else 0
+        # Only apply device-based override if user did NOT explicitly set n_gpu_layers in YAML.
+        # This allows CPU/GPU hybrid inference: YAML "n_gpu_layers: 20" offloads 20 layers to GPU, rest on CPU.
+        if "n_gpu_layers" not in data:
+            self.n_gpu_layers = MAX_CUDA_LAYERS if model_device in (ModelDevice.CUDA, ModelDevice.MPS) else 0
 
         business = data.get("business", {})
         task_labels = business.get("task_labels", [])

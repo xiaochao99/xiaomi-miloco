@@ -34,6 +34,7 @@ enum llm_arch {
     LLM_ARCH_QWEN2VL,
     LLM_ARCH_QWEN3,
     LLM_ARCH_QWEN3MOE,
+    LLM_ARCH_QWEN35, // Qwen3.5/3.6 — architecture compatible with QWEN3
     LLM_ARCH_PHI2,
     LLM_ARCH_PHI3,
     LLM_ARCH_PHIMOE,

@@ -60,6 +60,25 @@ models:
 
     business: {}
 
+  # Qwen3.6-27B (text + vision multimodal)
+  # Q4_K_M ~16.8GB, recommended for ≥24GB VRAM (RTX 3090/4090/A5000)
+  # If VRAM < 24GB, try Q3_K_M (13.6GB) or IQ4_XS (15.4GB) instead
+  Qwen3.6-27B:Q4_K_M:
+    model_path: "/models/Qwen3.6-27B/Qwen3.6-27B-Q4_K_M.gguf"
+    mmproj_path: "/models/Qwen3.6-27B/mmproj-F16.gguf"     # optional, only needed for vision tasks
+
+    cache_seq_num: 0     # no KV cache preset for 27B model (VRAM limited)
+    parallel_seq_num: 1   # single parallel sequence (larger model, less concurrency)
+    total_context_num: 8192     # 8K total context (reduced for 27B VRAM budget)
+    context_per_seq: 4096       # 4K per sequence
+    chunk_size: 256             # small chunk for responsive inference
+
+    device: "cuda"
+    max_tokens: 512
+    temperature: -1
+
+    business: {}
+
 # Server concurrency control
 server_concurrency:
   max_queue_size: 100 # Maximum queue size
