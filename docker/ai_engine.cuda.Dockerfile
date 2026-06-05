@@ -216,7 +216,7 @@ RUN if [ "${FACE_BACKEND}" = "cuda" ]; then \
         && echo "Downloading InsightFace buffalo_l model (CUDA backend)..." \
         && mkdir -p /root/.insightface/models/buffalo_l \
         && python3 -c "import onnxruntime; print('face deps ok (CUDA), providers=', onnxruntime.get_available_providers())" \
-        && python3 -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_l', root='/root/.insightface/models'); app.prepare()"; \
+        && python3 -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_l', root='/root/.insightface/models'); app.prepare(ctx_id=0)" \
     else \
         # OpenVINO backend (default): onnxruntime-openvino for Intel CPU/iGPU acceleration
         pip install --no-build-isolation --break-system-packages -e "/app/miloco_ai_engine[face]" \
@@ -225,7 +225,7 @@ RUN if [ "${FACE_BACKEND}" = "cuda" ]; then \
         && pip install --no-cache-dir --break-system-packages "openvino>=2025.0.0" \
         && echo "Downloading InsightFace buffalo_l model (OpenVINO backend)..." \
         && mkdir -p /root/.insightface/models/buffalo_l \
-        && python3 -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_l', root='/root/.insightface/models'); app.prepare()" \
+        && python3 -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_l', root='/root/.insightface/models'); app.prepare(ctx_id=0)" \
         && python3 -c "import insightface; import onnxruntime; from openvino import Core; print('face deps ok (OpenVINO), ov devices=', Core().available_devices)"; \
     fi
 
