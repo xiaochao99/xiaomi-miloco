@@ -187,8 +187,10 @@ RUN set -eux; \
 # Priority: CUDA libs first, then GPU libs, then CPU libs
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/app/output/lib/gpu:/app/output/lib/cpu
 ENV LLAMA_MICO_LIB_MODE=auto
-# Face inference default: cpu (safe for all environments).
-# For GPU acceleration, set at runtime: -e FACE_INFERENCE_PROVIDER=cuda
+# Face inference default: cpu (safe for all environments, no GPU required).
+# With CUDA build (FACE_BACKEND=cuda), this single image supports:
+#   - FACE_INFERENCE_PROVIDER=cpu  → CPU (no GPU, onnxruntime-gpu's built-in CPU EP)
+#   - FACE_INFERENCE_PROVIDER=cuda → NVIDIA GPU via CUDAExecutionProvider
 ENV FACE_INFERENCE_PROVIDER=cpu
 COPY config/ai_engine_config.yaml /app/config/ai_engine_config.yaml
 COPY config/prompt_config.yaml /app/config/prompt_config.yaml
@@ -200,23 +202,25 @@ COPY scripts/start_ai_engine.py /app/start_ai_engine.py
 # This is required for /face/analyze (insightface + onnxruntime).
 #
 # Build-time ARG to select the face inference backend:
-#   openvino (default): onnxruntime-openvino + openvino  → Intel CPU/iGPU/NPU
-#   cuda:               onnxruntime-gpu                  → NVIDIA CUDA GPU
+#   openvino (default): onnxruntime-openvino + openvino  → Intel CPU/iGPU/NPU only
+#   cuda:               onnxruntime-gpu  → UNIVERSAL image: NVIDIA GPU + CPU fallback
+#                         (onnxruntime-gpu includes CPUExecutionProvider out of the box)
 #
-# Runtime overrides via env var (no rebuild needed):
-#   FACE_INFERENCE_PROVIDER=cpu|cuda|cuda_gpu|openvino|openvino_gpu
-#   For CUDA builds, default is cpu; set to cuda for GPU acceleration.
+# Recommended: build with FACE_BACKEND=cuda for a single image that works everywhere.
+#   - No GPU env: leave FACE_INFERENCE_PROVIDER=cpu (default), works out of the box.
+#   - Has GPU:     set   FACE_INFERENCE_PROVIDER=cuda at runtime.
 ARG FACE_BACKEND=openvino
 RUN if [ "${FACE_BACKEND}" = "cuda" ]; then \
-        # CUDA backend: install onnxruntime-gpu for NVIDIA GPU inference.
-        # Model download uses CPU provider (no GPU during docker build).
+        # Universal image: onnxruntime-gpu provides CUDA + CPU execution providers.
+        # Models are downloaded/prepared with CPU provider (no GPU during docker build).
+        # At runtime, FACE_INFERENCE_PROVIDER=cpu|cuda decides which backend to use.
         pip install --no-build-isolation --break-system-packages -e "/app/miloco_ai_engine[face]" \
         && pip uninstall -y onnxruntime onnxruntime-gpu onnxruntime-openvino 2>/dev/null || true \
         && pip install --no-cache-dir --break-system-packages "onnxruntime-gpu>=1.16.0" \
-        && echo "Downloading InsightFace buffalo_l model (CUDA backend)..." \
+        && echo "Downloading InsightFace buffalo_l model..." \
         && mkdir -p /root/.insightface/models/buffalo_l \
-        && python3 -c "import onnxruntime; print('face deps ok (CUDA), providers=', onnxruntime.get_available_providers())" \
-        && python3 -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_l', root='/root/.insightface/models'); app.prepare(ctx_id=0)" \
+        && python3 -c "import onnxruntime; print('face deps ok, providers=', onnxruntime.get_available_providers())" \
+        && python3 -c "import insightface; app = insightface.app.FaceAnalysis(name='buffalo_l', root='/root/.insightface/models'); app.prepare(ctx_id=0)"; \
     else \
         # OpenVINO backend (default): onnxruntime-openvino for Intel CPU/iGPU acceleration
         pip install --no-build-isolation --break-system-packages -e "/app/miloco_ai_engine[face]" \
