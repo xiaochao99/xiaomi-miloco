@@ -115,6 +115,8 @@ jobs:
           context: .
           file: docker/ai_engine.cuda.Dockerfile
           push: true
+          build-args: |
+            FACE_BACKEND=cuda
           tags: |
             ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:${{ needs.setup.outputs.version }}
 

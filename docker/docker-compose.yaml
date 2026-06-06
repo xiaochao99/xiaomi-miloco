@@ -44,8 +44,6 @@ services:
     network_mode: host
     expose:
       - ${BACKEND_PORT:-8000}
-    env_file:
-      - ./xiaomi_bridge.env
     environment:
       - BACKEND_HOST=${BACKEND_HOST:-0.0.0.0}
       - BACKEND_PORT=${BACKEND_PORT:-8000}
