@@ -119,6 +119,10 @@ jobs:
             FACE_BACKEND=cuda
           tags: |
             ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:${{ needs.setup.outputs.version }}
+          cache-from: |
+            type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:buildcache
+          cache-to: |
+            type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:buildcache,mode=max
 
   build-backend:
     needs: setup
@@ -163,3 +167,7 @@ jobs:
           push: true
           tags: |
             ${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:${{ needs.setup.outputs.version }}
+          cache-from: |
+            type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:buildcache
+          cache-to: |
+            type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:buildcache,mode=max
