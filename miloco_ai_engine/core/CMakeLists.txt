@@ -13,6 +13,7 @@ include_directories(${PROJECT_SOURCE_DIR}
                     ${PROJECT_SOURCE_DIR}/cache_manager
                     ${PROJECT_SOURCE_DIR}/batch_scheduling
                     ${LLAMA_THIRD_PARTY_PATH}
+                    ${LLAMA_THIRD_PARTY_PATH}/include
                     ${LLAMA_THIRD_PARTY_PATH}/ggml/include
                     ${LLAMA_THIRD_PARTY_PATH}/src
                     ${LLAMA_THIRD_PARTY_PATH}/mutil-modal

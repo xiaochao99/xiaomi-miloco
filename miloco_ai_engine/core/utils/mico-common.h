@@ -25,7 +25,7 @@ struct LlamaSeqState {
 
 struct LlamaMicoContext {
     mtmd::context_ptr ctx_vision;   // for modal
-    common_init_result llama_init;  // initialize/release llama_context manually
+    common_init_result_ptr llama_init;  // initialize/release llama_context manually
 
     llama_model* model;
     llama_context* lctx;

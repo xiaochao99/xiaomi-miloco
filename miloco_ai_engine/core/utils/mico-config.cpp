@@ -45,7 +45,7 @@ bool config_params_parse_json(const char* config_json, common_params& params) {
         bool res = true;
 
         if (config.contains("model")) {
-            params.model_alias = config["model_name"].get<std::string>();
+            params.model_alias.insert(config["model_name"].get<std::string>());
         }
         if (config.contains("model_path")) {
             params.model.path = config["model_path"].get<std::string>();
@@ -78,16 +78,17 @@ bool config_params_parse_json(const char* config_json, common_params& params) {
         }
 
         if (config.contains("n_seq_max")) {
-            params.n_seq_max = config["n_seq_max"].get<int32_t>();
+            // n_seq_max removed from common_params, set via params.n_sequences
+            params.n_sequences = config["n_seq_max"].get<int32_t>();
         }
         if (config.contains("cache_seq_num")) {
-            params.cache_seq = config["cache_seq_num"].get<int32_t>();
+            // cache_seq removed from common_params, handled directly in LlamaMicoContext
         }
         if (config.contains("mmproj_use_gpu")) {
             params.mmproj_use_gpu = config["mmproj_use_gpu"].get<bool>();
         }
         if (config.contains("context_per_seq")) {
-            params.n_usage_context = config["context_per_seq"].get<int32_t>();
+            // n_usage_context removed from common_params, stored separately in LlamaMicoContext
         }
 
         // Parse sampling parameters

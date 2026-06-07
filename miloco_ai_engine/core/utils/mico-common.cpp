@@ -6,18 +6,17 @@
 #include "mico-common.h"
 
 LlamaMicoContext::LlamaMicoContext(common_params& params) : llama_init(common_init_from_params(params)) {
-    model = llama_init.model.get();
-    lctx = llama_init.context.get();
+    model = llama_init->model();
+    lctx = llama_init->context();
     vocab = llama_model_get_vocab(model);
     smpl = common_sampler_init(model, params.sampling);
     n_threads = params.cpuparams.n_threads;
     n_batch = params.n_batch;
-    n_usage_context = params.n_usage_context;
+    n_usage_context = params.n_ctx;  // n_usage_context removed from common_params, use n_ctx
 
-    n_seq_max = params.n_seq_max;
-    n_seq_max -= params.cache_seq;  // reserved space for cache
+    n_seq_max = params.n_sequences;  // n_seq_max removed, use n_sequences
 
-    kv_cache_seq = params.cache_seq;
+    kv_cache_seq = 0;  // cache_seq removed, default to 0
 
     // memory_scheduler
     memory_scheduler = new LlamaMemoryScheduler(lctx);
