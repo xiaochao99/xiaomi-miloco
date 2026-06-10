@@ -1,0 +1,403 @@
+@bg-page: #0a0a0a;
+@bg-sidebar: #111111;
+@bg-card: #141414;
+@bg-fill: #1d1d1d;
+@bg-fill-light: #262727;
+@bg-hover: rgba(255, 255, 255, 0.04);
+@text-primary: #e5eaf3;
+@text-regular: #cfd3dc;
+@text-secondary: #a3a6ad;
+@text-placeholder: #8d9095;
+@border-color: #2b2b2c;
+@border-light: #363637;
+@accent: #5cd5e5;
+
+@sidebar-width: 180px;
+@header-height: 52px;
+@player-height: 72px;
+
+// ─── App Container ─────────────────────────────────
+
+.appContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: @bg-page;
+  color: @text-regular;
+  font-family: 'MiSans', 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  overflow: hidden;
+  position: relative;
+}
+
+// ─── Error Bar ─────────────────────────────────────
+
+.errorBar {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(245, 108, 108, 0.9);
+  color: #fff;
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 100;
+  backdrop-filter: blur(8px);
+  animation: slideDown 0.3s ease;
+}
+
+.errorClose {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  line-height: 1;
+
+  &:hover { color: #fff; }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+// ─── Main Layout ───────────────────────────────────
+
+.mainLayout {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  height: calc(100vh - @player-height);
+}
+
+// ─── Sidebar ───────────────────────────────────────
+
+.sidebar {
+  width: @sidebar-width;
+  background: @bg-sidebar;
+  border-right: 1px solid @border-color;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 16px 12px;
+  color: @text-primary;
+}
+
+.sidebarTitle {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.sidebarNav {
+  flex: 1;
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: @text-secondary;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+  text-align: left;
+  position: relative;
+
+  &:hover {
+    color: @text-primary;
+    background: @bg-hover;
+  }
+}
+
+.navItemActive {
+  color: @accent !important;
+  background: rgba(92, 213, 229, 0.08) !important;
+
+  &:hover {
+    background: rgba(92, 213, 229, 0.12) !important;
+  }
+}
+
+.navBadge {
+  margin-left: auto;
+  font-size: 10px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(92, 213, 229, 0.15);
+  color: @accent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+// ─── Sidebar Bottom (Settings) ─────────────────────
+
+.sidebarBottom {
+  padding: 4px 8px;
+  border-top: 1px solid @border-color;
+}
+
+// ─── Sidebar Footer (Mini Song Info) ───────────────
+
+.sidebarFooter {
+  padding: 12px;
+  border-top: 1px solid @border-color;
+}
+
+.miniSongInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: @bg-hover;
+  }
+}
+
+.miniCover {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.miniCoverPlaceholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: @bg-fill;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.miniSongText {
+  flex: 1;
+  min-width: 0;
+}
+
+.miniTitle {
+  font-size: 12px;
+  color: @text-primary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.miniArtist {
+  font-size: 11px;
+  color: @text-placeholder;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ─── Content Wrapper ───────────────────────────────
+
+.contentWrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+// ─── Header ────────────────────────────────────────
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: @header-height;
+  padding: 0 24px;
+  background: @bg-card;
+  border-bottom: 1px solid @border-color;
+  flex-shrink: 0;
+}
+
+.headerSearch {
+  width: 100%;
+  max-width: 400px;
+}
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 34px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: all 0.2s;
+  color: @text-placeholder;
+
+  &:focus-within {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(92, 213, 229, 0.2);
+  }
+}
+
+.searchInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: @text-regular;
+  font-size: 13px;
+
+  &::placeholder {
+    color: @text-placeholder;
+  }
+}
+
+.searchClear {
+  background: none;
+  border: none;
+  color: @text-placeholder;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 2px;
+  line-height: 1;
+
+  &:hover { color: @text-primary; }
+}
+
+.searchLoading {
+  flex-shrink: 0;
+}
+
+// ─── Content Area ──────────────────────────────────
+
+.contentArea {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    &:hover { background: rgba(255, 255, 255, 0.15); }
+  }
+  &::-webkit-scrollbar-track { background: transparent; }
+}
+
+.searchContent {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.searchHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 28px 8px;
+  flex-shrink: 0;
+}
+
+.searchResultTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: @text-primary;
+}
+
+.searchResultCount {
+  font-size: 12px;
+  color: @text-placeholder;
+}
+
+// ─── Loading Screen ────────────────────────────────
+
+.loadingScreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: @bg-page;
+  gap: 16px;
+
+  p {
+    color: @text-secondary;
+    font-size: 14px;
+  }
+}
+
+// ─── Responsive ────────────────────────────────────
+
+@media (max-width: 800px) {
+  @sidebar-width-mobile: 56px;
+
+  .sidebar {
+    width: @sidebar-width-mobile;
+  }
+
+  .sidebarTitle,
+  .navItem span,
+  .navBadge,
+  .sidebarFooter {
+    display: none;
+  }
+
+  .sidebarHeader {
+    justify-content: center;
+    padding: 12px 8px;
+  }
+
+  .navItem {
+    justify-content: center;
+    padding: 10px;
+  }
+
+  .header {
+    padding: 0 16px;
+  }
+
+  .searchBox {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .sidebar {
+    display: none;
+  }
+
+  .header {
+    padding: 0 12px;
+  }
+}

@@ -1,0 +1,196 @@
+@text-primary: #e5eaf3;
+@text-regular: #cfd3dc;
+@text-secondary: #a3a6ad;
+@text-placeholder: #8d9095;
+@accent: #5cd5e5;
+@bg-fill: #1d1d1d;
+@bg-hover: rgba(255, 255, 255, 0.04);
+
+.container {
+  padding: 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  color: @text-primary;
+  margin: 0;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.count {
+  font-size: 12px;
+  color: @text-placeholder;
+}
+
+.playAllBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(92, 213, 229, 0.12);
+  color: @accent;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+
+  &:hover { background: rgba(92, 213, 229, 0.2); }
+}
+
+// ─── Song List ─────────────────────────────────────
+
+.songList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  overflow-y: auto;
+
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    &:hover { background: rgba(255, 255, 255, 0.15); }
+  }
+  &::-webkit-scrollbar-track { background: transparent; }
+}
+
+.songItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: @bg-hover;
+    .playBtn { opacity: 1; }
+  }
+}
+
+.songItemActive {
+  background: rgba(92, 213, 229, 0.06);
+  .songTitle { color: @accent; }
+}
+
+.songCover {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: @bg-fill;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.songCoverPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.songInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.songTitle {
+  font-size: 13px;
+  color: @text-primary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.songArtist {
+  font-size: 11px;
+  color: @text-placeholder;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.songDuration {
+  font-size: 12px;
+  color: @text-placeholder;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 40px;
+  text-align: right;
+}
+
+.playBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: @text-secondary;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.15s;
+  flex-shrink: 0;
+
+  &:hover {
+    color: @accent;
+    background: rgba(92, 213, 229, 0.08);
+  }
+}
+
+// ─── Empty State ───────────────────────────────────
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 8px;
+  padding: 40px 0;
+
+  p {
+    color: @text-placeholder;
+    font-size: 14px;
+    margin: 0;
+  }
+}
+
+.emptyHint {
+  font-size: 12px !important;
+  color: rgba(255, 255, 255, 0.25) !important;
+}

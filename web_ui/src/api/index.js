@@ -198,3 +198,37 @@ export const getUpdateLog = () => getApi('/api/system/update/log');
 export const listBackups = () => getApi('/api/system/backups');
 export const rollbackToBackup = (backupName) => postApi('/api/system/rollback', { backup_name: backupName });
 export const getSystemStatus = () => getApi('/api/system/status');
+
+// Music Player API
+export const getMusicSongs = () => getApi('/api/music/songs');
+export const getMusicSong = (songId) => getApi(`/api/music/songs/${songId}`);
+export const searchMusic = (keyword) => postApi('/api/music/search', { keyword });
+export const getMusicPlaylists = () => getApi('/api/music/playlists');
+export const getMusicStatus = () => getApi('/api/music/status');
+export const controlMusic = (data) => postApi('/api/music/control', data);
+export const getDLNADevices = () => getApi('/api/music/dlna/devices');
+export const discoverDLNADevices = (timeout = 5) => postApi('/api/music/dlna/discover', { timeout });
+export const castToDLNA = (deviceId, songId = null) => postApi('/api/music/dlna/cast', { device_id: deviceId, song_id: songId });
+export const stopDLNACast = (deviceId) => postApi('/api/music/dlna/stop', { device_id: deviceId });
+
+// Local Music Scan API
+export const scanLocalMusic = (path, recursive = true) => postApi('/api/music/scan/local', { path, recursive });
+export const getPlaylistDetail = (playlistId) => getApi(`/api/music/playlists/${playlistId}`);
+
+// Music Directory Config API
+export const getMusicScanDirs = () => getApi('/api/music/scan/dirs');
+export const addMusicScanDir = (data) => postApi('/api/music/scan/dirs', data);
+export const removeMusicScanDir = (dirId) => deleteApi(`/api/music/scan/dirs/${dirId}`);
+export const updateMusicScanDir = (dirId, data) => putApi(`/api/music/scan/dirs/${dirId}`, data);
+
+// Music File Watcher API
+export const getMusicWatcherStatus = () => getApi('/api/music/watcher/status');
+export const startMusicWatcher = () => postApi('/api/music/watcher/start');
+export const stopMusicWatcher = () => postApi('/api/music/watcher/stop');
+
+// AI Music Control API - 用于AI对话控制音乐播放
+export const aiControlMusic = (data) => postApi('/api/music/ai/control', data);
+
+// Music Command Queue API (MCP → Frontend bridge)
+export const getMusicCommands = (sinceId = 0) => getApi(`/api/music/command?since_id=${sinceId}`);
+export const pushMusicCommand = (action, params = {}) => postApi('/api/music/command', { action, params });

@@ -24,6 +24,7 @@ from .habit_controller import router as habit_router
 from .recording_controller import router as recording_router
 from .health_controller import router as health_router
 from .system_controller import router as system_router
+from .music_controller import router as music_router
 
 __all__ = [
     "web_router",
@@ -44,4 +45,5 @@ __all__ = [
     "recording_router",
     "health_router",
     "system_router",
+    "music_router",
 ]

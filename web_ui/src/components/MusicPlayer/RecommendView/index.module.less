@@ -1,0 +1,321 @@
+@bg-page: #0a0a0a;
+@bg-card: #141414;
+@bg-fill: #1d1d1d;
+@bg-fill-light: #262727;
+@bg-hover: rgba(255, 255, 255, 0.04);
+@text-primary: #e5eaf3;
+@text-regular: #cfd3dc;
+@text-secondary: #a3a6ad;
+@text-placeholder: #8d9095;
+@border-color: #2b2b2c;
+@accent: #5cd5e5;
+
+.container {
+  padding: 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sectionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: @text-primary;
+  margin: 0;
+}
+
+.sectionRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.playAllBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(92, 213, 229, 0.12);
+  color: @accent;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+
+  &:hover { background: rgba(92, 213, 229, 0.2); }
+}
+
+// ─── Seed Tags ─────────────────────────────────────
+
+.seedGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.seedCard {
+  position: relative;
+  padding: 10px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.25s ease;
+  border: 1px solid transparent;
+
+  &:hover {
+    border-color: rgba(92, 213, 229, 0.2);
+    transform: translateY(-1px);
+  }
+}
+
+.seedBg {
+  position: absolute;
+  inset: 0;
+  background: var(--seed-color, #1a3a5c);
+  opacity: 0.3;
+  transition: opacity 0.25s;
+  border-radius: inherit;
+
+  .seedCard:hover & {
+    opacity: 0.5;
+  }
+
+  .seedActive & {
+    opacity: 0.6;
+  }
+}
+
+.seedActive {
+  border-color: rgba(92, 213, 229, 0.4);
+  box-shadow: 0 0 12px rgba(92, 213, 229, 0.15);
+}
+
+.seedLabel {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: @text-primary;
+  white-space: nowrap;
+}
+
+// ─── Song List ─────────────────────────────────────
+
+.songList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.songItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: @bg-hover;
+
+    .coverOverlay {
+      opacity: 1;
+    }
+
+    .songActions {
+      opacity: 1;
+    }
+  }
+}
+
+.songItemActive {
+  background: rgba(92, 213, 229, 0.06);
+
+  .songTitle {
+    color: @accent;
+  }
+}
+
+.songIndex {
+  width: 32px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.indexNum {
+  font-size: 13px;
+  color: @text-placeholder;
+  font-variant-numeric: tabular-nums;
+}
+
+.playingBars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 14px;
+
+  span {
+    width: 3px;
+    background: @accent;
+    border-radius: 1px;
+    animation: barPulse 0.8s ease-in-out infinite;
+
+    &:nth-child(1) { height: 6px; animation-delay: 0s; }
+    &:nth-child(2) { height: 10px; animation-delay: 0.2s; }
+    &:nth-child(3) { height: 4px; animation-delay: 0.4s; }
+  }
+}
+
+@keyframes barPulse {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.5); }
+}
+
+.songCover {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+  background: @bg-fill;
+}
+
+.coverImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.coverPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.coverOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: #fff;
+  font-size: 18px;
+}
+
+.songInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.songTitle {
+  font-size: 14px;
+  color: @text-primary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.songArtist {
+  font-size: 12px;
+  color: @text-placeholder;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.songAlbum {
+  font-size: 12px;
+  color: @text-secondary;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.songActions {
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.addBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: @text-secondary;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+
+  &:hover {
+    border-color: @accent;
+    color: @accent;
+    background: rgba(92, 213, 229, 0.08);
+  }
+}
+
+// ─── Empty / Loading ───────────────────────────────
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+
+  p {
+    color: @text-placeholder;
+    font-size: 14px;
+  }
+}
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+// ─── Responsive ────────────────────────────────────
+
+@media (max-width: 600px) {
+  .container {
+    padding: 16px;
+  }
+
+  .songAlbum {
+    display: none;
+  }
+}

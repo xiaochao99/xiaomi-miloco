@@ -1,0 +1,324 @@
+@accent: #5cd5e5;
+@green: #52c41a;
+@text-primary: #e5eaf3;
+@text-regular: #cfd3dc;
+@text-secondary: #a3a6ad;
+@text-placeholder: #8d9095;
+
+.container {
+  position: relative;
+}
+
+.castBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: @text-secondary;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+
+  &:hover {
+    color: @text-primary;
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.castBtnActive {
+  color: @green;
+
+  &:hover {
+    color: lighten(@green, 10%);
+    background: rgba(82, 196, 26, 0.08);
+  }
+}
+
+// ─── Backdrop ──────────────────────────────────────
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: transparent;
+}
+
+// ─── Dropdown ──────────────────────────────────────
+
+.dropdown {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 1000;
+  width: 320px;
+  background: rgba(20, 20, 20, 0.97);
+  backdrop-filter: blur(20px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.dropdownInner {
+  max-height: 400px;
+  overflow-y: auto;
+
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+  }
+}
+
+// ─── Header ────────────────────────────────────────
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: @text-secondary;
+}
+
+.headerTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: @text-primary;
+}
+
+.refreshBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: @text-secondary;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+
+  &:hover:not(:disabled) {
+    color: @text-primary;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+// ─── Loading / Empty ───────────────────────────────
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 20px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(92, 213, 229, 0.2);
+  border-top-color: @accent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loadingText {
+  color: @text-placeholder;
+  font-size: 13px;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 20px;
+
+  p {
+    color: @text-placeholder;
+    font-size: 13px;
+    margin: 0;
+  }
+}
+
+.rescanBtn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(92, 213, 229, 0.3);
+  background: transparent;
+  color: @accent;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    background: rgba(92, 213, 229, 0.08);
+  }
+}
+
+// ─── Device List ───────────────────────────────────
+
+.deviceList {
+  padding: 4px 0;
+}
+
+.deviceItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+
+.deviceItemSelected {
+  background: rgba(82, 196, 26, 0.06);
+}
+
+.deviceIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: @text-secondary;
+  flex-shrink: 0;
+}
+
+.deviceMeta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.deviceName {
+  font-size: 13px;
+  color: @text-primary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceHost {
+  font-size: 11px;
+  color: @text-placeholder;
+}
+
+.castingBadge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(82, 196, 26, 0.15);
+  color: @green;
+  white-space: nowrap;
+}
+
+// ─── Control Bar ───────────────────────────────────
+
+.controlBar {
+  padding: 12px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(82, 196, 26, 0.04);
+}
+
+.nowPlaying {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.nowPlayingLabel {
+  font-size: 10px;
+  color: @text-placeholder;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.nowPlayingTitle {
+  font-size: 13px;
+  color: @text-primary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.controlActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.controlBtn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: @text-regular;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+}
+
+.stopBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(245, 108, 108, 0.12);
+  color: #f56c6c;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover {
+    background: rgba(245, 108, 108, 0.2);
+  }
+}
+
+// ─── Responsive ────────────────────────────────────
+
+@media (max-width: 640px) {
+  .dropdown {
+    width: 280px;
+    right: -20px;
+  }
+}

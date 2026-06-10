@@ -1,0 +1,287 @@
+@bg-page: #0a0a0a;
+@text-primary: #e5eaf3;
+@text-regular: #cfd3dc;
+@text-secondary: #a3a6ad;
+@text-placeholder: #8d9095;
+@accent-cyan: #5cd5e5;
+@border-color: #2b2b2c;
+
+.detailContainer {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.bgBlur {
+  position: absolute;
+  inset: -50px;
+  z-index: 0;
+  pointer-events: none;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: blur(60px) brightness(0.25) saturate(1.3);
+  }
+}
+
+.detailContent {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100%;
+  gap: 0;
+}
+
+.jukeboxSection {
+  width: 45%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.jukebox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  max-width: 360px;
+  width: 100%;
+}
+
+.discOuter {
+  width: 100%;
+  max-width: 300px;
+  aspect-ratio: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.discInner {
+  width: 90%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background:
+      repeating-radial-gradient(
+        circle at center,
+        transparent 0px,
+        transparent 10px,
+        rgba(255, 255, 255, 0.02) 10px,
+        rgba(255, 255, 255, 0.02) 11px
+      );
+    pointer-events: none;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    width: 12%;
+    height: 12%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #888, #444);
+    border: 2px solid #666;
+  }
+
+  &.spinning {
+    animation: spin 20s linear infinite;
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.discImg {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.discPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.songMeta {
+  text-align: center;
+  color: #fff;
+}
+
+.detailTitle {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  color: #fff;
+  line-height: 1.3;
+}
+
+.detailArtist {
+  font-size: 15px;
+  margin: 0 0 4px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.detailAlbum {
+  font-size: 13px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.lyricsSection {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 40px 20px 20px;
+  min-width: 0;
+}
+
+.lyricsPanel {
+  width: 100%;
+  height: 80%;
+  max-height: 500px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+
+  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+
+  &::-webkit-scrollbar { width: 0; }
+}
+
+.lyricsPad {
+  height: 40%;
+}
+
+.lyricLine {
+  font-size: 16px;
+  line-height: 2.2;
+  color: rgba(255, 255, 255, 0.35);
+  text-align: center;
+  cursor: pointer;
+  padding: 4px 20px;
+  transition: all 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
+  user-select: none;
+
+  &:hover {
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  &.lyricPassed {
+    color: rgba(255, 255, 255, 0.2);
+    font-size: 14px;
+  }
+
+  &.lyricActive {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 0 20px rgba(92, 213, 229, 0.5);
+  }
+}
+
+.noLyrics {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 15px;
+}
+
+.noLyricsIcon {
+  opacity: 0.5;
+}
+
+.closeBtn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    transform: scale(1.05);
+  }
+}
+
+.emptyDetail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+
+  :global(.ant-empty-description) {
+    color: @text-placeholder;
+  }
+}
+
+@media (max-width: 800px) {
+  .detailContent {
+    flex-direction: column;
+  }
+
+  .jukeboxSection {
+    width: 100%;
+    height: 50%;
+    padding: 20px;
+  }
+
+  .discOuter {
+    max-width: 200px;
+  }
+
+  .detailTitle {
+    font-size: 18px;
+  }
+
+  .lyricsSection {
+    width: 100%;
+    height: 50%;
+    padding: 0 20px 20px;
+  }
+
+  .lyricLine {
+    font-size: 14px;
+    line-height: 2;
+
+    &.lyricActive {
+      font-size: 18px;
+    }
+  }
+}

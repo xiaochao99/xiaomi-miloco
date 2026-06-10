@@ -138,6 +138,13 @@ export const MENU_ITEMS = [
     path: '/home/recordingPlayback',
   },
   {
+    key: '14',
+    label: 'home.menu.musicPlayer',
+    icon: 'menuMusic',
+    selectedIcon: 'menuMusicSelected',
+    path: '/home/musicPlayer',
+  },
+  {
     key: '8',
     label: 'home.menu.setting',
     icon: 'menuSetting',

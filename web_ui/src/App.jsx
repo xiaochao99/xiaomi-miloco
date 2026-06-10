@@ -7,6 +7,7 @@ import './App.css'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './contexts/ThemeContext'
 import GlobalSocketProvider from './contexts/GlobalSocketProvider'
+import MusicCommandProvider from './contexts/MusicCommandProvider'
 import { LogViewerModal } from './components'
 import Setup from './pages/Setup'
 import Login from './pages/Login'
@@ -25,11 +26,13 @@ import MemoryManage from './pages/MemoryManage'
 import HabitLearning from './pages/HabitLearning'
 import RecordingConfig from './pages/RecordingConfig'
 import RecordingPlayback from './pages/RecordingPlayback'
+import MusicPlayer from './pages/MusicPlayer'
 
 function App() {
   return (
     <ThemeProvider>
       <GlobalSocketProvider>
+        <MusicCommandProvider>
         <Routes>
           <Route path="/" element={<Navigate to="/home/instant" replace />} />
           <Route path="/setup" element={<Setup />} />
@@ -51,8 +54,10 @@ function App() {
             <Route path="habitLearning" element={<HabitLearning />} />
             <Route path="recordingConfig" element={<RecordingConfig />} />
             <Route path="recordingPlayback" element={<RecordingPlayback />} />
+            <Route path="musicPlayer" element={<MusicPlayer />} />
           </Route>
         </Routes>
+        </MusicCommandProvider>
         <LogViewerModal />
       </GlobalSocketProvider>
     </ThemeProvider>

@@ -30,6 +30,7 @@ from miloco_server.controller import (
     memory_router,
     miot_router,
     model_router,
+    music_router,
     openai_compat_router,
     recording_router,
     system_router,
@@ -81,6 +82,7 @@ app.include_router(habit_router, prefix="/api")
 app.include_router(recording_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 app.include_router(system_router, prefix="/api")
+app.include_router(music_router, prefix="/api")
 
 
 @app.get("/{full_path:path}")

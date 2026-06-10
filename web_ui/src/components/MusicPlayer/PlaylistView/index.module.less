@@ -1,0 +1,366 @@
+@text-primary: #e5eaf3;
+@text-regular: #cfd3dc;
+@text-secondary: #a3a6ad;
+@text-placeholder: #8d9095;
+@border-color: #2b2b2c;
+@accent: #5cd5e5;
+@bg-fill: #1d1d1d;
+@bg-hover: rgba(255, 255, 255, 0.04);
+@bg-active: rgba(92, 213, 229, 0.06);
+
+.playlistContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+// ─── Toolbar ───────────────────────────────────────
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 28px;
+  border-bottom: 1px solid @border-color;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.toolbarRight {
+  display: flex;
+  gap: 6px;
+}
+
+.toolbarBtn,
+.toolbarBtnDanger {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.toolbarBtn {
+  color: @text-secondary;
+  &:hover:not(:disabled) {
+    color: @text-primary;
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+}
+
+.toolbarBtnDanger {
+  color: #f56c6c;
+  border-color: rgba(245, 108, 108, 0.15);
+  &:hover:not(:disabled) {
+    background: rgba(245, 108, 108, 0.08);
+    border-color: rgba(245, 108, 108, 0.3);
+  }
+}
+
+.songCount {
+  font-size: 12px;
+  color: @text-placeholder;
+}
+
+// ─── Checkbox ──────────────────────────────────────
+
+.colCheck {
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+
+  &:hover {
+    border-color: @accent;
+  }
+}
+
+.checked {
+  background: @accent;
+  border-color: @accent;
+}
+
+.songRowSelected {
+  background: rgba(92, 213, 229, 0.04) !important;
+}
+
+.tableHeader {
+  display: flex;
+  align-items: center;
+  padding: 10px 28px;
+  font-size: 11px;
+  color: @text-placeholder;
+  border-bottom: 1px solid @border-color;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.tableBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+  }
+}
+
+.colIndex {
+  width: 50px;
+  text-align: center;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.colTitle {
+  flex: 2;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 12px;
+}
+
+.colArtist {
+  width: 160px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 12px;
+  color: @text-secondary;
+  font-size: 13px;
+}
+
+.colAlbum {
+  width: 160px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 12px;
+  color: @text-secondary;
+  font-size: 13px;
+}
+
+.colDuration {
+  width: 56px;
+  flex-shrink: 0;
+  text-align: right;
+  padding-right: 12px;
+  color: @text-placeholder;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.colAction {
+  width: 40px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.songRow {
+  display: flex;
+  align-items: center;
+  padding: 8px 28px;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 13px;
+  color: @text-regular;
+  border-radius: 4px;
+  margin: 0 4px;
+
+  &:nth-child(even) {
+    background: rgba(255, 255, 255, 0.01);
+  }
+
+  &:hover {
+    background: @bg-hover;
+
+    .indexNum { display: none; }
+    .indexPlay { display: flex; }
+    .songCover { opacity: 0.85; }
+    .removeBtn { opacity: 1; }
+  }
+
+  &.songRowActive {
+    background: @bg-active;
+
+    .songName { color: @accent; }
+  }
+}
+
+.indexNum {
+  font-size: 12px;
+  color: @text-placeholder;
+  font-variant-numeric: tabular-nums;
+}
+
+.indexPlay {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: @text-secondary;
+
+  &:hover { color: @accent; }
+}
+
+.playPauseBtn {
+  background: none;
+  border: none;
+  color: @accent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.playingBars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 14px;
+
+  span {
+    width: 3px;
+    background: @accent;
+    border-radius: 1px;
+    animation: barPulse 0.8s ease-in-out infinite;
+
+    &:nth-child(1) { height: 6px; animation-delay: 0s; }
+    &:nth-child(2) { height: 10px; animation-delay: 0.2s; }
+    &:nth-child(3) { height: 4px; animation-delay: 0.4s; }
+  }
+}
+
+@keyframes barPulse {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.5); }
+}
+
+.songCover {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+.songCoverPlaceholder {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  background: @bg-fill;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.songName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: @text-primary;
+  font-weight: 400;
+}
+
+.sourceTagLocal,
+.sourceTagOnline {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 16px;
+}
+
+.sourceTagLocal {
+  background: rgba(82, 196, 26, 0.1);
+  color: #52c41a;
+}
+
+.sourceTagOnline {
+  background: rgba(92, 213, 229, 0.1);
+  color: @accent;
+}
+
+.removeBtn {
+  background: none;
+  border: none;
+  color: @text-placeholder;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+
+  &:hover {
+    color: #f56c6c;
+  }
+}
+
+// ─── Empty State ───────────────────────────────────
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 300px;
+}
+
+.emptyText {
+  color: @text-placeholder;
+  font-size: 14px;
+}
+
+.emptyHint {
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+// ─── Responsive ────────────────────────────────────
+
+@media (max-width: 900px) {
+  .colAlbum { display: none; }
+}
+
+@media (max-width: 700px) {
+  .colArtist { width: 100px; }
+  .songRow { padding: 8px 16px; }
+  .tableHeader { padding: 10px 16px; }
+  .songCover,
+  .songCoverPlaceholder { width: 32px; height: 32px; }
+}

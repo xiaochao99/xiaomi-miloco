@@ -1,0 +1,133 @@
+@netease-red: #ec4141;
+@primary-teal: #00bdc3;
+
+.lyricsPanel {
+  position: relative;
+  height: 380px;
+  overflow-y: auto;
+  width: 100%;
+  scroll-behavior: smooth;
+
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 12%,
+    black 88%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 12%,
+    black 88%,
+    transparent 100%
+  );
+
+  &::-webkit-scrollbar {
+    width: 0;
+  }
+}
+
+.lyricsPadding {
+  height: 45%;
+}
+
+.emptyState {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.emptyIcon {
+  opacity: 0.4;
+}
+
+.emptyText {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 15px;
+}
+
+.emptyHint {
+  color: rgba(255, 255, 255, 0.15);
+  font-size: 12px;
+}
+
+.lyricLine {
+  position: relative;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.3);
+  text-align: center;
+  cursor: pointer;
+  padding: 8px 24px;
+  transition: all 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  user-select: none;
+
+  &:hover {
+    color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+  }
+
+  &.passed {
+    color: rgba(255, 255, 255, 0.18);
+    font-size: 13px;
+  }
+
+  &.active {
+    .lyricText {
+      font-size: 17px;
+      font-weight: 600;
+      color: #fff;
+      text-shadow: 0 0 20px rgba(236, 65, 65, 0.5), 0 0 40px rgba(236, 65, 65, 0.2);
+    }
+  }
+}
+
+.lyricText {
+  position: relative;
+  z-index: 1;
+  transition: all 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.lyricHighlight {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(236, 65, 65, 0.06),
+    transparent
+  );
+  border-radius: 8px;
+  animation: highlightPulse 2s ease-in-out infinite;
+}
+
+@keyframes highlightPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+@media (max-width: 900px) {
+  .lyricsPanel {
+    height: 180px;
+  }
+
+  .lyricLine {
+    padding: 4px 16px;
+    min-height: 32px;
+    font-size: 13px;
+
+    &.active .lyricText {
+      font-size: 15px;
+    }
+  }
+}

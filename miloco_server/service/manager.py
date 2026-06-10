@@ -144,6 +144,18 @@ class Manager:
         # Note: Detection rules initialization is moved to _init_miot_after_startup
         # in main.py to ensure MIoT devices are ready first
 
+        # Initialize music service
+        try:
+            from miloco_server.service.music_service import MusicService, set_music_service
+            music_service = MusicService()
+            await music_service.initialize()
+            set_music_service(music_service)
+            self._music_service = music_service
+            logger.info("Music service initialized")
+        except Exception as e:
+            logger.warning("Music service initialization failed: %s", e)
+            self._music_service = None
+
         if callback:
             callback()
         logger.info("Manager initialization completed")
@@ -198,6 +210,11 @@ class Manager:
     @property
     def chat_companion(self) -> ChatCompanion:
         return self._chat_companion
+
+    @property
+    def music_service(self):
+        """Get music service instance"""
+        return getattr(self, '_music_service', None)
 
     # Tool and proxy access properties
     @property
