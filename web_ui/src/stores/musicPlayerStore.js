@@ -39,12 +39,19 @@ export const useMusicPlayerStore = create(
       // View state
       activeView: 'discover',
       showDetail: false,
+      displayModes: {},
+      _defaultDisplayModes: { local: 'list', artists: 'card', albums: 'card', favorites: 'list', playlist: 'list' },
 
       // Recommendation data
       recommendSeeds: [],
       recommendLoading: false,
       currentRecommendKey: '',
       recommendCache: {},
+
+      // Favorites & Categories
+      favoriteIds: [],
+      categories: { artists: [], albums: [] },
+      categoriesLoading: false,
 
       // Local scanner state
       scanDirs: [],
@@ -62,8 +69,6 @@ export const useMusicPlayerStore = create(
 
       _audio: null,
       _positionTimer: null,
-      _commandPollTimer: null,
-      _lastCommandId: 0,
 
       initialize: () => {
         // If audio already exists, reuse it — don't create a duplicate
@@ -111,131 +116,22 @@ export const useMusicPlayerStore = create(
           audio.load()
         }
         get()._stopPositionUpdate()
-        get().stopCommandPolling()
         set({ _audio: null, playbackState: 'stopped', position: 0 })
       },
 
       loadPlaylistFromBackend: async () => {
         try {
           const res = await api.getMusicSongs()
-          if (res?.code === 0 && Array.isArray(res.data) && res.data.length > 0) {
-            const existing = get().songs
-            const existingIds = new Set(existing.map(s => s.id))
-            const newSongs = res.data.filter(s => !existingIds.has(s.id))
-            if (newSongs.length > 0) {
-              set({ songs: [...existing, ...newSongs] })
-            }
+          if (res?.code === 0 && Array.isArray(res.data)) {
+            // Sync local songs with backend: replace all local_ entries,
+            // keep online songs intact (they don't come from the backend)
+            const library = get().library
+            const onlineSongs = library.filter(s => !String(s.id).startsWith('local_'))
+            const syncedLocalSongs = res.data.map(s => get()._trimSong(s))
+            set({ library: [...onlineSongs, ...syncedLocalSongs] })
           }
         } catch {
           // Silent fail — backend may not have songs yet
-        }
-      },
-
-      // ─── Command Polling (MCP → Frontend bridge) ──
-
-      startCommandPolling: () => {
-        get().stopCommandPolling()
-        const poll = async () => {
-          try {
-            const res = await api.getMusicCommands(get()._lastCommandId)
-            if (res?.code === 0 && res.data?.commands?.length > 0) {
-              for (const cmd of res.data.commands) {
-                get()._executeCommand(cmd)
-              }
-              set({ _lastCommandId: res.data.last_id })
-            }
-          } catch (e) {
-            // Silently ignore poll errors
-          }
-        }
-        // Initial poll
-        poll()
-        // Poll every 1 second
-        const timer = setInterval(poll, 1000)
-        set({ _commandPollTimer: timer })
-      },
-
-      stopCommandPolling: () => {
-        const timer = get()._commandPollTimer
-        if (timer) {
-          clearInterval(timer)
-          set({ _commandPollTimer: null })
-        }
-      },
-
-      _executeCommand: (cmd) => {
-        const { action, params } = cmd
-        switch (action) {
-          case 'play':
-            get().play()
-            break
-          case 'pause':
-            get().pause()
-            break
-          case 'stop':
-            get().stop()
-            break
-          case 'next':
-            get().next()
-            break
-          case 'previous':
-            get().previous()
-            break
-          case 'toggle':
-            get().togglePlay()
-            break
-          case 'set_volume':
-            if (params.volume !== undefined) get().setVolume(params.volume)
-            break
-          case 'toggle_mute':
-            get().toggleMute()
-            break
-          case 'set_repeat':
-            if (params.mode) get().setRepeatMode(params.mode)
-            break
-          case 'seek':
-            if (params.position !== undefined) get().seek(params.position)
-            break
-          case 'play_song': {
-            // Find song in playlist by ID or title
-            const songs = get().songs
-            let song = null
-            if (params.song_id) {
-              song = songs.find(s => s.id === params.song_id)
-            }
-            if (!song && params.title) {
-              song = songs.find(s => s.title === params.title)
-            }
-            if (song) get().playSong(song)
-            break
-          }
-          case 'search_and_play': {
-            // Search online and play the first result
-            if (params.keyword) {
-              get().searchSongs(params.keyword).then(() => {
-                const results = get().searchResults
-                if (results.length > 0) {
-                  get().playSong(results[0])
-                }
-              })
-            }
-            break
-          }
-          case 'add_songs': {
-            if (params.songs?.length > 0) {
-              get()._addAllToLibrary(params.songs)
-              const existing = get().songs
-              const newSongs = params.songs
-                .filter(s => !existing.find(e => e.id === s.id))
-                .map(s => get()._trimSong(s))
-              if (newSongs.length > 0) {
-                set({ songs: [...existing, ...newSongs] })
-              }
-            }
-            break
-          }
-          default:
-            console.warn('Unknown music command:', action)
         }
       },
 
@@ -244,10 +140,26 @@ export const useMusicPlayerStore = create(
           set({ searchResults: [], searchKeyword: '', isSearching: false })
           return
         }
-        set({ isSearching: true, searchKeyword: keyword })
+        const kw = keyword.trim()
+        set({ isSearching: true, searchKeyword: kw })
         try {
-          const results = await musicApi.searchSongs(keyword)
-          set({ searchResults: results })
+          // Load categories if not loaded yet (needed for SearchView)
+          if (get().categories.artists.length === 0) {
+            get().loadCategories()
+          }
+          // Search local library (sync, fast)
+          const kwLower = kw.toLowerCase()
+          const localResults = get().library.filter(s =>
+            (s.title || '').toLowerCase().includes(kwLower) ||
+            (s.artist || '').toLowerCase().includes(kwLower) ||
+            (s.album || '').toLowerCase().includes(kwLower)
+          ).map(s => get()._trimSong(s))
+          // Search online (async)
+          let onlineResults = []
+          try {
+            onlineResults = await musicApi.searchSongs(kw)
+          } catch { /* ignore online search errors */ }
+          set({ searchResults: [...localResults, ...onlineResults] })
         } catch (e) {
           console.error('Search failed:', e)
           set({ error: '搜索失败' })
@@ -287,22 +199,9 @@ export const useMusicPlayerStore = create(
             const updatedSongs = [...get().songs]
             updatedSongs[idx] = enriched
             set({ songs: updatedSongs })
-          } else if (enriched.audio_url?.startsWith('/api/music/stream/') && !enriched.lyrics?.length) {
-            // Local song: fetch lyrics from dedicated endpoint
-            try {
-              const resp = await fetch(`/api/music/lyric/${enriched.id}`)
-              if (resp.ok) {
-                const lrcData = await resp.json()
-                if (Array.isArray(lrcData) && lrcData.length > 0) {
-                  enriched.lyrics = lrcData
-                  const updatedSongs = [...get().songs]
-                  updatedSongs[idx] = enriched
-                  set({ songs: updatedSongs })
-                }
-              }
-            } catch { /* ignore */ }
           }
 
+          // Set current song and start audio loading IMMEDIATELY
           set({
             currentSong: enriched,
             currentIndex: idx,
@@ -310,12 +209,6 @@ export const useMusicPlayerStore = create(
             currentLyricIndex: -1,
             playbackState: 'playing',
           })
-
-          if (enriched.lyrics) {
-            set({ lyrics: enriched.lyrics })
-          } else {
-            set({ lyrics: [] })
-          }
 
           if (enriched.cover_url) {
             get()._setFavicon(enriched.cover_url)
@@ -325,6 +218,30 @@ export const useMusicPlayerStore = create(
           targetAudio.src = enriched.audio_url
           targetAudio.load()
           await targetAudio.play()
+
+          // Fetch lyrics asynchronously AFTER starting playback (non-blocking)
+          if (enriched.audio_url?.startsWith('/api/music/stream/') && !enriched.lyrics?.length) {
+            fetch(`/api/music/lyric/${enriched.id}`)
+              .then(resp => resp.ok ? resp.json() : null)
+              .then(lrcData => {
+                if (Array.isArray(lrcData) && lrcData.length > 0) {
+                  const updatedSongs = [...get().songs]
+                  const songIdx = updatedSongs.findIndex(s => s.id === enriched.id)
+                  if (songIdx >= 0) {
+                    updatedSongs[songIdx] = { ...updatedSongs[songIdx], lyrics: lrcData }
+                    set({ songs: updatedSongs })
+                  }
+                  if (get().currentSong?.id === enriched.id) {
+                    set({ lyrics: lrcData })
+                  }
+                }
+              })
+              .catch(() => {})
+          } else if (enriched.lyrics) {
+            set({ lyrics: enriched.lyrics })
+          } else {
+            set({ lyrics: [] })
+          }
         } catch (e) {
           console.error('Play failed:', e)
           set({ error: '播放失败', playbackState: 'stopped' })
@@ -457,20 +374,33 @@ export const useMusicPlayerStore = create(
 
       _addToLibrary: (song) => {
         const library = get().library
-        if (!library.find(s => s.id === song.id)) {
-          set({ library: [...library, get()._trimSong(song)] })
+        const existing = library.find(s => s.id === song.id)
+        const trimmed = get()._trimSong(song)
+        if (!existing) {
+          set({ library: [...library, trimmed] })
+        } else if (existing.artist === '未知歌手' || existing.album === '未知专辑' || existing.duration === 0) {
+          // Update stale entry with fresh metadata
+          set({ library: library.map(s => s.id === song.id ? trimmed : s) })
         }
       },
 
       _addAllToLibrary: (newSongs) => {
         if (!newSongs?.length) return
         const library = get().library
-        const existingIds = new Set(library.map(s => s.id))
-        const toAdd = newSongs
-          .filter(s => !existingIds.has(s.id))
-          .map(s => get()._trimSong(s))
-        if (toAdd.length > 0) {
-          set({ library: [...library, ...toAdd] })
+        // Build a map for O(1) lookup and update
+        const songMap = new Map(library.map(s => [s.id, s]))
+        let changed = false
+        for (const song of newSongs) {
+          const trimmed = get()._trimSong(song)
+          const existing = songMap.get(song.id)
+          // Update if not present or if the existing entry has stale metadata
+          if (!existing || existing.artist === '未知歌手' || existing.album === '未知专辑' || existing.duration === 0) {
+            songMap.set(song.id, trimmed)
+            changed = true
+          }
+        }
+        if (changed) {
+          set({ library: [...songMap.values()] })
         }
       },
 
@@ -534,8 +464,63 @@ export const useMusicPlayerStore = create(
 
       clearError: () => set({ error: null }),
 
+      // ── Favorites ───────────────────────────────
+
+      loadFavorites: async () => {
+        try {
+          const res = await api.getMusicFavorites()
+          if (res?.code === 0 && Array.isArray(res.data)) {
+            set({ favoriteIds: res.data })
+          }
+        } catch { /* ignore */ }
+      },
+
+      toggleFavorite: async (songId) => {
+        try {
+          const res = await api.toggleMusicFavorite(songId)
+          if (res?.code === 0 && res.data) {
+            const ids = get().favoriteIds
+            if (res.data.liked) {
+              set({ favoriteIds: [...ids, songId] })
+            } else {
+              set({ favoriteIds: ids.filter(id => id !== songId) })
+            }
+            return res.data.liked
+          }
+        } catch { /* ignore */ }
+        return false
+      },
+
+      isFavorite: (songId) => get().favoriteIds.includes(songId),
+
+      getFavoriteSongs: () => {
+        const ids = new Set(get().favoriteIds)
+        return get().library.filter(s => ids.has(s.id))
+      },
+
+      // ── Categories ──────────────────────────────
+
+      loadCategories: async () => {
+        set({ categoriesLoading: true })
+        try {
+          const res = await api.getMusicCategories()
+          if (res?.code === 0 && res.data) {
+            set({ categories: res.data, categoriesLoading: false })
+          }
+        } catch {
+          set({ categoriesLoading: false })
+        }
+      },
+
       // View management
       setActiveView: (view) => set({ activeView: view }),
+      toggleDetail: () => set((s) => ({ showDetail: !s.showDetail })),
+      toggleDisplayMode: () => set(s => {
+        const key = s.activeView
+        const defaults = s._defaultDisplayModes
+        const current = s.displayModes[key] || defaults[key] || 'list'
+        return { displayModes: { ...s.displayModes, [key]: current === 'list' ? 'card' : 'list' } }
+      }),
       toggleDetail: () => set((s) => ({ showDetail: !s.showDetail })),
       setShowDetail: (show) => set({ showDetail: show }),
 
@@ -729,7 +714,8 @@ export const useMusicPlayerStore = create(
         try {
           const res = await api.discoverDLNADevices(timeout)
           if (res?.code === 0) {
-            set({ dlnaDevices: res.data || [] })
+            // Backend returns { devices: [...], total: N }, extract the devices array
+            set({ dlnaDevices: res.data?.devices || res.data || [] })
           }
         } catch (e) {
           console.error('Discover DLNA failed:', e)
@@ -851,6 +837,8 @@ export const useMusicPlayerStore = create(
         isMuted: state.isMuted,
         repeatMode: state.repeatMode,
         activeView: state.activeView,
+        displayModes: state.displayModes,
+        favoriteIds: state.favoriteIds || [],
         library: state.library.map((s) => ({
           id: s.id,
           title: s.title,

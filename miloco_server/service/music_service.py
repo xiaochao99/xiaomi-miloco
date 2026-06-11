@@ -30,6 +30,7 @@ from miloco_server.schema.music_schema import (
     LocalMusicScanResult,
 )
 from miloco_server.dlna.dlna_service import DLNAService, get_dlna_service
+from miloco_server.dao.music_dao import get_music_dao
 
 logger = logging.getLogger(__name__)
 
@@ -52,71 +53,26 @@ class MusicService:
         self._playback_status = PlaybackStatus()
         self._initialized = False
 
-        # Command queue for frontend polling
-        self._command_queue: List[Dict[str, Any]] = []
-        self._command_id_counter = 0
         self._file_path_map: Dict[str, str] = {}
 
-        # Persistent storage directory
+        # Database DAO for persistent storage
+        self._dao = get_music_dao()
+
+        # Directories for binary data (covers / lyrics remain as files)
         self._data_dir = Path(__file__).parent.parent / "data" / "music"
         self._data_dir.mkdir(parents=True, exist_ok=True)
-        self._songs_file = self._data_dir / "songs.json"
-        self._dirs_file = self._data_dir / "scan_dirs.json"
         self._covers_dir = self._data_dir / "covers"
         self._covers_dir.mkdir(parents=True, exist_ok=True)
         self._lyrics_dir = self._data_dir / "lyrics"
         self._lyrics_dir.mkdir(parents=True, exist_ok=True)
 
-        # Scan directories
+        # Scan directories (loaded from database)
         self._scan_dirs: List[Dict[str, Any]] = []
         self._load_scan_dirs()
 
         # 初始化示例数据 + 加载持久化的歌曲
         self._init_demo_data()
         self._load_persisted_songs()
-
-    # ─── Command Queue (for frontend polling) ──────
-
-    def push_command(self, action: str, params: Optional[Dict[str, Any]] = None) -> int:
-        """
-        Push a command to the queue for the frontend to consume.
-
-        Args:
-            action: Command action (play, pause, next, previous, play_song, search_and_play, set_volume, etc.)
-            params: Additional parameters
-
-        Returns:
-            Command ID
-        """
-        self._command_id_counter += 1
-        cmd = {
-            "id": self._command_id_counter,
-            "action": action,
-            "params": params or {},
-            "timestamp": __import__('time').time(),
-        }
-        self._command_queue.append(cmd)
-        # Keep queue bounded
-        if len(self._command_queue) > 100:
-            self._command_queue = self._command_queue[-50:]
-        logger.info("Music command queued: %s %s", action, params)
-        return cmd["id"]
-
-    def pop_commands(self, since_id: int = 0) -> List[Dict[str, Any]]:
-        """
-        Get all commands with ID > since_id. Called by frontend polling.
-
-        Args:
-            since_id: Last command ID the frontend processed
-
-        Returns:
-            List of pending commands
-        """
-        return [cmd for cmd in self._command_queue if cmd["id"] > since_id]
-
-    def clear_commands(self):
-        """Clear all commands from the queue."""
-        self._command_queue.clear()
 
     def _init_demo_data(self):
         """初始化示例数据"""
@@ -143,85 +99,95 @@ class MusicService:
     # ─── Persistent Storage ──────────────────────────
 
     def _load_persisted_songs(self):
-        """Load scanned songs from disk on startup."""
-        if not self._songs_file.exists():
-            return
+        """Load scanned songs from database on startup."""
         try:
-            import json
-            with open(self._songs_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            rows = self._dao.get_all_songs()
             count = 0
-            for item in data:
+            for row in rows:
+                lyrics = None
+                if row.get("lyrics_json"):
+                    try:
+                        import json
+                        lyrics_data = json.loads(row["lyrics_json"])
+                        lyrics = [LyricLine(time=l["time"], text=l["text"]) for l in lyrics_data]
+                    except Exception:
+                        pass
                 song = Song(
-                    id=item["id"],
-                    title=item.get("title", "未知歌曲"),
-                    artist=item.get("artist", "未知歌手"),
-                    album=item.get("album", "未知专辑"),
-                    duration=item.get("duration", 0),
-                    cover_url=item.get("cover_url", ""),
-                    audio_url=item.get("audio_url", ""),
-                    lyrics=[LyricLine(time=l["time"], text=l["text"]) for l in item.get("lyrics", [])],
+                    id=row["id"],
+                    title=row.get("title", "未知歌曲"),
+                    artist=row.get("artist", "未知歌手"),
+                    album=row.get("album", "未知专辑"),
+                    duration=row.get("duration", 0),
+                    cover_url=row.get("cover_url", ""),
+                    audio_url=row.get("audio_url", ""),
+                    lyrics=lyrics or [],
                 )
                 self._songs[song.id] = song
-                # Restore file path mapping
-                fp = item.get("file_path")
+                fp = row.get("file_path")
                 if fp:
                     self._file_path_map[song.id] = fp
                 count += 1
-            # Verify file paths still exist
+
+            # Verify file paths still exist and build file path map
             valid = 0
             for sid, fp in list(self._file_path_map.items()):
                 if os.path.exists(fp):
                     valid += 1
                 else:
+                    # File doesn't exist on disk, but keep the song in memory
+                    # so it still appears in the API list (user can see it was scanned before)
+                    # Only remove from file_path_map so streaming will fail gracefully
                     del self._file_path_map[sid]
-                    if sid in self._songs:
-                        del self._songs[sid]
-            logger.info("Loaded %d persisted songs, %d files still exist", count, valid)
+                    logger.debug("File not found for song %s: %s", sid, fp)
+            logger.info("Loaded %d persisted songs from database, %d files still exist on disk", count, valid)
         except Exception as e:
             logger.error("Failed to load persisted songs: %s", e)
 
     def _save_persisted_songs(self):
-        """Save scanned songs (local_ prefix) to disk."""
+        """Save scanned songs (local_ prefix) to database."""
         try:
-            import json
-            local_songs = [
-                {
-                    "id": s.id,
-                    "title": s.title,
-                    "artist": s.artist,
-                    "album": s.album,
-                    "duration": s.duration,
-                    "audio_url": s.audio_url,
-                    "lyrics": [{"time": l.time, "text": l.text} for l in (s.lyrics or [])],
-                    "file_path": self._file_path_map.get(s.id, ""),
-                }
-                for s in self._songs.values()
-                if s.id.startswith("local_")
-            ]
-            with open(self._songs_file, "w", encoding="utf-8") as f:
-                json.dump(local_songs, f, ensure_ascii=False, indent=2)
-            logger.info("Persisted %d local songs to disk", len(local_songs))
+            records = []
+            for s in self._songs.values():
+                if s.id.startswith("local_"):
+                    records.append({
+                        "id": s.id,
+                        "title": s.title,
+                        "artist": s.artist,
+                        "album": s.album,
+                        "duration": s.duration,
+                        "cover_url": s.cover_url or "",
+                        "audio_url": s.audio_url,
+                        "file_path": self._file_path_map.get(s.id, ""),
+                        "lyrics": [{"time": l.time, "text": l.text} for l in (s.lyrics or [])],
+                    })
+            if records:
+                self._dao.upsert_songs_batch(records)
+                logger.info("Persisted %d local songs to database", len(records))
         except Exception as e:
             logger.error("Failed to persist songs: %s", e)
 
     def _load_scan_dirs(self):
-        """Load scan directory config from disk."""
-        if not self._dirs_file.exists():
-            return
+        """Load scan directory config from database."""
         try:
-            import json
-            with open(self._dirs_file, "r", encoding="utf-8") as f:
-                self._scan_dirs = json.load(f)
+            rows = self._dao.get_all_scan_dirs()
+            self._scan_dirs = []
+            for row in rows:
+                self._scan_dirs.append({
+                    "id": row["id"],
+                    "name": row.get("name", ""),
+                    "path": row.get("path", ""),
+                    "recursive": bool(row.get("recursive", True)),
+                    "last_scan": row.get("last_scan"),
+                })
         except Exception as e:
             logger.error("Failed to load scan dirs: %s", e)
 
     def _save_scan_dirs(self):
-        """Save scan directory config to disk."""
+        """Save scan directory config to database."""
         try:
-            import json
-            with open(self._dirs_file, "w", encoding="utf-8") as f:
-                json.dump(self._scan_dirs, f, ensure_ascii=False, indent=2)
+            # Re-save all dirs (the DAO uses INSERT OR REPLACE)
+            for entry in self._scan_dirs:
+                self._dao.add_scan_dir(entry)
         except Exception as e:
             logger.error("Failed to save scan dirs: %s", e)
 
@@ -247,6 +213,7 @@ class MusicService:
         before = len(self._scan_dirs)
         self._scan_dirs = [d for d in self._scan_dirs if d["id"] != dir_id]
         if len(self._scan_dirs) < before:
+            self._dao.delete_scan_dir(dir_id)
             self._save_scan_dirs()
             return True
         return False
@@ -643,7 +610,7 @@ class MusicService:
             for d in devices
         ]
 
-    async def cast_to_dlna(self, request: DLNACastRequest) -> bool:
+    async def cast_to_dlna(self, request: DLNACastRequest, base_url: str = "http://localhost:8000") -> bool:
         """投屏到DLNA设备"""
         song = None
         if request.song_id:
@@ -658,8 +625,7 @@ class MusicService:
         # 构建完整的音频URL
         audio_url = song.audio_url
         if not audio_url.startswith("http"):
-            # 需要构建完整的URL (实际部署时需要根据服务器地址构建)
-            audio_url = f"http://localhost:8000{audio_url}"
+            audio_url = f"{base_url.rstrip('/')}{audio_url}"
 
         return await self._dlna_service.cast_to_device(
             request.device_id,
@@ -718,13 +684,8 @@ class MusicService:
                 try:
                     song = self._read_audio_metadata(audio_file)
                     if song:
-                        # 检查是否已存在（基于文件路径）
-                        existing = self._find_song_by_path(str(audio_file))
-                        if existing:
-                            scanned_songs.append(existing)
-                        else:
-                            self._songs[song.id] = song
-                            scanned_songs.append(song)
+                        self._songs[song.id] = song  # always update with fresh metadata
+                        scanned_songs.append(song)
                 except Exception as e:
                     errors.append(f"读取文件失败 {audio_file.name}: {str(e)}")
                     logger.warning("Failed to read audio file %s: %s", audio_file, e)
@@ -765,7 +726,7 @@ class MusicService:
         try:
             # 尝试导入mutagen
             try:
-                from mutagen import File
+                from mutagen import File as MutagenFile
                 from mutagen.id3 import ID3
                 from mutagen.mp3 import MP3
                 from mutagen.flac import FLAC
@@ -777,15 +738,71 @@ class MusicService:
                 has_mutagen = False
             
             if has_mutagen:
-                audio = File(str(file_path), easy=True)
+                audio = MutagenFile(str(file_path), easy=True)
+                is_easy = True
+
+                # Fallback: if easy mode returns None, try format-specific reader
                 if audio is None:
-                    # 尝试使用基本方式读取
+                    is_easy = False
+                    suffix = file_path.suffix.lower()
+                    try:
+                        if suffix == '.mp3':
+                            audio = ID3(str(file_path))
+                        elif suffix == '.flac':
+                            audio = FLAC(str(file_path))
+                        elif suffix in ['.m4a', '.mp4']:
+                            audio = MP4(str(file_path))
+                        elif suffix in ['.ogg', '.opus']:
+                            audio = OggVorbis(str(file_path))
+                    except Exception:
+                        pass
+
+                if audio is None:
                     return self._create_song_from_file(file_path)
                 
-                # 提取元数据
-                title = audio.get('title', [file_path.stem])[0] if audio.get('title') else file_path.stem
-                artist = audio.get('artist', ['未知艺术家'])[0] if audio.get('artist') else '未知艺术家'
-                album = audio.get('album', ['未知专辑'])[0] if audio.get('album') else '未知专辑'
+                # 提取元数据: handle both Easy wrappers and raw tag formats
+                suffix = file_path.suffix.lower()
+                title = file_path.stem
+                artist = '未知艺术家'
+                album = '未知专辑'
+
+                if is_easy:
+                    # Easy mode: get('title'), get('artist'), get('album')
+                    title_val = audio.get('title', None)
+                    artist_val = audio.get('artist', None)
+                    album_val = audio.get('album', None)
+                    if title_val:
+                        title = title_val[0] if isinstance(title_val, list) else str(title_val)
+                    if artist_val:
+                        artist = artist_val[0] if isinstance(artist_val, list) else str(artist_val)
+                    if album_val:
+                        album = album_val[0] if isinstance(album_val, list) else str(album_val)
+                elif hasattr(audio, 'tags') and audio.tags:
+                    tags = audio.tags
+                    # MP3 ID3 raw frames
+                    if suffix == '.mp3':
+                        title = str(tags.get('TIT2', file_path.stem))
+                        artist = str(tags.get('TPE1', '未知艺术家'))
+                        album = str(tags.get('TALB', '未知专辑'))
+                    # M4A/MP4 raw tags
+                    elif suffix in ['.m4a', '.mp4']:
+                        title = str(tags.get('\xa9nam', [file_path.stem])[0]) if '\xa9nam' in tags else file_path.stem
+                        artist = str(tags.get('\xa9ART', ['未知艺术家'])[0]) if '\xa9ART' in tags else '未知艺术家'
+                        album = str(tags.get('\xa9alb', ['未知专辑'])[0]) if '\xa9alb' in tags else '未知专辑'
+                    # FLAC / OggVorbis dict-like tags (case-insensitive)
+                    else:
+                        # Try both uppercase and lowercase keys
+                        for key in tags:
+                            kl = key.lower()
+                            if kl == 'title':
+                                val = tags[key]
+                                title = str(val[0]) if isinstance(val, list) else str(val)
+                            elif kl == 'artist':
+                                val = tags[key]
+                                artist = str(val[0]) if isinstance(val, list) else str(val)
+                            elif kl == 'album':
+                                val = tags[key]
+                                album = str(val[0]) if isinstance(val, list) else str(val)
                 
                 # 获取时长
                 duration = 0.0
@@ -802,7 +819,8 @@ class MusicService:
                 cover_url = self._save_cover(file_path, song_id)
 
                 # 提取歌词并保存到磁盘
-                lyrics = self._extract_lyrics(file_path, audio)
+                lyrics_obj = audio if is_easy else MutagenFile(str(file_path), easy=True) or audio
+                lyrics = self._extract_lyrics(file_path, lyrics_obj)
                 if lyrics:
                     self._save_lyrics(song_id, lyrics)
                     logger.info("Lyrics found for %s: %d lines", file_path.name, len(lyrics))
@@ -843,6 +861,16 @@ class MusicService:
             self._file_path_map = {}
         self._file_path_map[song_id] = str(file_path)
 
+        # 尝试至少获取时长
+        duration = 0.0
+        try:
+            from mutagen import File as MutagenFile
+            audio = MutagenFile(str(file_path))
+            if audio and hasattr(audio, 'info') and hasattr(audio.info, 'length'):
+                duration = audio.info.length
+        except Exception:
+            pass
+
         cover_url = self._save_cover(file_path, song_id)
 
         return Song(
@@ -850,7 +878,7 @@ class MusicService:
             title=file_path.stem,
             artist='未知艺术家',
             album='未知专辑',
-            duration=0.0,
+            duration=duration,
             cover_url=cover_url,
             audio_url=audio_url,
             lyrics=None,
@@ -967,7 +995,6 @@ class MusicService:
             return [LyricLine(time=l["time"], text=l["text"]) for l in data]
         except Exception as e:
             logger.debug("Failed to load lyrics for %s: %s", song_id, e)
-            return None
             return None
 
     def _extract_lyrics(self, file_path: Path, audio) -> Optional[List[LyricLine]]:
@@ -1101,16 +1128,6 @@ class MusicService:
                 t = mins * 60 + secs + ms / 1000.0
                 result.append(LyricLine(time=t, text=lyric_text))
         return sorted(result, key=lambda l: l.time) if result else None
-
-    def _find_song_by_path(self, file_path: str) -> Optional[Song]:
-        """根据文件路径查找已存在的歌曲"""
-        if not hasattr(self, '_file_path_map'):
-            return None
-        
-        for song_id, path in self._file_path_map.items():
-            if path == file_path:
-                return self._songs.get(song_id)
-        return None
 
     def _update_local_playlist(self, songs: List[Song], scan_path: str):
         """更新本地音乐播放列表"""

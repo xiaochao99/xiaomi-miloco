@@ -7,7 +7,10 @@ import DetailView from '@/components/MusicPlayer/DetailView'
 import RecommendView from '@/components/MusicPlayer/RecommendView'
 import RankingView from '@/components/MusicPlayer/RankingView'
 import LocalMusicScanner from '@/components/MusicPlayer/LocalMusicScanner'
+import CategoryView from '@/components/MusicPlayer/CategoryView'
+import SearchView from '@/components/MusicPlayer/SearchView'
 import MusicSettings from '@/components/MusicPlayer/MusicSettings'
+import LazyImage from '@/components/MusicPlayer/LazyImage'
 import styles from './index.module.less'
 
 // ─── SVG Icons ─────────────────────────────────────
@@ -40,11 +43,7 @@ const PlaylistNavIcon = () => (
   </svg>
 )
 
-const LocalIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
-  </svg>
-)
+
 
 const MusicIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -61,13 +60,32 @@ const SettingsIcon = () => (
   </svg>
 )
 
+const NoteIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+  </svg>
+)
+const HeartNavIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+  </svg>
+)
+const DiscIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/>
+  </svg>
+)
+
 // ─── Sidebar Nav Items ─────────────────────────────
 
 const NAV_ITEMS = [
   { key: 'discover', label: '发现音乐', Icon: DiscoverIcon },
   { key: 'ranking', label: '排行榜', Icon: RankingIcon },
   { key: 'search', label: '搜索', Icon: SearchIcon },
-  { key: 'local', label: '本地音乐', Icon: LocalIcon },
+  { key: 'local', label: '歌曲', Icon: NoteIcon },
+  { key: 'artists', label: '歌手', Icon: NoteIcon },
+  { key: 'albums', label: '专辑', Icon: DiscIcon },
+  { key: 'favorites', label: '我的喜欢', Icon: HeartNavIcon },
   { key: 'playlist', label: '播放列表', Icon: PlaylistNavIcon },
 ]
 
@@ -80,10 +98,19 @@ const MusicPlayer = () => {
     songs, currentSong, playbackState,
     activeView, setActiveView,
     showDetail, setShowDetail,
+    displayModes, toggleDisplayMode,
   } = useMusicPlayerStore()
+  const curMode = displayModes[activeView] || 'list'
 
   const [searchValue, setSearchValue] = useState('')
   const [showSearchResults, setShowSearchResults] = useState(false)
+
+  // Load persisted songs and favorites from backend on mount
+  useEffect(() => {
+    const store = useMusicPlayerStore.getState()
+    store.loadPlaylistFromBackend()
+    store.loadFavorites()
+  }, [])
 
   useEffect(() => {
     if (error) {
@@ -142,27 +169,16 @@ const MusicPlayer = () => {
       case 'ranking':
         return <RankingView />
       case 'search':
-        return (
-          <div className={styles.searchContent}>
-            {showSearchResults && (
-              <div className={styles.searchHeader}>
-                <span className={styles.searchResultTitle}>
-                  搜索 "{searchKeyword}" 的结果
-                </span>
-                <span className={styles.searchResultCount}>
-                  {searchResults.length} 首
-                </span>
-              </div>
-            )}
-            <PlaylistView
-              songs={showSearchResults ? searchResults : []}
-              onSongSelect={handleSongSelect}
-              showSearch={showSearchResults}
-            />
-          </div>
-        )
+        return <SearchView keyword={searchKeyword} />
       case 'local':
         return <LocalMusicScanner />
+
+      case 'artists':
+        return <CategoryView category="artists" />
+      case 'albums':
+        return <CategoryView category="albums" />
+      case 'favorites':
+        return <CategoryView category="favorites" />
       case 'settings':
         return <MusicSettings />
       case 'playlist':
@@ -239,7 +255,7 @@ const MusicPlayer = () => {
             <div className={styles.sidebarFooter}>
               <div className={styles.miniSongInfo}>
                 {currentSong.cover_url ? (
-                  <img src={currentSong.cover_url} alt="" className={styles.miniCover} />
+                  <LazyImage src={currentSong.cover_url} alt="" className={styles.miniCover} key={currentSong.cover_url} rootMargin="0px" />
                 ) : (
                   <div className={styles.miniCoverPlaceholder}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -283,6 +299,26 @@ const MusicPlayer = () => {
                 )}
               </div>
             </div>
+            <button
+              className={styles.viewToggle}
+              onClick={toggleDisplayMode}
+              title={curMode === 'list' ? '切换卡片视图' : '切换列表视图'}
+            >
+              {curMode === 'list' ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/>
+                  <rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/>
+                  <rect x="14" y="14" width="7" height="7" rx="1"/>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="3" y1="6" x2="21" y2="6"/>
+                  <line x1="3" y1="12" x2="21" y2="12"/>
+                  <line x1="3" y1="18" x2="21" y2="18"/>
+                </svg>
+              )}
+            </button>
           </header>
 
           {/* Main Content */}

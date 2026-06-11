@@ -104,6 +104,21 @@ class SQLiteConnector:
                         self._create_recording_segments_table(conn)
                         tables_created.append("recording_segments")
 
+                    if "music_songs" not in existing_tables:
+                        logger.info("Music songs table not found, creating...")
+                        self._create_music_songs_table(conn)
+                        tables_created.append("music_songs")
+
+                    if "music_scan_dirs" not in existing_tables:
+                        logger.info("Music scan dirs table not found, creating...")
+                        self._create_music_scan_dirs_table(conn)
+                        tables_created.append("music_scan_dirs")
+
+                    if "music_favorites" not in existing_tables:
+                        logger.info("Music favorites table not found, creating...")
+                        self._create_music_favorites_table(conn)
+                        tables_created.append("music_favorites")
+
                     # If new tables were created, commit transaction
                     if tables_created:
                         conn.commit()
@@ -139,6 +154,9 @@ class SQLiteConnector:
         self._create_chat_history_table(conn)
         self._create_recording_config_table(conn)
         self._create_recording_segments_table(conn)
+        self._create_music_songs_table(conn)
+        self._create_music_scan_dirs_table(conn)
+        self._create_music_favorites_table(conn)
         conn.commit()
         logger.info("Database table structure created successfully")
 
@@ -380,6 +398,59 @@ class SQLiteConnector:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_recording_segments_start_time ON recording_segments(start_time)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_recording_segments_camera_time ON recording_segments(camera_id, start_time)")
         logger.info("Recording segments table created successfully")
+
+    def _create_music_songs_table(self, conn: sqlite3.Connection) -> None:
+        """Create music songs table for storing scanned local music metadata"""
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS music_songs (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                artist TEXT DEFAULT '未知歌手',
+                album TEXT DEFAULT '未知专辑',
+                duration REAL DEFAULT 0.0,
+                cover_url TEXT DEFAULT '',
+                audio_url TEXT NOT NULL,
+                file_path TEXT DEFAULT '',
+                lyrics_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_music_songs_title ON music_songs(title)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_music_songs_artist ON music_songs(artist)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_music_songs_file_path ON music_songs(file_path)")
+        logger.info("Music songs table created successfully")
+
+    def _create_music_scan_dirs_table(self, conn: sqlite3.Connection) -> None:
+        """Create music scan directories table for storing scan directory configs"""
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS music_scan_dirs (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                path TEXT NOT NULL,
+                recursive BOOLEAN DEFAULT 1,
+                last_scan TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_music_scan_dirs_path ON music_scan_dirs(path)")
+        logger.info("Music scan dirs table created successfully")
+
+    def _create_music_favorites_table(self, conn: sqlite3.Connection) -> None:
+        """Create music favorites table for storing liked songs"""
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS music_favorites (
+                song_id TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (song_id)
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_music_favorites_song_id ON music_favorites(song_id)")
+        logger.info("Music favorites table created successfully")
 
     @contextmanager
     def get_connection(self):

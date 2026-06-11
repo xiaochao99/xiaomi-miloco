@@ -194,3 +194,131 @@
   font-size: 12px !important;
   color: rgba(255, 255, 255, 0.25) !important;
 }
+
+// ─── Card Grid ──────────────────────────────────────
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 14px;
+  flex: 1;
+  overflow-y: auto;
+  align-content: start;
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+}
+
+.cardItem {
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  &:hover { background: rgba(255,255,255,0.08); }
+}
+.cardItemActive {
+  background: rgba(92, 213, 229, 0.08);
+  .cardTitle { color: @accent; }
+}
+
+.cardCover {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 10px;
+  img { width: 100%; height: 100%; object-fit: cover; }
+}
+
+.cardCoverPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: @bg-fill;
+  color: rgba(255,255,255,0.1);
+}
+
+.cardPlayBtn {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.cardItem:hover .cardPlayBtn { opacity: 1; }
+.cardPlayBtnActive { opacity: 1 !important; background: @accent; }
+
+.cardInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 13px;
+  color: @text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s;
+}
+
+.cardArtist {
+  font-size: 11px;
+  color: @text-placeholder;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.cardHeart {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cardItem:hover .cardHeart, .cardHeartLiked { opacity: 1; }
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.cardAddBtn {
+  background: none; border: none; cursor: pointer; padding: 4px;
+  color: var(--text-tertiary, #888); opacity: 0; transition: opacity 0.15s;
+  &:hover { color: @accent; opacity: 1; }
+}
+.cardItem:hover .cardAddBtn { opacity: 0.6; }
+
+.addToListBtn {
+  background: none; border: none; cursor: pointer; padding: 4px;
+  color: var(--text-tertiary, #888); opacity: 0.5; transition: opacity 0.15s;
+  flex-shrink: 0;
+  &:hover { opacity: 1; color: @accent; }
+}

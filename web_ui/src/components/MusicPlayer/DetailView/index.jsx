@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react'
 import { Empty } from 'antd'
 import { useMusicPlayerStore } from '@/stores/musicPlayerStore'
+import LazyImage from '@/components/MusicPlayer/LazyImage'
 import styles from './index.module.less'
 
 const CloseIcon = () => (
@@ -61,7 +62,7 @@ const DetailView = ({ onClose }) => {
       {/* Blurred Background */}
       {coverUrl && (
         <div className={styles.bgBlur}>
-          <img src={coverUrl} alt="" />
+          <LazyImage src={coverUrl} alt="" />
         </div>
       )}
 
@@ -79,7 +80,7 @@ const DetailView = ({ onClose }) => {
             <div className={styles.discOuter}>
               <div className={`${styles.discInner} ${isPlaying ? styles.spinning : ''}`}>
                 {coverUrl ? (
-                  <img src={coverUrl} alt="" className={styles.discImg} />
+                  <LazyImage src={coverUrl} alt="" className={styles.discImg} key={coverUrl} />
                 ) : (
                   <div className={styles.discPlaceholder}>
                     <MusicIcon />

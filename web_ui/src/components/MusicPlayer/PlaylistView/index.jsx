@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react'
 import { Empty } from 'antd'
 import { useMusicPlayerStore } from '@/stores/musicPlayerStore'
+import LazyImage from '@/components/MusicPlayer/LazyImage'
 import styles from './index.module.less'
 
 const formatDuration = (seconds) => {
@@ -49,9 +50,11 @@ const getSongSource = (id) => {
 }
 
 const PlaylistView = ({ songs, onSongSelect, showSearch }) => {
-  const { currentSong, playbackState, playSong, removeFromPlaylist, clearPlaylist } = useMusicPlayerStore()
+  const { currentSong, playbackState, playSong, removeFromPlaylist, clearPlaylist, displayModes } = useMusicPlayerStore()
+  const displayMode = displayModes['playlist'] || 'list'
   const [selected, setSelected] = useState(new Set())
   const [batchMode, setBatchMode] = useState(false)
+  const isCard = displayMode === 'card' && !showSearch
 
   const isCurrent = (song) => currentSong?.id === song.id
   const isPlaying = (song) => isCurrent(song) && playbackState === 'playing'
@@ -176,8 +179,40 @@ const PlaylistView = ({ songs, onSongSelect, showSearch }) => {
         </div>
       )}
 
+      {/* ─── Card View ──────────────────────────── */}
+      {isCard && (
+        <div className={styles.cardGrid}>
+          {songs.map((song, index) => {
+            const isCurrent = currentSong?.id === song.id
+            return (
+              <div key={`${song.id}-${index}`}
+                className={`${styles.cardItem} ${isCurrent ? styles.cardItemActive : ''}`}
+                onClick={() => onSongSelect?.(song)}>
+                <div className={styles.cardCover}>
+                  {song.cover_url ? (
+                    <LazyImage src={song.cover_url} alt={song.title}
+                      fallback={<div className={styles.cardCoverPlaceholder}><MusicIcon/></div>} />
+                  ) : (
+                    <div className={styles.cardCoverPlaceholder}><MusicIcon/></div>
+                  )}
+                </div>
+                <div className={styles.cardInfo}>
+                  <div className={styles.cardTitle}>{song.title}</div>
+                  <div className={styles.cardArtist}>{song.artist}</div>
+                </div>
+                {!showSearch && (
+                  <button className={styles.cardRemoveBtn} onClick={(e) => { e.stopPropagation(); removeFromPlaylist(song.id) }} title="移除">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* ─── Table Header ────────────────────────── */}
-      <div className={styles.tableHeader}>
+      {!isCard && <div className={styles.tableHeader}>
         {batchMode && <div className={styles.colCheck} />}
         <div className={styles.colIndex}>#</div>
         <div className={styles.colTitle}>歌曲</div>
@@ -185,10 +220,10 @@ const PlaylistView = ({ songs, onSongSelect, showSearch }) => {
         <div className={styles.colAlbum}>专辑</div>
         <div className={styles.colDuration}>时长</div>
         <div className={styles.colAction}>操作</div>
-      </div>
+      </div>}
 
       {/* ─── Table Body ──────────────────────────── */}
-      <div className={styles.tableBody}>
+      {!isCard && <div className={styles.tableBody}>
         {songs.map((song, index) => {
           const isSelected = selected.has(song.id)
           return (
@@ -232,7 +267,16 @@ const PlaylistView = ({ songs, onSongSelect, showSearch }) => {
               {/* Title + Source tag */}
               <div className={styles.colTitle}>
                 {song.cover_url ? (
-                  <img src={song.cover_url} alt="" className={styles.songCover} />
+                  <LazyImage
+                    src={song.cover_url}
+                    alt={song.title}
+                    className={styles.songCover}
+                    fallback={
+                      <div className={styles.songCoverPlaceholder}>
+                        <MusicIcon />
+                      </div>
+                    }
+                  />
                 ) : (
                   <div className={styles.songCoverPlaceholder}>
                     <MusicIcon />
@@ -266,7 +310,7 @@ const PlaylistView = ({ songs, onSongSelect, showSearch }) => {
             </div>
           )
         })}
-      </div>
+      </div>}
     </div>
   )
 }

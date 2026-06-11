@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback } from 'react'
 import { Spin, Tooltip } from 'antd'
+import LazyImage from '@/components/MusicPlayer/LazyImage'
 import {
   PlayCircleFilled,
   PlayCircleOutlined,
@@ -106,7 +107,19 @@ const RecommendView = () => {
 
                   <div className={styles.songCover}>
                     {song.cover_url ? (
-                      <img src={song.cover_url} alt="" className={styles.coverImg} />
+                      <LazyImage
+                        src={song.cover_url}
+                        alt={song.title}
+                        className={styles.coverImg}
+                        fallback={
+                          <div className={styles.coverPlaceholder}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <circle cx="12" cy="12" r="10" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          </div>
+                        }
+                      />
                     ) : (
                       <div className={styles.coverPlaceholder}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">

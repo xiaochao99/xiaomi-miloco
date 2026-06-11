@@ -317,6 +317,8 @@ class DLNAService:
                 control_url = match.group(2)
                 # 构建完整URL
                 if not control_url.startswith("http"):
+                    if not control_url.startswith("/"):
+                        control_url = "/" + control_url
                     control_url = f"http://{host}:{port}{control_url}"
                 services[service_type] = control_url
 

@@ -57,7 +57,8 @@ const DLNADeviceSelector = () => {
 
   const handleDeviceSelect = async (device) => {
     selectDLNADevice(device)
-    await castToDLNA(device.udn || device.id)
+    const songId = currentSong?.id || null
+    await castToDLNA(device.udn || device.id, songId)
     setOpen(false)
   }
 

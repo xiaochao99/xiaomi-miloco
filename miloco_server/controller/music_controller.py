@@ -9,7 +9,7 @@ Music Controller - REST API endpoints for music player module.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Query, Body, Response
+from fastapi import APIRouter, Body, Response, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from miloco_server.schema.music_schema import (
@@ -27,6 +27,7 @@ from miloco_server.schema.music_schema import (
 )
 from miloco_server.schema.common_schema import NormalResponse
 from miloco_server.service.music_service import get_music_service
+from miloco_server.dao.music_dao import get_music_dao
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,55 @@ async def search_songs(request: MusicSearchRequest):
     except Exception as e:
         logger.error("Failed to search songs: %s", e)
         return NormalResponse(code=500, message=f"搜索失败: {str(e)}", data=None)
+
+
+# ─── Favorites ────────────────────────────────────
+
+@router.get("/favorites", response_model=NormalResponse)
+async def get_favorites():
+    """获取收藏歌曲ID列表"""
+    try:
+        dao = get_music_dao()
+        fav_ids = dao.get_favorites()
+        return NormalResponse(code=0, message="success", data=fav_ids)
+    except Exception as e:
+        logger.error("Failed to get favorites: %s", e)
+        return NormalResponse(code=500, message=str(e), data=None)
+
+
+@router.post("/favorites/{song_id}", response_model=NormalResponse)
+async def toggle_favorite(song_id: str):
+    """切换歌曲收藏状态"""
+    try:
+        dao = get_music_dao()
+        liked = dao.toggle_favorite(song_id)
+        return NormalResponse(code=0, message="success", data={"song_id": song_id, "liked": liked})
+    except Exception as e:
+        logger.error("Failed to toggle favorite: %s", e)
+        return NormalResponse(code=500, message=str(e), data=None)
+
+
+# ─── Categories ───────────────────────────────────
+
+@router.get("/categories", response_model=NormalResponse)
+async def get_categories():
+    """获取分类汇总：按歌手/专辑分组（仅返回名称+数量，前端从 library 过滤）"""
+    try:
+        service = get_music_service()
+        songs = service.get_all_songs()
+        artist_count = {}
+        album_count = {}
+        for s in songs:
+            artist = s.artist if s.artist != '未知艺术家' else '未知艺术家'
+            album = s.album if s.album != '未知专辑' else '未知专辑'
+            artist_count[artist] = artist_count.get(artist, 0) + 1
+            album_count[album] = album_count.get(album, 0) + 1
+        artists = [{"name": k, "count": v} for k, v in sorted(artist_count.items())]
+        albums = [{"name": k, "count": v} for k, v in sorted(album_count.items())]
+        return NormalResponse(code=0, message="success", data={"artists": artists, "albums": albums})
+    except Exception as e:
+        logger.error("Failed to get categories: %s", e)
+        return NormalResponse(code=500, message=str(e), data=None)
 
 
 @router.get("/playlists", response_model=NormalResponse)
@@ -174,13 +224,14 @@ async def discover_dlna_devices(request: DLNADiscoverRequest = Body(default=DLNA
 
 
 @router.post("/dlna/cast", response_model=NormalResponse)
-async def cast_to_dlna(request: DLNACastRequest):
+async def cast_to_dlna(request: DLNACastRequest, req: Request):
     """
     投屏音频到DLNA设备
     """
     try:
         service = get_music_service()
-        success = await service.cast_to_dlna(request)
+        base_url = str(req.base_url).rstrip('/')
+        success = await service.cast_to_dlna(request, base_url)
         if success:
             return NormalResponse(code=0, message="投屏成功", data=None)
         else:
@@ -296,37 +347,45 @@ async def scan_local_music(request: LocalMusicScanRequest):
 
 
 @router.get("/stream/{song_id}")
-async def stream_audio(song_id: str):
+async def stream_audio(song_id: str, request: Request):
     """
-    流式播放音频文件
+    流式播放音频文件（支持 HTTP Range 分段传输）
     
     - **song_id**: 歌曲ID
     """
     try:
+        import os
+        import mimetypes
+        from pathlib import Path as FilePath
+
         service = get_music_service()
         file_path = service.get_audio_file_path(song_id)
         
         if not file_path:
-            # 检查是否是演示歌曲
             song = service.get_song(song_id)
             if song and song.audio_url.startswith('/api/music/stream/'):
                 return NormalResponse(code=404, message="演示歌曲不支持流媒体播放", data=None)
             return NormalResponse(code=404, message="歌曲文件不存在", data=None)
         
-        import os
-        if not os.path.exists(file_path):
+        fp = FilePath(file_path)
+        if not fp.exists() or not fp.is_file():
             return NormalResponse(code=404, message="音频文件不存在", data=None)
-        
-        # 根据文件扩展名设置MIME类型
-        import mimetypes
-        mime_type, _ = mimetypes.guess_type(file_path)
+
+        file_size = fp.stat().st_size
+        mime_type, _ = mimetypes.guess_type(str(fp))
         if not mime_type:
             mime_type = "audio/mpeg"
-        
+
+        # Handle HTTP Range request for efficient streaming
+        range_header = request.headers.get("range")
+        if range_header:
+            return _stream_range_response(fp, file_size, mime_type, range_header)
+
+        # No range header — return full file
         return FileResponse(
-            path=file_path,
+            path=str(fp),
             media_type=mime_type,
-            filename=os.path.basename(file_path),
+            filename=fp.name,
         )
     except Exception as e:
         logger.error("Failed to stream audio: %s", e)
@@ -428,52 +487,6 @@ async def get_lyric(song_id: str):
         return Response(status_code=500)
 
 
-@router.get("/command", response_model=NormalResponse)
-async def get_music_commands(since_id: int = Query(0, description="Last processed command ID")):
-    """
-    获取待处理的音乐控制命令 (前端轮询使用)
-    MCP 工具将命令写入队列，前端通过此接口轮询获取并执行
-    """
-    try:
-        service = get_music_service()
-        commands = service.pop_commands(since_id)
-        # Always return the max known command ID so the client advances
-        cmd_ids = [cmd["id"] for cmd in commands]
-        max_id = max(cmd_ids + [since_id, service._command_id_counter])
-        return NormalResponse(
-            code=0,
-            message="success",
-            data={
-                "commands": commands,
-                "last_id": max_id,
-            }
-        )
-    except Exception as e:
-        logger.error("Failed to get music commands: %s", e)
-        return NormalResponse(code=500, message=f"获取命令失败: {str(e)}", data=None)
-
-
-@router.post("/command", response_model=NormalResponse)
-async def push_music_command(
-    action: str = Body(..., embed=True),
-    params: dict = Body(default={}, embed=True),
-):
-    """
-    推送音乐控制命令到队列 (MCP 工具使用)
-    """
-    try:
-        service = get_music_service()
-        cmd_id = service.push_command(action, params)
-        return NormalResponse(
-            code=0,
-            message="命令已推送",
-            data={"command_id": cmd_id}
-        )
-    except Exception as e:
-        logger.error("Failed to push music command: %s", e)
-        return NormalResponse(code=500, message=f"推送命令失败: {str(e)}", data=None)
-
-
 @router.get("/playlists/{playlist_id}", response_model=NormalResponse)
 async def get_playlist(playlist_id: str):
     """
@@ -515,3 +528,51 @@ async def start_watcher():
 async def stop_watcher():
     """停止文件监控"""
     return NormalResponse(code=0, message="文件监控已停止", data=None)
+
+
+# ─── Streaming helpers ─────────────────────────────
+
+import re
+
+_RANGE_RE = re.compile(r"bytes=(\d+)-(\d*)")
+
+def _stream_range_response(fp: "Path", file_size: int, mime_type: str, range_header: str):
+    """Handle HTTP Range request for partial content streaming."""
+    match = _RANGE_RE.search(range_header)
+    if not match:
+        return Response(status_code=416, content="Invalid range header")
+
+    start = int(match.group(1))
+    end_str = match.group(2)
+    if end_str:
+        end = min(int(end_str), file_size - 1)
+    else:
+        end = file_size - 1
+
+    if start >= file_size or end >= file_size or start > end:
+        return Response(status_code=416, content="Range not satisfiable")
+
+    chunk_size = end - start + 1
+
+    def file_iterator():
+        with open(str(fp), "rb") as f:
+            f.seek(start)
+            remaining = chunk_size
+            while remaining > 0:
+                buf_size = min(64 * 1024, remaining)  # 64KB chunks
+                data = f.read(buf_size)
+                if not data:
+                    break
+                yield data
+                remaining -= len(data)
+
+    return StreamingResponse(
+        file_iterator(),
+        status_code=206,
+        media_type=mime_type,
+        headers={
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(chunk_size),
+        },
+    )

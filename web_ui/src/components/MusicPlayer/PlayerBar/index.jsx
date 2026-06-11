@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Tooltip } from 'antd'
 import { useMusicPlayerStore, REPEAT_MODES } from '@/stores/musicPlayerStore'
+import LazyImage from '@/components/MusicPlayer/LazyImage'
 import DLNADeviceSelector from '@/components/MusicPlayer/DLNADeviceSelector'
 import styles from './index.module.less'
 
@@ -117,9 +118,11 @@ const PlayerBar = ({ onShowDetail, onTogglePlaylist }) => {
     togglePlay, next, previous, seek,
     setVolume, toggleMute, cycleRepeatMode,
     songs,
+    favoriteIds,
+    toggleFavorite,
   } = useMusicPlayerStore()
 
-  const [liked, setLiked] = useState(false)
+  const liked = currentSong?.id ? favoriteIds.includes(currentSong.id) : false
   const [showVolume, setShowVolume] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const progressRef = useRef(null)
@@ -179,7 +182,7 @@ const PlayerBar = ({ onShowDetail, onTogglePlaylist }) => {
           onClick={() => hasSong && onShowDetail?.()}
         >
           {coverUrl ? (
-            <img src={coverUrl} alt="" className={styles.albumImg} />
+            <LazyImage src={coverUrl} alt="" className={styles.albumImg} key={coverUrl} rootMargin="0px" />
           ) : (
             <div className={styles.albumPlaceholder}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -198,7 +201,7 @@ const PlayerBar = ({ onShowDetail, onTogglePlaylist }) => {
         <Tooltip title={liked ? '取消喜欢' : '喜欢'}>
           <button
             className={styles.iconBtn}
-            onClick={() => setLiked(!liked)}
+            onClick={() => currentSong?.id && toggleFavorite(currentSong.id)}
             disabled={!hasSong}
           >
             <HeartIcon filled={liked} />

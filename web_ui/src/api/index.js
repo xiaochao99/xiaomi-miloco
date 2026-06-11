@@ -226,9 +226,14 @@ export const getMusicWatcherStatus = () => getApi('/api/music/watcher/status');
 export const startMusicWatcher = () => postApi('/api/music/watcher/start');
 export const stopMusicWatcher = () => postApi('/api/music/watcher/stop');
 
+
+
+// Favorites API
+export const getMusicFavorites = () => getApi('/api/music/favorites');
+export const toggleMusicFavorite = (songId) => postApi(`/api/music/favorites/${songId}`);
+
+// Categories API
+export const getMusicCategories = () => getApi('/api/music/categories');
+
 // AI Music Control API - 用于AI对话控制音乐播放
 export const aiControlMusic = (data) => postApi('/api/music/ai/control', data);
-
-// Music Command Queue API (MCP → Frontend bridge)
-export const getMusicCommands = (sinceId = 0) => getApi(`/api/music/command?since_id=${sinceId}`);
-export const pushMusicCommand = (action, params = {}) => postApi('/api/music/command', { action, params });
