@@ -862,6 +862,8 @@ export default {
     updateFailed: '更新失败',
     confirmUpdate: '确认更新',
     confirmUpdateDesc: '更新过程中服务会短暂重启，是否继续？',
+    localUpload: '本地上传',
+    invalidPackageFormat: '仅支持 .tar.gz 格式的更新包',
     updateLog: '更新日志',
     noUpdateLog: '暂无更新日志',
     rollbackToBackup: '回滚到备份',

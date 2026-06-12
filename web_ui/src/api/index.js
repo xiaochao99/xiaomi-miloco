@@ -194,6 +194,12 @@ export const getRecordingSegmentsDurations = (segmentIds) =>
 export const getUpdateStatus = () => getApi('/api/system/update/status');
 export const checkForUpdates = () => getApi('/api/system/update/check');
 export const applyUpdate = (version = null, updateConfig = false) => postApi('/api/system/update/apply', { version, update_config: updateConfig });
+export const uploadUpdatePackage = (file, updateConfig = false) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('update_config', updateConfig);
+  return postApi('/api/system/update/upload', formData);
+};
 export const getUpdateLog = () => getApi('/api/system/update/log');
 export const listBackups = () => getApi('/api/system/backups');
 export const rollbackToBackup = (backupName) => postApi('/api/system/rollback', { backup_name: backupName });
