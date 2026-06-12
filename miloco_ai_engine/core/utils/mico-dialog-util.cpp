@@ -86,6 +86,7 @@ void apply_chat_templates(common_chat_params& formatted_chat, common_chat_templa
 
 bool ready_modal_bitmaps(std::vector<std::map<const unsigned char*, int32_t>>& modal_prts,
                          common_chat_templates_inputs& tmpl_inputs, LlamaMicoContext* context, LlamaSeqState& state) {
+    (void) tmpl_inputs; // unused in new API — images must come via modal_prts
     if (!modal_prts.empty()) {
         for (const auto& modal : modal_prts) {
             for (const auto& [p, len] : modal) {
@@ -94,20 +95,6 @@ bool ready_modal_bitmaps(std::vector<std::map<const unsigned char*, int32_t>>& m
                     return false;
                 }
                 state.bitmaps.entries.emplace_back(bitmap_ptr);
-            }
-        }
-    } else {
-        // Images converted from base64
-        for (const auto& m : tmpl_inputs.messages) {
-            for (const auto& p : m.content_parts) {
-                for (const auto& img : p.images) {
-                    auto bitmap_ptr = mtmd_helper_bitmap_init_from_buf(
-                        context->ctx_vision.get(), reinterpret_cast<const unsigned char*>(img.c_str()), img.size(), false);
-                    if (!bitmap_ptr) {
-                        return false;
-                    }
-                    state.bitmaps.entries.emplace_back(bitmap_ptr);
-                }
             }
         }
     }
