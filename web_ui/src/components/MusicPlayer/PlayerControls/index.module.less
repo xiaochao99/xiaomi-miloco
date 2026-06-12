@@ -1,8 +1,4 @@
-@netease-red: #ec4141;
-@netease-red-light: rgba(236, 65, 65, 0.8);
-@netease-red-dark: #c73535;
-@primary-teal: #00bdc3;
-
+﻿
 .playerControls {
   display: flex;
   flex-direction: column;
@@ -17,7 +13,7 @@
 
 .timeDisplay {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--music-text-secondary);
   min-width: 38px;
   text-align: center;
   font-variant-numeric: tabular-nums;
@@ -32,13 +28,13 @@
   margin: 0;
 
   :global(.ant-slider-rail) {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--music-border-color);
     height: 3px;
     border-radius: 2px;
   }
 
   :global(.ant-slider-track) {
-    background: linear-gradient(to right, @primary-teal, @netease-red);
+    background: linear-gradient(to right, var(--music-accent), var(--music-red));
     height: 3px;
     border-radius: 2px;
     transition: width 0.1s linear;
@@ -49,7 +45,7 @@
     height: 12px;
     margin-top: -4.5px;
     border: 2px solid #fff;
-    background: @netease-red;
+    background: var(--music-red);
     box-shadow: 0 0 8px rgba(236, 65, 65, 0.5);
     opacity: 0;
     transition: opacity 0.2s, transform 0.2s;
@@ -100,12 +96,12 @@
   align-items: center;
   justify-content: center;
   font-size: 16px;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--music-text-regular);
   transition: all 0.2s;
 
   &:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.08);
+    color: var(--music-text-primary);
+    background: var(--music-border-color);
   }
 
   &:active {
@@ -113,9 +109,9 @@
   }
 
   &:disabled {
-    color: rgba(255, 255, 255, 0.2);
+    color: var(--music-text-placeholder);
     &:hover {
-      color: rgba(255, 255, 255, 0.2);
+      color: var(--music-text-placeholder);
       background: transparent;
     }
   }
@@ -130,19 +126,19 @@
   justify-content: center;
   font-size: 16px;
   transition: all 0.25s;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--music-text-secondary);
 
   &:hover {
-    color: #fff;
-    background: rgba(255, 255, 255, 0.08);
+    color: var(--music-text-primary);
+    background: var(--music-border-color);
   }
 
   &.listActive {
-    color: @primary-teal;
+    color: var(--music-accent);
   }
 
   &.singleActive {
-    color: @netease-red;
+    color: var(--music-red);
     background: rgba(236, 65, 65, 0.12);
     box-shadow: 0 0 10px rgba(236, 65, 65, 0.2);
   }
@@ -162,8 +158,8 @@
   align-items: center;
   justify-content: center;
   font-size: 24px;
-  color: #fff;
-  background: @netease-red;
+  color: var(--music-text-primary);
+  background: var(--music-red);
   border: none;
   box-shadow: 0 4px 16px rgba(236, 65, 65, 0.4);
   transition: all 0.2s;
@@ -171,23 +167,23 @@
   line-height: 52px;
 
   &:hover {
-    background: @netease-red-light;
-    color: #fff !important;
+    background: var(--music-red-light);
+    color: rgba(255, 255, 255, 0.4) !important;
     transform: scale(1.06);
     box-shadow: 0 6px 24px rgba(236, 65, 65, 0.5);
   }
 
   &:active {
     transform: scale(0.94);
-    background: @netease-red-dark;
+    background: var(--music-red-dark);
   }
 
   &:disabled {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--music-text-placeholder);
     box-shadow: none;
-    color: rgba(255, 255, 255, 0.4) !important;
+    color: var(--music-text-secondary) !important;
     &:hover {
-      background: rgba(255, 255, 255, 0.15);
+      background: var(--music-text-placeholder);
       transform: none;
     }
   }
@@ -226,9 +222,9 @@
 }
 
 .volumeSliderInner {
-  background: rgba(30, 30, 30, 0.97);
+  background: var(--music-bg-card);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--music-border-color);
   border-radius: 12px;
   padding: 14px 16px;
   width: 160px;
@@ -239,7 +235,7 @@
 }
 
 .volumeValue {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--music-text-secondary);
   font-size: 11px;
   min-width: 28px;
   text-align: right;
@@ -252,13 +248,13 @@
   margin: 0;
 
   :global(.ant-slider-rail) {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--music-border-color);
     height: 4px;
     border-radius: 2px;
   }
 
   :global(.ant-slider-track) {
-    background: linear-gradient(to right, @primary-teal, #fff);
+    background: linear-gradient(to right, var(--music-accent), #fff);
     height: 4px;
     border-radius: 2px;
   }
@@ -268,7 +264,7 @@
     height: 14px;
     margin-top: -5px;
     border: 2px solid #fff;
-    background: @primary-teal;
+    background: var(--music-accent);
     box-shadow: 0 0 8px rgba(0, 189, 195, 0.5);
     opacity: 1;
 

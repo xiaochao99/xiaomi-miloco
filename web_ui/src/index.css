@@ -111,6 +111,25 @@
   --font-size-xl: 20px;
   --font-size-xxl: 24px;
 
+  /* music player colors */
+  --music-bg-page: rgba(245, 245, 245, 1);
+  --music-bg-sidebar: rgba(247, 247, 247, 1);
+  --music-bg-card: rgba(255, 255, 255, 1);
+  --music-bg-fill: rgba(240, 240, 240, 1);
+  --music-bg-fill-light: rgba(235, 235, 235, 1);
+  --music-bg-hover: rgba(0, 0, 0, 0.04);
+  --music-bg-active: rgba(0, 189, 195, 0.06);
+  --music-text-primary: rgba(0, 0, 0, 0.88);
+  --music-text-regular: rgba(0, 0, 0, 0.75);
+  --music-text-secondary: rgba(0, 0, 0, 0.55);
+  --music-text-placeholder: rgba(0, 0, 0, 0.4);
+  --music-border-color: rgba(0, 0, 0, 0.08);
+  --music-border-light: rgba(0, 0, 0, 0.06);
+  --music-accent: #00bdc3;
+  --music-red: #ec4141;
+  --music-red-light: rgba(236, 65, 65, 0.8);
+  --music-red-dark: #c73535;
+
 }
 
 /* dark mode variables */
@@ -222,6 +241,25 @@
     --font-size-lg: 18px;
     --font-size-xl: 20px;
     --font-size-xxl: 24px;
+
+    /* music player colors */
+    --music-bg-page: rgba(10, 10, 10, 1);
+    --music-bg-sidebar: rgba(17, 17, 17, 1);
+    --music-bg-card: rgba(20, 20, 20, 1);
+    --music-bg-fill: rgba(29, 29, 29, 1);
+    --music-bg-fill-light: rgba(38, 39, 39, 1);
+    --music-bg-hover: rgba(255, 255, 255, 0.04);
+    --music-bg-active: rgba(92, 213, 229, 0.06);
+    --music-text-primary: rgba(229, 234, 243, 1);
+    --music-text-regular: rgba(207, 211, 220, 1);
+    --music-text-secondary: rgba(163, 166, 173, 1);
+    --music-text-placeholder: rgba(141, 144, 149, 1);
+    --music-border-color: rgba(43, 43, 44, 1);
+    --music-border-light: rgba(54, 54, 55, 1);
+    --music-accent: #5cd5e5;
+    --music-red: #ec4141;
+    --music-red-light: rgba(236, 65, 65, 0.8);
+    --music-red-dark: #c73535;
 
 
 }

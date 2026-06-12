@@ -1,6 +1,4 @@
-@netease-red: #ec4141;
-@primary-teal: #00bdc3;
-
+﻿
 .panel {
   display: flex;
   flex-direction: column;
@@ -12,23 +10,23 @@
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--music-border-light);
 }
 
 .filterInput {
   flex: 1;
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: var(--music-bg-fill) !important;
   border-radius: 8px;
   height: 32px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--music-text-primary);
 
-  :global(.ant-input) { color: rgba(255, 255, 255, 0.85); }
-  :global(.ant-input::placeholder) { color: rgba(255, 255, 255, 0.25); }
-  :global(.ant-input-prefix) { color: rgba(255, 255, 255, 0.3); }
+  :global(.ant-input) { color: var(--music-text-primary); }
+  :global(.ant-input::placeholder) { color: var(--music-text-placeholder); }
+  :global(.ant-input-prefix) { color: var(--music-text-secondary); }
 }
 
 .songCount {
-  color: rgba(255, 255, 255, 0.4) !important;
+  color: var(--music-text-secondary) !important;
   font-size: 12px;
   white-space: nowrap;
 }
@@ -38,12 +36,12 @@
   overflow-y: auto;
 
   &::-webkit-scrollbar { width: 3px; }
-  &::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 2px; }
+  &::-webkit-scrollbar-thumb { background: var(--music-border-color); border-radius: 2px; }
 }
 
 .empty {
   margin-top: 60px;
-  :global(.ant-empty-description) { color: rgba(255, 255, 255, 0.3); }
+  :global(.ant-empty-description) { color: var(--music-text-secondary); }
 }
 
 .songList {
@@ -62,12 +60,12 @@
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--music-bg-hover);
   }
 
   &.active {
     background: rgba(236, 65, 65, 0.06);
-    border-left: 2px solid @netease-red;
+    border-left: 2px solid var(--music-red);
   }
 }
 
@@ -82,14 +80,14 @@
 }
 
 .playIcon {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--music-text-secondary);
   font-size: 18px;
   transition: color 0.2s;
-  .songItem:hover & { color: @netease-red; }
+  .songItem:hover & { color: var(--music-red); }
 }
 
 .playingIcon {
-  color: @netease-red;
+  color: var(--music-red);
   font-size: 18px;
   animation: iconPulse 1.5s ease-in-out infinite;
 }
@@ -114,7 +112,7 @@
 }
 
 .songTitle {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--music-text-primary);
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -128,7 +126,7 @@
   border-radius: 3px;
   background: rgba(236, 65, 65, 0.15) !important;
   border-color: rgba(236, 65, 65, 0.3) !important;
-  color: @netease-red !important;
+  color: var(--music-red) !important;
   flex-shrink: 0;
 }
 
@@ -137,7 +135,7 @@
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--music-text-secondary);
 }
 
 .artist {
@@ -157,7 +155,7 @@
 }
 
 .duration {
-  color: rgba(255, 255, 255, 0.3) !important;
+  color: var(--music-text-secondary) !important;
   font-size: 12px;
   white-space: nowrap;
 }

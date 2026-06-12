@@ -9,10 +9,10 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px 8px;
-  h3 { font-size: 20px; font-weight: 600; margin: 0; color: var(--text-primary, #fff); }
+  h3 { font-size: 20px; font-weight: 600; margin: 0; color: var(--music-text-primary); }
 }
-.count { font-size: 13px; color: var(--text-secondary, #999); }
-.loadingWrap { display: flex; flex-direction: column; align-items: center; padding: 60px 0; gap: 12px; color: var(--text-secondary, #999); }
+.count { font-size: 13px; color: var(--music-text-secondary); }
+.loadingWrap { display: flex; flex-direction: column; align-items: center; padding: 60px 0; gap: 12px; color: var(--music-text-secondary); }
 
 .list {
   padding: 0 12px;
@@ -26,17 +26,17 @@
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
-  &:hover { background: rgba(255,255,255,0.06); }
+  &:hover { background: var(--music-border-light); }
 }
-.rowIndex { width: 24px; text-align: center; font-size: 12px; color: var(--text-tertiary, #666); flex-shrink: 0; }
+.rowIndex { width: 24px; text-align: center; font-size: 12px; color: var(--music-text-placeholder); flex-shrink: 0; }
 .rowCover { width: 40px; height: 40px; border-radius: 4px; overflow: hidden; flex-shrink: 0; }
 .rowCoverImg { width: 100%; height: 100%; object-fit: cover; }
-.rowCoverPlaceholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.2); }
+.rowCoverPlaceholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--music-border-light); color: var(--music-text-placeholder); }
 .rowInfo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.rowTitle { font-size: 14px; color: var(--text-primary, #eee); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rowTitleActive { color: #ec4141; }
-.rowArtist { font-size: 12px; color: var(--text-secondary, #999); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rowDuration { font-size: 12px; color: var(--text-tertiary, #888); flex-shrink: 0; width: 44px; text-align: right; }
+.rowTitle { font-size: 14px; color: var(--music-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rowTitleActive { color: var(--music-red); }
+.rowArtist { font-size: 12px; color: var(--music-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rowDuration { font-size: 12px; color: var(--music-text-placeholder); flex-shrink: 0; width: 44px; text-align: right; }
 
 .heartBtn {
   background: none; border: none; cursor: pointer; padding: 4px; opacity: 0.5; transition: opacity 0.15s; flex-shrink: 0;
@@ -51,18 +51,18 @@
   padding: 12px 20px;
 }
 .gridItem {
-  background: rgba(255,255,255,0.05);
+  background: var(--music-bg-fill);
   border-radius: 10px;
   padding: 16px 12px;
   cursor: pointer;
   transition: background 0.15s;
   text-align: center;
-  &:hover { background: rgba(255,255,255,0.1); }
+  &:hover { background: var(--music-border-color); }
 }
 .gridItemExpanded {
   grid-column: 1 / -1;
   text-align: left;
-  background: rgba(255,255,255,0.08);
+  background: var(--music-border-color);
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -88,7 +88,7 @@
     width: 100%;
     margin-top: 4px;
     padding-top: 8px;
-    border-top: 1px solid rgba(255,255,255,0.08);
+    border-top: 1px solid var(--music-border-color);
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -96,20 +96,20 @@
 }
 .artistAvatar {
   width: 64px; height: 64px; border-radius: 50%;
-  background: linear-gradient(135deg, #ec4141, #ff6b6b);
+  background: linear-gradient(135deg, var(--music-red), #ff6b6b);
   display: flex; align-items: center; justify-content: center;
   font-size: 28px; font-weight: 700; color: #fff;
   margin: 0 auto 8px;
 }
-.artistName, .albumName { font-size: 14px; font-weight: 500; color: var(--text-primary, #eee); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.artistCount, .albumCount { font-size: 12px; color: var(--text-secondary, #999); }
-.albumCover { width: 120px; height: 120px; border-radius: 6px; overflow: hidden; margin: 0 auto 8px; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.2); }
+.artistName, .albumName { font-size: 14px; font-weight: 500; color: var(--music-text-primary); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.artistCount, .albumCount { font-size: 12px; color: var(--music-text-secondary); }
+.albumCover { width: 120px; height: 120px; border-radius: 6px; overflow: hidden; margin: 0 auto 8px; background: var(--music-border-light); display: flex; align-items: center; justify-content: center; color: var(--music-text-placeholder); }
 .albumCoverImg { width: 100%; height: 100%; object-fit: cover; }
 
 .expandedList {
   margin-top: 12px;
   padding-top: 8px;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid var(--music-border-color);
   text-align: left;
   display: flex;
   flex-direction: column;
@@ -117,7 +117,7 @@
 }
 
 .empty {
-  display: flex; flex-direction: column; align-items: center; padding: 60px 0; gap: 8px; color: var(--text-secondary, #999);
+  display: flex; flex-direction: column; align-items: center; padding: 60px 0; gap: 8px; color: var(--music-text-secondary);
 }
 .hint { font-size: 12px; }
 
@@ -131,16 +131,16 @@
   cursor: pointer;
   border-radius: 8px;
   transition: background 0.15s;
-  &:hover { background: rgba(255,255,255,0.06); }
+  &:hover { background: var(--music-border-light); }
 }
 .listAvatar {
   width: 36px; height: 36px; border-radius: 50%;
-  background: linear-gradient(135deg, #ec4141, #ff6b6b);
+  background: linear-gradient(135deg, var(--music-red), #ff6b6b);
   display: flex; align-items: center; justify-content: center;
   font-size: 16px; font-weight: 600; color: #fff;
   flex-shrink: 0;
 }
-.listName { font-size: 14px; font-weight: 500; color: var(--text-primary, #eee); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.listName { font-size: 14px; font-weight: 500; color: var(--music-text-primary); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 // ─── List mode for Artists / Albums ──────────────
 
@@ -152,21 +152,21 @@
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
-  &:hover { background: rgba(255,255,255,0.06); }
+  &:hover { background: var(--music-border-light); }
 }
 .listAvatar {
   width: 40px; height: 40px; border-radius: 50%;
-  background: linear-gradient(135deg, #ec4141, #ff6b6b);
+  background: linear-gradient(135deg, var(--music-red), #ff6b6b);
   display: flex; align-items: center; justify-content: center;
   font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0;
 }
 .listThumb {
   width: 40px; height: 40px; border-radius: 4px; overflow: hidden; flex-shrink: 0;
-  background: rgba(255,255,255,0.06);
+  background: var(--music-border-light);
   img { width: 100%; height: 100%; object-fit: cover; }
 }
 .listName {
-  font-size: 14px; font-weight: 500; color: var(--text-primary, #eee);
+  font-size: 14px; font-weight: 500; color: var(--music-text-primary);
   flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
@@ -179,22 +179,22 @@
   padding: 0 20px 20px;
   align-content: start;
   &::-webkit-scrollbar { width: 6px; }
-  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+  &::-webkit-scrollbar-thumb { background: var(--music-border-color); border-radius: 4px; }
   &::-webkit-scrollbar-track { background: transparent; }
 }
 
 .cardItem {
-  background: rgba(255,255,255,0.04);
+  background: var(--music-bg-hover);
   border-radius: 10px;
   padding: 12px;
   cursor: pointer;
   transition: background 0.15s;
   position: relative;
-  &:hover { background: rgba(255,255,255,0.08); }
+  &:hover { background: var(--music-border-color); }
 }
 .cardItemActive {
   background: rgba(92, 213, 229, 0.08);
-  .cardTitle { color: #5cd5e5; }
+  .cardTitle { color: var(--music-accent); }
 }
 
 .cardCover {
@@ -211,20 +211,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1d1d1d;
-  color: rgba(255,255,255,0.1);
+  background: var(--music-bg-fill);
+  color: var(--music-border-color);
 }
 .cardInfo { flex: 1; min-width: 0; }
 .cardTitle {
   font-size: 13px;
-  color: var(--text-primary, #eee);
+  color: var(--music-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .cardArtist {
   font-size: 11px;
-  color: var(--text-secondary, #999);
+  color: var(--music-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -253,13 +253,13 @@
 
 .cardAddBtn {
   background: none; border: none; cursor: pointer; padding: 4px;
-  color: var(--text-tertiary, #888); opacity: 0; transition: opacity 0.15s;
-  &:hover { color: #5cd5e5; opacity: 1; }
+  color: var(--music-text-placeholder); opacity: 0; transition: opacity 0.15s;
+  &:hover { color: var(--music-accent); opacity: 1; }
 }
 .cardItem:hover .cardAddBtn { opacity: 0.6; }
 
 .addBtn {
   background: none; border: none; cursor: pointer; padding: 4px;
-  color: var(--text-tertiary, #888); opacity: 0.4; transition: opacity 0.15s; flex-shrink: 0;
-  &:hover { opacity: 1; color: #5cd5e5; }
+  color: var(--music-text-placeholder); opacity: 0.4; transition: opacity 0.15s; flex-shrink: 0;
+  &:hover { opacity: 1; color: var(--music-accent); }
 }

@@ -1,14 +1,4 @@
-@bg-page: #0a0a0a;
-@bg-card: #141414;
-@bg-fill: #1d1d1d;
-@bg-hover: rgba(255, 255, 255, 0.04);
-@text-primary: #e5eaf3;
-@text-regular: #cfd3dc;
-@text-secondary: #a3a6ad;
-@text-placeholder: #8d9095;
-@border-color: #2b2b2c;
-@accent: #5cd5e5;
-
+﻿
 .container {
   padding: 20px 28px;
   display: flex;
@@ -23,29 +13,29 @@
   gap: 8px;
   flex-wrap: wrap;
   padding-bottom: 12px;
-  border-bottom: 1px solid @border-color;
+  border-bottom: 1px solid var(--music-border-color);
 }
 
 .categoryBtn {
   padding: 6px 16px;
   border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--music-border-color);
   background: transparent;
-  color: @text-secondary;
+  color: var(--music-text-secondary);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
 
   &:hover {
-    color: @text-primary;
-    border-color: rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.03);
+    color: var(--music-text-primary);
+    border-color: var(--music-text-placeholder);
+    background: var(--music-bg-hover);
   }
 }
 
 .categoryActive {
-  color: @accent !important;
+  color: var(--music-accent) !important;
   border-color: rgba(92, 213, 229, 0.3) !important;
   background: rgba(92, 213, 229, 0.08) !important;
 }
@@ -64,7 +54,7 @@
   gap: 8px;
   font-size: 18px;
   font-weight: 600;
-  color: @text-primary;
+  color: var(--music-text-primary);
 }
 
 .rankingIcon {
@@ -79,7 +69,7 @@
 
 .rankingCount {
   font-size: 13px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
 }
 
 .playAllBtn {
@@ -90,7 +80,7 @@
   border-radius: 6px;
   border: none;
   background: rgba(92, 213, 229, 0.12);
-  color: @accent;
+  color: var(--music-accent);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
@@ -117,7 +107,7 @@
   transition: background 0.15s;
 
   &:hover {
-    background: @bg-hover;
+    background: var(--music-bg-hover);
 
     .coverOverlay { opacity: 1; }
     .addBtn { opacity: 1; }
@@ -127,7 +117,7 @@
 .songItemActive {
   background: rgba(92, 213, 229, 0.06);
 
-  .songTitle { color: @accent; }
+  .songTitle { color: var(--music-accent); }
 }
 
 .rankBadge {
@@ -136,7 +126,7 @@
   flex-shrink: 0;
   font-size: 14px;
   font-weight: 600;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   font-variant-numeric: tabular-nums;
 }
 
@@ -153,7 +143,7 @@
 
   span {
     width: 3px;
-    background: @accent;
+    background: var(--music-accent);
     border-radius: 1px;
     animation: barPulse 0.8s ease-in-out infinite;
 
@@ -175,7 +165,7 @@
   overflow: hidden;
   flex-shrink: 0;
   position: relative;
-  background: @bg-fill;
+  background: var(--music-bg-fill);
 }
 
 .coverImg {
@@ -190,7 +180,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.15);
+  color: var(--music-text-placeholder);
 }
 
 .coverOverlay {
@@ -216,7 +206,7 @@
 
 .songTitle {
   font-size: 14px;
-  color: @text-primary;
+  color: var(--music-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -228,7 +218,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   overflow: hidden;
 }
 
@@ -252,9 +242,9 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--music-border-color);
   background: transparent;
-  color: @text-secondary;
+  color: var(--music-text-secondary);
   font-size: 16px;
   cursor: pointer;
   display: flex;
@@ -265,8 +255,8 @@
   flex-shrink: 0;
 
   &:hover {
-    border-color: @accent;
-    color: @accent;
+    border-color: var(--music-accent);
+    color: var(--music-accent);
     background: rgba(92, 213, 229, 0.08);
   }
 }
@@ -287,7 +277,7 @@
   padding: 60px 0;
 
   p {
-    color: @text-placeholder;
+    color: var(--music-text-placeholder);
     font-size: 14px;
   }
 }
