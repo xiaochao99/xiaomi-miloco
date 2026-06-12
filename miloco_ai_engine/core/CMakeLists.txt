@@ -20,6 +20,13 @@ include_directories(${PROJECT_SOURCE_DIR}
                     ${LLAMA_THIRD_PARTY_PATH}/common
                     ${LLAMA_THIRD_PARTY_PATH}/common/vendor)
 
+# Stub for llama_add_compile_flags (required by newer llama.cpp src/CMakeLists.txt)
+# The full function lives in cmake/common.cmake but includes relative paths that
+# don't resolve correctly when built as a subproject. The flags are only for
+# warnings/sanitizers which are not critical for our use case.
+function(llama_add_compile_flags)
+endfunction()
+
 add_subdirectory(${LLAMA_THIRD_PARTY_PATH}/ggml ${CMAKE_CURRENT_BINARY_DIR}/llama_third_party/ggml)
 add_subdirectory(${LLAMA_THIRD_PARTY_PATH}/src  ${CMAKE_CURRENT_BINARY_DIR}/llama_third_party/src)
 
