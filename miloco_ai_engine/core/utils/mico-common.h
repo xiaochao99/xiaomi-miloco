@@ -9,6 +9,7 @@
 #include <map>
 #include <mutex>
 
+#include "common/chat.h"
 #include "common/sampling.h"
 #include "mtmd-helper.h"
 #include "mtmd.h"

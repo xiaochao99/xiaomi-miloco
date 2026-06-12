@@ -86,6 +86,12 @@ jobs:
             FACE_BACKEND=cuda
           tags: |
             ghcr.io/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:${{ needs.setup.outputs.version }}
+          cache-from: |
+            type=gha,scope=ai-engine
+            type=registry,ref=ghcr.io/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:buildcache
+          cache-to: |
+            type=gha,scope=ai-engine,mode=max
+            type=registry,ref=ghcr.io/${{ needs.setup.outputs.lowercase-owner }}/miloco-ai_engine:buildcache,mode=max
 
   build-backend:
     needs: setup
@@ -120,3 +126,9 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:${{ needs.setup.outputs.version }}
+          cache-from: |
+            type=gha,scope=backend
+            type=registry,ref=ghcr.io/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:buildcache
+          cache-to: |
+            type=gha,scope=backend,mode=max
+            type=registry,ref=ghcr.io/${{ needs.setup.outputs.lowercase-owner }}/miloco-backend:buildcache,mode=max

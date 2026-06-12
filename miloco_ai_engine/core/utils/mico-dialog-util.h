@@ -4,6 +4,7 @@
  */
 
 #pragma once
+#include "common/chat.h"
 #include "common/json-partial.h"
 #include "utils/mico-common.h"
 
