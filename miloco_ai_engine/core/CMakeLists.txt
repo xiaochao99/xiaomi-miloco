@@ -27,6 +27,10 @@ include_directories(${PROJECT_SOURCE_DIR}
 function(llama_add_compile_flags)
 endfunction()
 
+# LLAMA_INSTALL_VERSION is normally set by top-level llama.cpp CMakeLists.txt from
+# git build info. We define a placeholder here since we only build a subdirectory.
+set(LLAMA_INSTALL_VERSION 0.0.0)
+
 add_subdirectory(${LLAMA_THIRD_PARTY_PATH}/ggml ${CMAKE_CURRENT_BINARY_DIR}/llama_third_party/ggml)
 add_subdirectory(${LLAMA_THIRD_PARTY_PATH}/src  ${CMAKE_CURRENT_BINARY_DIR}/llama_third_party/src)
 
