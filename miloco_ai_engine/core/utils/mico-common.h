@@ -50,7 +50,7 @@ struct LlamaMicoContext {
     std::map<size_t, int32_t> cmpl_to_seq;
     mutable std::mutex cmpl_to_seq_mutex;
 
-    std::string media_marker = MICO_DEFAULT_IMAGE_MARKER;
+    std::string media_marker = "<__media__>";  // mtmd_default_marker()
     common_chat_templates_ptr tmpls;
     llama_tokens antiprompt_tokens;
     int n_threads = 1;

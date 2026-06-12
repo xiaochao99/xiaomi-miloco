@@ -18,7 +18,7 @@ include_directories(${PROJECT_SOURCE_DIR}
                     ${LLAMA_THIRD_PARTY_PATH}/src
                     ${LLAMA_THIRD_PARTY_PATH}/tools/mtmd
                     ${LLAMA_THIRD_PARTY_PATH}/common
-                    ${LLAMA_THIRD_PARTY_PATH}/common/vendor)
+                    ${LLAMA_THIRD_PARTY_PATH}/vendor)
 
 # Stub for llama_add_compile_flags (required by newer llama.cpp src/CMakeLists.txt)
 # The full function lives in cmake/common.cmake but includes relative paths that

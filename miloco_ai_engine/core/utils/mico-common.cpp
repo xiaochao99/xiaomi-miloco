@@ -35,11 +35,14 @@ LlamaMicoContext::LlamaMicoContext(common_params& params) : llama_init(common_in
 
     tmpls = common_chat_templates_init(model, params.chat_template);
     LOG_INF("%s: chat template example:\n%s\n", __func__,
-            common_chat_format_example(tmpls.get(), params.use_jinja).c_str());
+            common_chat_format_example(tmpls.get(), params.use_jinja, {}).c_str());
 
     std::string placeholder = "*=*";
     std::vector<llama_token> placeholder_tokens = common_tokenize(lctx, placeholder, false, true);
-    std::string user_label = common_chat_format_example(tmpls.get(), "user", placeholder, true /*use_jinja*/);
+    common_chat_msg msg;
+    msg.role = "user";
+    msg.content = placeholder;
+    std::string user_label = common_chat_format_single(tmpls.get(), {}, msg, false, true /*use_jinja*/);
     std::vector<llama_token> label_tokens = common_tokenize(lctx, user_label, false, true);
     // find the first occurrence of placeholder_tokens in label_tokens
     for (size_t i = 0; i <= label_tokens.size() - placeholder_tokens.size(); ++i) {
@@ -108,7 +111,7 @@ void LlamaMicoContext::init_vision_context(common_params& params) {
     mparams.use_gpu = params.mmproj_use_gpu;
     mparams.print_timings = true;
     mparams.n_threads = params.cpuparams.n_threads;
-    mparams.verbosity = params.verbosity > 0 ? GGML_LOG_LEVEL_DEBUG : GGML_LOG_LEVEL_INFO;
+    // verbosity removed from mtmd_context_params; use mtmd_log_set() if needed
     ctx_vision.reset(mtmd_init_from_file(clip_path, model, mparams));
     if (!ctx_vision.get()) {
         LOG_ERR("Failed to load vision model from %s\n", clip_path);
