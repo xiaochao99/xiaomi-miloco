@@ -10,8 +10,8 @@
 #include <mutex>
 
 #include "common/sampling.h"
-#include "mutil-modal/mtmd-helper.h"
-#include "mutil-modal/mtmd.h"
+#include "mtmd-helper.h"
+#include "mtmd.h"
 #include "utils/llama-memory-scheduling.h"
 
 struct LlamaSeqState {

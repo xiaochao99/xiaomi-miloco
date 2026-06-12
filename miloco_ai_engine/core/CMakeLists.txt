@@ -16,7 +16,7 @@ include_directories(${PROJECT_SOURCE_DIR}
                     ${LLAMA_THIRD_PARTY_PATH}/include
                     ${LLAMA_THIRD_PARTY_PATH}/ggml/include
                     ${LLAMA_THIRD_PARTY_PATH}/src
-                    ${LLAMA_THIRD_PARTY_PATH}/mutil-modal
+                    ${LLAMA_THIRD_PARTY_PATH}/tools/mtmd
                     ${LLAMA_THIRD_PARTY_PATH}/common
                     ${LLAMA_THIRD_PARTY_PATH}/common/vendor)
 

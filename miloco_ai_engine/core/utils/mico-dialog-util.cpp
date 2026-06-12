@@ -89,7 +89,7 @@ bool ready_modal_bitmaps(std::vector<std::map<const unsigned char*, int32_t>>& m
     if (!modal_prts.empty()) {
         for (const auto& modal : modal_prts) {
             for (const auto& [p, len] : modal) {
-                auto bitmap_ptr = mtmd_helper_bitmap_init_from_buf(context->ctx_vision.get(), p, len, 0, 0);
+                auto bitmap_ptr = mtmd_helper_bitmap_init_from_buf(context->ctx_vision.get(), p, len, false);
                 if (!bitmap_ptr) {
                     return false;
                 }
@@ -102,8 +102,7 @@ bool ready_modal_bitmaps(std::vector<std::map<const unsigned char*, int32_t>>& m
             for (const auto& p : m.content_parts) {
                 for (const auto& img : p.images) {
                     auto bitmap_ptr = mtmd_helper_bitmap_init_from_buf(
-                        context->ctx_vision.get(), reinterpret_cast<const unsigned char*>(img.c_str()), img.size(), 0,
-                        0);
+                        context->ctx_vision.get(), reinterpret_cast<const unsigned char*>(img.c_str()), img.size(), false);
                     if (!bitmap_ptr) {
                         return false;
                     }
