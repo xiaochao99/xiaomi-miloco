@@ -287,7 +287,8 @@ const Setting = () => {
             release_name: res.data.release_name || '',
             release_url: res.data.release_url || '',
             published_at: res.data.published_at || '',
-            has_config: res.data.has_config || false
+            has_config: res.data.has_config || false,
+            pip_sync: res.data.pip_sync || false
           });
           setUpdateConfigChecked(false);
           setUpdateContentVisible(true);
@@ -2009,6 +2010,15 @@ const Setting = () => {
                 >
                   {t('setting.updateConfigCheckbox')}
                 </Checkbox>
+              </div>
+            )}
+            {updateContentData.pip_sync && (
+              <div style={{ marginBottom: 12 }}>
+                <Alert
+                  message={t('setting.pipSyncNotice')}
+                  type="info"
+                  showIcon
+                />
               </div>
             )}
             <div style={{

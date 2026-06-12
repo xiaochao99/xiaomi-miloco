@@ -863,6 +863,7 @@ export default {
     updateNow: 'Update Now',
     updateConfigCheckbox: 'Also update configuration files',
     releaseNotes: 'Release Notes',
+    pipSyncNotice: 'This update includes new Python dependencies. pip install will run automatically during the update.',
   },
 
   login: {

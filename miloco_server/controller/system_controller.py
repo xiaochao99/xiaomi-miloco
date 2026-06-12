@@ -257,6 +257,7 @@ async def check_for_updates():
                 "release_body": release_data.get("body", ""),
                 "published_at": release_data.get("published_at", ""),
                 "has_config": False,
+                "pip_sync": False,
                 "assets": [
                     {"name": a["name"], "size": a["size"], "url": a["browser_download_url"]}
                     for a in release_data.get("assets", [])
@@ -277,6 +278,7 @@ async def check_for_updates():
                             mresp.raise_for_status()
                             mdata = mresp.json()
                             data["has_config"] = mdata.get("changes", {}).get("backend", {}).get("has_config", False)
+                            data["pip_sync"] = mdata.get("pip_sync", False)
                     except Exception as me:
                         logger.debug(f"Failed to fetch manifest.json: {me}")
             
@@ -434,6 +436,19 @@ async def _apply_update_internal(version: str, update_config: bool = False) -> d
         msg = f"Applied {copy_count} files"
         log_lines.append(msg)
         
+        # 6.5. Sync pip dependencies if manifest requests it
+        pip_sync = manifest.get("pip_sync", False)
+        if pip_sync:
+            log_lines.append("Syncing pip dependencies...")
+            _update_status.update_log = "\n".join(log_lines)
+            success, pip_output = await _sync_pip_dependencies(
+                log_callback=lambda m: log_lines.append(m)
+            )
+            if not success:
+                logger.error(f"Pip sync failed:\n{pip_output}")
+                raise RuntimeError(f"Pip dependency sync failed: {pip_output}")
+            log_lines.append("Pip dependencies synced OK")
+        
         # 7. Save version
         version_file = os.path.join(APP_BASE_DIR, "VERSION")
         with open(version_file, 'w') as f:
@@ -504,6 +519,74 @@ async def apply_update(background_tasks: BackgroundTasks, req: ApplyUpdateReques
 def _restart_service():
     """Trigger service restart"""
     os._exit(0)  # Force exit, Docker should restart the container
+
+
+async def _sync_pip_dependencies(log_callback=None) -> tuple[bool, str]:
+    """Sync pip dependencies by installing miloco_server and miot_kit in editable mode.
+    
+    This mimics the Dockerfile's pip install steps, ensuring any new dependencies
+    declared in pyproject.toml are installed during hot update.
+    
+    Returns (success: bool, output: str)
+    """
+    output_lines = []
+
+    def log(msg: str):
+        output_lines.append(msg)
+        if log_callback:
+            log_callback(msg)
+        logger.info(f"[pip-sync] {msg}")
+
+    try:
+        miloco_server_dir = os.path.join(APP_BASE_DIR, "miloco_server")
+        miot_kit_dir = os.path.join(APP_BASE_DIR, "miot_kit")
+
+        # Use identical flags as the Dockerfile to ensure compatibility
+        pip_base = ["python3", "-m", "pip", "install", "--no-build-isolation"]
+
+        if os.path.exists(miloco_server_dir):
+            log(f"Syncing pip dependencies: {miloco_server_dir}")
+            proc = await asyncio.create_subprocess_exec(
+                *pip_base, "-e", miloco_server_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            out, err = stdout.decode(errors="replace"), stderr.decode(errors="replace")
+            if proc.returncode == 0:
+                log(f"  miloco_server deps synced OK")
+            else:
+                log(f"  miloco_server deps sync failed (rc={proc.returncode})")
+                if err.strip():
+                    log(f"  stderr: {err.strip()[-500:]}")
+                return False, "\n".join(output_lines)
+
+        if os.path.exists(miot_kit_dir):
+            log(f"Syncing pip dependencies: {miot_kit_dir}")
+            proc = await asyncio.create_subprocess_exec(
+                *pip_base, "-e", miot_kit_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            out, err = stdout.decode(errors="replace"), stderr.decode(errors="replace")
+            if proc.returncode == 0:
+                log(f"  miot_kit deps synced OK")
+            else:
+                log(f"  miot_kit deps sync failed (rc={proc.returncode})")
+                if err.strip():
+                    log(f"  stderr: {err.strip()[-500:]}")
+                return False, "\n".join(output_lines)
+
+        log("Pip dependency sync completed")
+        return True, "\n".join(output_lines)
+
+    except FileNotFoundError:
+        log("  WARNING: pip3 not found, skipping dependency sync")
+        return True, "\n".join(output_lines)
+    except Exception as e:
+        log(f"  ERROR: pip dependency sync failed: {e}")
+        return False, "\n".join(output_lines)
 
 
 @router.get("/system/update/log", response_model=NormalResponse)

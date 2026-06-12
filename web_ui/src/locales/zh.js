@@ -878,6 +878,7 @@ export default {
     updateNow: '立即更新',
     updateConfigCheckbox: '同时更新配置文件',
     releaseNotes: '更新说明',
+    pipSyncNotice: '此更新包含新的 Python 依赖包，更新过程中将自动执行 pip install 安装依赖',
   },
 
   login: {
