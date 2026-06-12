@@ -77,15 +77,15 @@ RUN set -eux; \
     test -f /app/output_cpu/lib/libllama-mico.so; \
     KEEP_OUTPUT=0 BUILD_DIR=/app/build/ai_engine_cuda OUTPUT_DIR=/app/output_gpu bash /app/scripts/ai_engine_cuda_build.sh; \
     test -f /app/output_gpu/lib/libllama-mico.so; \
-    # Build-time sanity checks: CPU lib must not depend on CUDA, GPU lib should.
-    if LD_LIBRARY_PATH=/app/output_cpu/lib:${LD_LIBRARY_PATH} ldd /app/output_cpu/lib/libllama-mico.so | grep -Eq 'libcuda\.so|libcudart\.so|libcublas'; then \
+    # Build-time sanity checks: CPU lib must not depend on CUDA, GPU build must include ggml-cuda backend
+    if LD_LIBRARY_PATH=/app/output_cpu/lib:/app/output_cpu/lib:${LD_LIBRARY_PATH} ldd /app/output_cpu/lib/libllama-mico.so | grep -Eq 'libcuda\.so|libcudart\.so|libcublas|libggml-cuda\.so'; then \
         echo "ERROR: CPU build unexpectedly depends on CUDA"; \
         LD_LIBRARY_PATH=/app/output_cpu/lib:${LD_LIBRARY_PATH} ldd /app/output_cpu/lib/libllama-mico.so; \
         exit 1; \
     fi; \
-    if ! LD_LIBRARY_PATH=/app/output_gpu/lib:${LD_LIBRARY_PATH} ldd /app/output_gpu/lib/libllama-mico.so | grep -Eq 'libcuda\.so|libcudart\.so|libcublas'; then \
-        echo "ERROR: GPU build does not show expected CUDA dependencies"; \
-        LD_LIBRARY_PATH=/app/output_gpu/lib:${LD_LIBRARY_PATH} ldd /app/output_gpu/lib/libllama-mico.so; \
+    if ! test -f /app/output_gpu/lib/libggml-cuda.so; then \
+        echo "ERROR: GPU build missing libggml-cuda.so backend"; \
+        ls -la /app/output_gpu/lib/; \
         exit 1; \
     fi
 

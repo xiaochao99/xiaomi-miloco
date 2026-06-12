@@ -46,5 +46,8 @@ add_subdirectory(cache_manager)
 add_subdirectory(batch_scheduling)
 # add_subdirectory(mutil-modal)
 
-
 install(TARGETS llama-mico DESTINATION lib)
+install(TARGETS llama ggml ggml-base DESTINATION lib)
+if (GGML_CUDA)
+    install(TARGETS ggml-cuda DESTINATION lib)
+endif()
