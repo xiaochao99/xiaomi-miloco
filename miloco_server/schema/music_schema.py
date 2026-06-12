@@ -129,6 +129,7 @@ class DLNACastRequest(BaseModel):
     """DLNA投屏请求模型"""
     device_id: str = Field(..., description="目标设备ID")
     song_id: Optional[str] = Field(None, description="要投屏的歌曲ID")
+    audio_url: Optional[str] = Field(None, description="音频URL（在线歌曲直接传入）")
 
 
 class LocalMusicScanRequest(BaseModel):

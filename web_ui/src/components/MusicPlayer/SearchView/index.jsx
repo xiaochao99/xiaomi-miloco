@@ -46,8 +46,7 @@ const AlbumIcon = () => (
 const SearchView = ({ keyword }) => {
   const {
     library, categories, currentSong, playbackState,
-    playSong, playAll, toggleFavorite, addToPlaylist, favoriteIds,
-    searchResults
+    playSong, playAll, toggleFavorite, addToPlaylist, favoriteIds
   } = useMusicPlayerStore()
 
   const [onlineResults, setOnlineResults] = useState([])
@@ -55,6 +54,7 @@ const SearchView = ({ keyword }) => {
 
   const kwLower = (keyword || '').toLowerCase()
 
+  // Online search with cover enrichment
   useEffect(() => {
     if (!keyword?.trim()) {
       setOnlineResults([])
@@ -62,8 +62,10 @@ const SearchView = ({ keyword }) => {
     }
     let cancelled = false
     setOnlineLoading(true)
-    musicApi.searchSongs(keyword.trim(), { count: 20 }).then(results => {
-      if (!cancelled) setOnlineResults(results || [])
+    musicApi.searchSongs(keyword.trim(), { count: 20 }).then(async (results) => {
+      if (cancelled) return
+      const enriched = await musicApi.batchBuildCoverUrls(results || [])
+      if (!cancelled) setOnlineResults(enriched)
     }).catch(() => {
       if (!cancelled) setOnlineResults([])
     }).finally(() => {
@@ -72,61 +74,25 @@ const SearchView = ({ keyword }) => {
     return () => { cancelled = true }
   }, [keyword])
 
-  const calculateRelevance = (text, kw) => {
-    if (!text || !kw) return 0
-    const textLower = text.toLowerCase()
-    if (textLower === kw) return 100
-    if (textLower.startsWith(kw)) return 80
-    if (textLower.includes(kw)) return 60
-    const words = kw.split(/\s+/)
-    let matchCount = 0
-    for (const word of words) {
-      if (word && textLower.includes(word)) matchCount++
-    }
-    if (matchCount > 0) return 40 + (matchCount / words.length) * 20
-    return 0
-  }
-
-  const sortSongsByRelevance = (songs, kw) => {
-    return [...songs].sort((a, b) => {
-      const scoreA = Math.max(
-        calculateRelevance(a.title, kw) * 1.5,
-        calculateRelevance(a.artist, kw) * 1.2,
-        calculateRelevance(a.album, kw)
-      )
-      const scoreB = Math.max(
-        calculateRelevance(b.title, kw) * 1.5,
-        calculateRelevance(b.artist, kw) * 1.2,
-        calculateRelevance(b.album, kw)
-      )
-      if (scoreA !== scoreB) return scoreB - scoreA
-      const isLocalA = String(a.id).startsWith('local_') ? 1 : 0
-      const isLocalB = String(b.id).startsWith('local_') ? 1 : 0
-      if (isLocalA !== isLocalB) return isLocalB - isLocalA
-      return 0
-    })
-  }
-
   const sortByNameRelevance = (items, kw) => {
     return [...items].sort((a, b) => {
-      const scoreA = calculateRelevance(a.name, kw)
-      const scoreB = calculateRelevance(b.name, kw)
+      const scoreA = (a.name || '').toLowerCase().includes(kw) ? 1 : 0
+      const scoreB = (b.name || '').toLowerCase().includes(kw) ? 1 : 0
       return scoreB - scoreA
     })
   }
 
+  // Local search: always filter library directly (no store dependency)
   const results = useMemo(() => {
-    if (!kwLower) return { songs: [], artists: [], albums: [], online: [] }
+    if (!kwLower) return { songs: [], artists: [], albums: [] }
 
     const localSongs = library.filter(s => String(s.id).startsWith('local_'))
 
-    const matchedSongs = searchResults.length > 0
-      ? searchResults.filter(s => String(s.id).startsWith('local_'))
-      : library.filter(s =>
-        (s.title || '').toLowerCase().includes(kwLower) ||
-        (s.artist || '').toLowerCase().includes(kwLower) ||
-        (s.album || '').toLowerCase().includes(kwLower)
-      )
+    const matchedSongs = localSongs.filter(s =>
+      (s.title || '').toLowerCase().includes(kwLower) ||
+      (s.artist || '').toLowerCase().includes(kwLower) ||
+      (s.album || '').toLowerCase().includes(kwLower)
+    )
 
     const matchedArtists = (categories.artists || []).filter(a =>
       a.name.toLowerCase().includes(kwLower)
@@ -146,10 +112,9 @@ const SearchView = ({ keyword }) => {
     return {
       songs: matchedSongs,
       artists: sortByNameRelevance(matchedArtists, kwLower),
-      albums: sortByNameRelevance(matchedAlbums, kwLower),
-      online: []
+      albums: sortByNameRelevance(matchedAlbums, kwLower)
     }
-  }, [library, categories, kwLower, searchResults])
+  }, [library, categories, kwLower])
 
   const totalLocal = results.songs.length + results.artists.length + results.albums.length
   const hasResults = totalLocal > 0 || onlineResults.length > 0 || onlineLoading
@@ -192,6 +157,7 @@ const SearchView = ({ keyword }) => {
                   <div className={styles.songCover}>
                     {song.cover_url ? (
                       <LazyImage src={song.cover_url} alt={song.title}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                         fallback={<div className={styles.coverPlaceholder}><MusicIcon /></div>} />
                     ) : (
                       <div className={styles.coverPlaceholder}><MusicIcon /></div>
@@ -323,6 +289,7 @@ const SearchView = ({ keyword }) => {
                     <div className={styles.songCover}>
                       {song.cover_url ? (
                         <LazyImage src={song.cover_url} alt={song.title}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                           fallback={<div className={styles.coverPlaceholder}><MusicIcon /></div>} />
                       ) : (
                         <div className={styles.coverPlaceholder}><MusicIcon /></div>

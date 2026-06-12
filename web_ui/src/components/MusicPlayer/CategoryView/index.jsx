@@ -54,8 +54,14 @@ const SongRow = ({ song, index, isPlaying, onPlay, onToggleFavorite, isLiked, on
   </div>
 )
 
+const PlayAllIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8 5v14l11-7z" />
+  </svg>
+)
+
 const CategoryView = ({ category }) => {
-  const { library, favoriteIds, currentSong, playbackState, playSong, toggleFavorite, addToPlaylist, loadCategories, categories, categoriesLoading, displayModes } = useMusicPlayerStore()
+  const { library, favoriteIds, currentSong, playbackState, playSong, playAll, toggleFavorite, addToPlaylist, loadCategories, categories, categoriesLoading, displayModes } = useMusicPlayerStore()
   const [expanded, setExpanded] = useState(null)
   const isCard = (displayModes[category] || 'list') === 'card'
 
@@ -119,7 +125,15 @@ const CategoryView = ({ category }) => {
     const favSongs = library.filter(s => favoriteIds.includes(s.id))
     return (
       <div className={styles.container}>
-        <div className={styles.header}><h3>我的喜欢</h3><span className={styles.count}>{favSongs.length} 首</span></div>
+        <div className={styles.header}>
+          <h3>我的喜欢</h3>
+          <span className={styles.count}>{favSongs.length} 首</span>
+          {favSongs.length > 0 && (
+            <button className={styles.playAllBtn} onClick={() => playAll(favSongs)}>
+              <PlayAllIcon /> 全部播放
+            </button>
+          )}
+        </div>
         {favSongs.length === 0 ? (
           <div className={styles.empty}><p>暂无收藏歌曲</p><p className={styles.hint}>点击歌曲右侧的 ♡ 按钮收藏</p></div>
         ) : isCard ? (
@@ -183,6 +197,9 @@ const CategoryView = ({ category }) => {
                 <div className={styles.artistCount}>{a.count} 首</div>
                 {isExpanded && (
                   <div className={styles.expandedList} onClick={(e) => e.stopPropagation()}>
+                    <button className={styles.expandedPlayAll} onClick={() => playAll(a.songs)}>
+                      <PlayAllIcon /> 全部播放
+                    </button>
                     {a.songs.map((s, i) => (
                       <SongRow key={s.id} song={s} index={i + 1}
                         isPlaying={currentSong?.id === s.id && playbackState === 'playing'}
@@ -229,6 +246,9 @@ const CategoryView = ({ category }) => {
                 <div className={styles.albumCount}>{a.count} 首</div>
                 {isExpanded && (
                   <div className={styles.expandedList} onClick={(e) => e.stopPropagation()}>
+                    <button className={styles.expandedPlayAll} onClick={() => playAll(a.songs)}>
+                      <PlayAllIcon /> 全部播放
+                    </button>
                     {a.songs.map((s, i) => (
                       <SongRow key={s.id} song={s} index={i + 1}
                         isPlaying={currentSong?.id === s.id && playbackState === 'playing'}

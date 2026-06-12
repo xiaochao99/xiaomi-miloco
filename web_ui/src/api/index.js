@@ -208,8 +208,10 @@ export const getMusicStatus = () => getApi('/api/music/status');
 export const controlMusic = (data) => postApi('/api/music/control', data);
 export const getDLNADevices = () => getApi('/api/music/dlna/devices');
 export const discoverDLNADevices = (timeout = 5) => postApi('/api/music/dlna/discover', { timeout });
-export const castToDLNA = (deviceId, songId = null) => postApi('/api/music/dlna/cast', { device_id: deviceId, song_id: songId });
+export const castToDLNA = (deviceId, songId = null, audioUrl = null) => postApi('/api/music/dlna/cast', { device_id: deviceId, song_id: songId, audio_url: audioUrl });
 export const stopDLNACast = (deviceId) => postApi('/api/music/dlna/stop', { device_id: deviceId });
+export const pauseDLNA = (deviceId) => postApi('/api/music/dlna/pause', { device_id: deviceId });
+export const playDLNA = (deviceId) => postApi('/api/music/dlna/play', { device_id: deviceId });
 
 // Local Music Scan API
 export const scanLocalMusic = (path, recursive = true) => postApi('/api/music/scan/local', { path, recursive });

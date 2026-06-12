@@ -7,11 +7,27 @@
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   padding: 16px 20px 8px;
   h3 { font-size: 20px; font-weight: 600; margin: 0; color: var(--music-text-primary); }
 }
 .count { font-size: 13px; color: var(--music-text-secondary); }
+.playAllBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(92, 213, 229, 0.12);
+  color: var(--music-accent);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  margin-left: auto;
+  &:hover { background: rgba(92, 213, 229, 0.2); }
+}
 .loadingWrap { display: flex; flex-direction: column; align-items: center; padding: 60px 0; gap: 12px; color: var(--music-text-secondary); }
 
 .list {
@@ -114,6 +130,22 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+.expandedPlayAll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(92, 213, 229, 0.12);
+  color: var(--music-accent);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-bottom: 4px;
+  align-self: flex-start;
+  &:hover { background: rgba(92, 213, 229, 0.2); }
 }
 
 .empty {

@@ -568,7 +568,7 @@ export default {
     noHADevice: '暂无HA设备',
     miotDevices: '米家设备',
     haDevices: 'HA设备',
-    rtspCameras: 'RTSP摄像头',
+      rtspCameras: '摄像头',
     defaultRoom: '未分配区域',
     defaultArea: '未分配区域',
     entities: '个实体',

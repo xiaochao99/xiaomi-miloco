@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Select, Switch, Button, Input, message, Tooltip } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import {
   VideoCameraOutlined,
   SaveOutlined,
@@ -22,6 +23,7 @@ const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 const RecordingConfig = () => {
   const { t } = useTranslation();
+  const [searchParams] = useSearchParams();
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [configs, setConfigs] = useState({});
@@ -141,6 +143,17 @@ const RecordingConfig = () => {
     fetchAllConfigs();
     fetchStorageStats();
   }, [fetchCameras, fetchAllConfigs, fetchStorageStats]);
+
+  // Pre-select camera from query parameter
+  useEffect(() => {
+    const cameraParam = searchParams.get('camera');
+    if (cameraParam && cameras.length > 0) {
+      const found = cameras.find(c => c.did === cameraParam);
+      if (found) {
+        setSelectedCamera(cameraParam);
+      }
+    }
+  }, [searchParams, cameras]);
 
   useEffect(() => {
     if (selectedCamera && !configs[selectedCamera]) {
