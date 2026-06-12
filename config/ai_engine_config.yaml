@@ -88,4 +88,4 @@ server_concurrency:
 # Automatic model configuration to optimization vram
 #[Only support default model: MiMo-VL-Miloco-7B:Q4_0/Qwen3-8b:Q4_0]
 #[May invalidate the following configurations: cache_seq_num/parallel_seq_num/total_context_num/context_per_seq/chunk_size]
-auto_opt_vram: true
+auto_opt_vram: false
