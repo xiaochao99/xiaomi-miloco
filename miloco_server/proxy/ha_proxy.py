@@ -9,7 +9,7 @@ from typing import Optional
 
 from pydantic_core import to_jsonable_python
 from miot.types import HAAutomationInfo, HAStateInfo
-from miot.ha_api import HAHttpClient
+from miot.ha_api import HAHttpClient, HAWebSocketClient
 
 from miloco_server.dao.kv_dao import AuthConfigKeys, KVDao, DeviceInfoKeys
 from miloco_server.schema.miot_schema import HAConfig
@@ -22,6 +22,7 @@ class HAProxy:
     def __init__(self, kv_dao: KVDao):
         self._kv_dao = kv_dao
         self._ha_rest_api: Optional[HAHttpClient] = None
+        self._ha_ws_client: Optional[HAWebSocketClient] = None
         self._automations: dict[str, HAAutomationInfo] = {}
         self.init_ha_info_dict()
 
@@ -29,14 +30,20 @@ class HAProxy:
     def ha_client(self) -> Optional[HAHttpClient]:
         return self._ha_rest_api
 
+    @property
+    def ha_ws_client(self) -> Optional[HAWebSocketClient]:
+        return self._ha_ws_client
+
     def init_ha_info_dict(self):
         """Initialize HA related information dictionary"""
         miot_ha_base_url = self._kv_dao.get(AuthConfigKeys.MIOT_HA_BASE_URL_KEY)
         miot_ha_token = self._kv_dao.get(AuthConfigKeys.MIOT_HA_TOKEN_KEY)
         if miot_ha_base_url and miot_ha_token:
             self._ha_rest_api = HAHttpClient(miot_ha_base_url, miot_ha_token)
+            self._ha_ws_client = HAWebSocketClient(miot_ha_base_url, miot_ha_token)
         else:
             self._ha_rest_api = None
+            self._ha_ws_client = None
 
         automations_str = self._kv_dao.get(DeviceInfoKeys.HA_AUTOMATIONS_KEY)
         if automations_str:
@@ -54,7 +61,24 @@ class HAProxy:
         self._kv_dao.set(AuthConfigKeys.MIOT_HA_BASE_URL_KEY, miot_ha_base_url)
         self._kv_dao.set(AuthConfigKeys.MIOT_HA_TOKEN_KEY, miot_ha_token)
         self._ha_rest_api = HAHttpClient(miot_ha_base_url, miot_ha_token)
+        self._ha_ws_client = HAWebSocketClient(miot_ha_base_url, miot_ha_token)
+        # Connect WebSocket in background (non-blocking)
+        asyncio.ensure_future(self._connect_ws())
         await self.refresh_ha_automations()
+
+    async def _connect_ws(self):
+        """Connect HA WebSocket client."""
+        try:
+            if self._ha_ws_client:
+                connected = await self._ha_ws_client.connect()
+                if connected:
+                    # Subscribe to state changes
+                    await self._ha_ws_client.subscribe_state_changes()
+                    logger.info("HA WebSocket connected and subscribed to state changes")
+                else:
+                    logger.warning("HA WebSocket connection failed, will use REST API fallback")
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("HA WebSocket init error: %s", e)
 
     def get_ha_config(self) -> HAConfig | None:
         """Get Home Assistant configuration"""

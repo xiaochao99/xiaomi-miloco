@@ -299,6 +299,8 @@ class ToolSelector:
         for keyword, tools in self.KEYWORD_TOOL_MAP.items():
             if keyword in query:
                 for tool_name in tools:
+                    # Match both unprefixed and prefixed tool names
+                    matched = False
                     if tool_name in self._tools:
                         selections.append(ToolSelection(
                             tool_name=tool_name,
@@ -306,6 +308,16 @@ class ToolSelector:
                             reasoning=f"Matched keyword: {keyword}",
                             strategy_used=ToolSelectionStrategy.RULE_BASED,
                         ))
+                        matched = True
+                    if not matched:
+                        for registered_name in self._tools:
+                            if registered_name.endswith("___" + tool_name):
+                                selections.append(ToolSelection(
+                                    tool_name=registered_name,
+                                    confidence=0.8,
+                                    reasoning=f"Matched keyword: {keyword}",
+                                    strategy_used=ToolSelectionStrategy.RULE_BASED,
+                                ))
         
         # Remove duplicates while keeping highest confidence
         seen = {}
@@ -367,6 +379,7 @@ class ToolSelector:
         
         if intent in self.INTENT_TOOL_MAP:
             for tool_name in self.INTENT_TOOL_MAP[intent]:
+                # Match both unprefixed and prefixed tool names
                 if tool_name in self._tools:
                     selections.append(ToolSelection(
                         tool_name=tool_name,
@@ -374,6 +387,15 @@ class ToolSelector:
                         reasoning=f"Matched intent: {intent}",
                         strategy_used=ToolSelectionStrategy.INTENT_BASED,
                     ))
+                else:
+                    for registered_name in self._tools:
+                        if registered_name.endswith("___" + tool_name):
+                            selections.append(ToolSelection(
+                                tool_name=registered_name,
+                                confidence=0.85,
+                                reasoning=f"Matched intent: {intent}",
+                                strategy_used=ToolSelectionStrategy.INTENT_BASED,
+                            ))
         
         return selections
     

@@ -2,14 +2,15 @@
 # Copyright (C) 2025 Xiaomi Corporation
 # This software may be used and distributed according to the terms of the Xiaomi Miloco License Agreement.
 """
-Home Assistant Rest API client.
+Home Assistant API clients (REST + WebSocket).
 """
 # pylint: disable=too-many-arguments, too-many-positional-arguments
 # pylint: disable=too-many-instance-attributes
 import asyncio
 from datetime import datetime
+import json
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Set
 import aiohttp
 
 from .types import HAAutomationInfo, HAStateInfo
@@ -19,6 +20,8 @@ from .oauth2 import BaseOAuth2Client
 _LOGGER = logging.getLogger(__name__)
 
 HA_HTTP_API_TIMEOUT: int = 30
+HA_WS_RECONNECT_INTERVAL: int = 5
+HA_WS_PING_INTERVAL: int = 30
 
 SUPPORT_ENTITY_CLASSES = {
     "light": {
@@ -286,3 +289,318 @@ class HAHttpClient:
     async def get_config_async(self) -> Dict:
         """Get configuration."""
         return await self.__api_get_async(url_path="/api/config", params={})
+
+
+class HAWebSocketClient:
+    """
+    Home Assistant WebSocket client.
+    
+    Maintains a persistent WebSocket connection for faster device queries and control.
+    Supports auto-reconnection and real-time state change subscriptions.
+    
+    Usage:
+        ws = HAWebSocketClient("http://192.168.31.10:8123", "token")
+        await ws.connect()
+        states = await ws.get_states()
+        await ws.call_service("light", "turn_on", {"entity_id": "light.living_room"})
+        await ws.disconnect()
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        access_token: str,
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+    ) -> None:
+        self._main_loop = loop or asyncio.get_event_loop()
+        self._base_url = base_url.rstrip("/")
+        self._token = access_token
+        self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
+        self._session: Optional[aiohttp.ClientSession] = None
+        self._connected = False
+        self._msg_id = 0
+        self._pending: Dict[int, asyncio.Future] = {}
+        self._state_subscribers: List[Callable[[Dict[str, Any]], Coroutine]] = []
+        self._recv_task: Optional[asyncio.Task] = None
+        self._reconnect_task: Optional[asyncio.Task] = None
+        self._last_states: Dict[str, HAStateInfo] = {}
+
+    @property
+    def ws_url(self) -> str:
+        """Convert http(s):// to ws(s)://."""
+        url = self._base_url
+        if url.startswith("https://"):
+            url = "wss://" + url[8:]
+        elif url.startswith("http://"):
+            url = "ws://" + url[5:]
+        else:
+            url = "ws://" + url
+        return f"{url}/api/websocket"
+
+    async def connect(self) -> bool:
+        """Connect to HA WebSocket and authenticate."""
+        try:
+            if self._session is None or self._session.closed:
+                self._session = aiohttp.ClientSession(loop=self._main_loop)
+
+            self._ws = await self._session.ws_connect(
+                self.ws_url,
+                heartbeat=HA_WS_PING_INTERVAL,
+                timeout=aiohttp.ClientTimeout(total=10),
+            )
+
+            # Wait for auth required
+            msg = await self._ws.receive(timeout=5)
+            if msg.type != aiohttp.WSMsgType.TEXT:
+                _LOGGER.error("HA WS: unexpected message type: %s", msg.type)
+                return False
+
+            data = json.loads(msg.data)
+            if data.get("type") != "auth_required":
+                _LOGGER.error("HA WS: expected auth_required, got: %s", data.get("type"))
+                return False
+
+            # Send auth
+            await self._ws.send_json({
+                "type": "auth",
+                "access_token": self._token,
+            })
+
+            # Wait for auth result
+            msg = await self._ws.receive(timeout=5)
+            if msg.type != aiohttp.WSMsgType.TEXT:
+                _LOGGER.error("HA WS: unexpected message type during auth: %s", msg.type)
+                return False
+
+            data = json.loads(msg.data)
+            if data.get("type") == "auth_ok":
+                _LOGGER.info("HA WS: connected and authenticated")
+                self._connected = True
+                # Start background receiver
+                self._recv_task = asyncio.ensure_future(self._recv_loop())
+                return True
+            else:
+                _LOGGER.error("HA WS: auth failed: %s", data)
+                return False
+
+        except Exception as e:  # pylint: disable=broad-except
+            _LOGGER.error("HA WS: connection failed: %s", e)
+            self._connected = False
+            return False
+
+    async def disconnect(self) -> None:
+        """Disconnect from HA WebSocket."""
+        self._connected = False
+        if self._recv_task and not self._recv_task.done():
+            self._recv_task.cancel()
+            try:
+                await self._recv_task
+            except asyncio.CancelledError:
+                pass
+        if self._reconnect_task and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
+        if self._ws and not self._ws.closed:
+            await self._ws.close()
+        if self._session and not self._session.closed:
+            await self._session.close()
+        self._ws = None
+        self._session = None
+        _LOGGER.info("HA WS: disconnected")
+
+    async def _recv_loop(self) -> None:
+        """Background task to receive WebSocket messages."""
+        try:
+            async for msg in self._ws:
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    data = json.loads(msg.data)
+                    msg_id = data.get("id")
+                    # Resolve pending request
+                    if msg_id and msg_id in self._pending:
+                        fut = self._pending.pop(msg_id)
+                        if not fut.done():
+                            fut.set_result(data)
+                    # Handle state change events
+                    elif data.get("type") == "state_changed":
+                        event = data.get("event", {})
+                        new_state = event.get("new_state")
+                        if new_state:
+                            self._update_state_cache(new_state)
+                            for subscriber in self._state_subscribers:
+                                try:
+                                    await subscriber(new_state)
+                                except Exception as e:  # pylint: disable=broad-except
+                                    _LOGGER.debug("HA WS subscriber error: %s", e)
+                elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                    _LOGGER.warning("HA WS: connection lost (type=%s)", msg.type)
+                    self._connected = False
+                    break
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:  # pylint: disable=broad-except
+            _LOGGER.error("HA WS: recv loop error: %s", e)
+            self._connected = False
+
+        # Auto-reconnect
+        if self._connected is False:
+            self._reconnect_task = asyncio.ensure_future(self._reconnect())
+
+    async def _reconnect(self) -> None:
+        """Auto-reconnect loop."""
+        while not self._connected:
+            try:
+                _LOGGER.info("HA WS: attempting reconnect in %ds...", HA_WS_RECONNECT_INTERVAL)
+                await asyncio.sleep(HA_WS_RECONNECT_INTERVAL)
+                if await self.connect():
+                    # Re-subscribe to state changes after reconnect
+                    await self._subscribe_state_changes()
+                    break
+            except asyncio.CancelledError:
+                break
+            except Exception as e:  # pylint: disable=broad-except
+                _LOGGER.error("HA WS: reconnect failed: %s", e)
+
+    async def _send_command(self, msg_type: str, data: Optional[Dict] = None,
+                            timeout: float = 10.0) -> Dict:
+        """Send a command and wait for response."""
+        if not self._connected or not self._ws:
+            raise ConnectionError("HA WS not connected")
+
+        self._msg_id += 1
+        msg_id = self._msg_id
+
+        payload = {"id": msg_id, "type": msg_type}
+        if data:
+            payload.update(data)
+
+        fut = self._main_loop.create_future()
+        self._pending[msg_id] = fut
+
+        await self._ws.send_json(payload)
+
+        try:
+            result = await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._pending.pop(msg_id, None)
+            raise TimeoutError(f"HA WS command '{msg_type}' timed out after {timeout}s")
+
+        if result.get("success") is False:
+            error = result.get("error", {})
+            raise RuntimeError(f"HA WS error: {error.get('code', 'unknown')} - {error.get('message', '')}")
+
+        return result
+
+    async def ensure_connected(self) -> bool:
+        """Ensure WebSocket is connected, reconnect if needed."""
+        if self._connected and self._ws and not self._ws.closed:
+            return True
+        return await self.connect()
+
+    # ── High-level API methods ──
+
+    async def get_states(self) -> Dict[str, HAStateInfo]:
+        """Get all entity states via WebSocket (single command, no HTTP overhead)."""
+        await self.ensure_connected()
+        result = await self._send_command("get_states", timeout=15)
+        states: Dict[str, HAStateInfo] = {}
+        for state in result.get("result", []):
+            if (
+                "entity_id" not in state
+                or "state" not in state
+                or "attributes" not in state
+            ):
+                continue
+            eid = state["entity_id"]
+            states[eid] = HAStateInfo(
+                entity_id=eid,
+                domain=eid.partition(".")[0],
+                state=state["state"],
+                friendly_name=state.get("attributes", {}).get("friendly_name", eid),
+                last_changed=0,
+                last_reported=0,
+                last_updated=0,
+                attributes=state.get("attributes", {}),
+                context=state.get("context", {}),
+            )
+        self._last_states = states
+        return states
+
+    async def get_state(self, entity_id: str) -> Optional[HAStateInfo]:
+        """Get a single entity state via WebSocket."""
+        await self.ensure_connected()
+        result = await self._send_command("get_states", timeout=10)
+        for state in result.get("result", []):
+            if state.get("entity_id") == entity_id:
+                return HAStateInfo(
+                    entity_id=entity_id,
+                    domain=entity_id.partition(".")[0],
+                    state=state["state"],
+                    friendly_name=state.get("attributes", {}).get("friendly_name", entity_id),
+                    last_changed=0,
+                    last_reported=0,
+                    last_updated=0,
+                    attributes=state.get("attributes", {}),
+                    context=state.get("context", {}),
+                )
+        return None
+
+    async def call_service(
+        self,
+        domain: str,
+        service: str,
+        service_data: Optional[Dict[str, Any]] = None,
+        timeout: float = 10.0,
+    ) -> bool:
+        """Call a service via WebSocket (faster than REST API)."""
+        await self.ensure_connected()
+        data: Dict[str, Any] = {
+            "domain": domain,
+            "service": service,
+        }
+        if service_data:
+            data["service_data"] = service_data
+
+        result = await self._send_command("call_service", data, timeout=timeout)
+        return result.get("success", False)
+
+    async def subscribe_state_changes(self) -> bool:
+        """Subscribe to all state change events (real-time push)."""
+        await self.ensure_connected()
+        result = await self._send_command("subscribe_events", {"event_type": "state_changed"})
+        return result.get("success", False)
+
+    async def _subscribe_state_changes(self) -> None:
+        """Internal: re-subscribe after reconnect."""
+        try:
+            await self.subscribe_state_changes()
+        except Exception as e:  # pylint: disable=broad-except
+            _LOGGER.debug("HA WS: re-subscribe failed: %s", e)
+
+    def on_state_change(self, callback: Callable[[Dict[str, Any]], Coroutine]) -> None:
+        """Register a state change callback."""
+        self._state_subscribers.append(callback)
+
+    def _update_state_cache(self, state_data: Dict) -> None:
+        """Update internal state cache from state_changed event."""
+        eid = state_data.get("entity_id")
+        if not eid:
+            return
+        attrs = state_data.get("attributes", {})
+        self._last_states[eid] = HAStateInfo(
+            entity_id=eid,
+            domain=eid.partition(".")[0],
+            state=state_data.get("state", ""),
+            friendly_name=attrs.get("friendly_name", eid),
+            last_changed=0,
+            last_reported=0,
+            last_updated=0,
+            attributes=attrs,
+            context=state_data.get("context", {}),
+        )
+
+    def get_cached_states(self) -> Dict[str, HAStateInfo]:
+        """Get cached states without making any network call."""
+        return self._last_states
+
+    def is_connected(self) -> bool:
+        """Check if connected."""
+        return self._connected and self._ws is not None and not self._ws.closed

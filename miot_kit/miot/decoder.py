@@ -118,6 +118,11 @@ class MIoTMediaDecoder(threading.Thread):
     _current_jpg_height: int
     _last_jpeg_ts: int
 
+    # H265 VPS/SPS/PPS cache for fixing decoder initialization
+    _h265_vps: Optional[bytes]
+    _h265_sps: Optional[bytes]
+    _h265_pps: Optional[bytes]
+
     def __init__(
         self,
         frame_interval: int,
@@ -149,6 +154,9 @@ class MIoTMediaDecoder(threading.Thread):
         self._resampler = None  # type: ignore
 
         self._last_jpeg_ts = 0
+        self._h265_vps = None
+        self._h265_sps = None
+        self._h265_pps = None
 
     def run(self) -> None:
         """Start the decoder."""
@@ -199,7 +207,83 @@ class MIoTMediaDecoder(threading.Thread):
                 return f"{codec_name}_v4l2m2m"
         return codec_name
 
+    @staticmethod
+    def _find_h265_nalu_start(data: bytes, offset: int = 0) -> int:
+        """Find the start of next H265 NAL unit (scans for 00 00 01 or 00 00 00 01)."""
+        i = offset
+        while i < len(data) - 3:
+            if data[i] == 0x00 and data[i + 1] == 0x00:
+                if data[i + 2] == 0x01:
+                    return i
+                if i + 3 < len(data) and data[i + 2] == 0x00 and data[i + 3] == 0x01:
+                    return i
+            i += 1
+        return -1
+
+    def _extract_h265_nalu_header(self, data: bytes, frame_type: MIoTCameraFrameType) -> None:
+        """Extract VPS/SPS/PPS from H265 data for decoder initialization."""
+        # Only extract from I-frames which should contain VPS/SPS/PPS
+        if frame_type != MIoTCameraFrameType.FRAME_I:
+            return
+
+        pos = 0
+        while pos < len(data) - 4:
+            start = self._find_h265_nalu_start(data, pos)
+            if start < 0:
+                break
+
+            # Determine start code length
+            sc_len = 4 if (start + 3 < len(data) and data[start + 2] == 0x00 and data[start + 3] == 0x01) else 3
+            header_byte = data[start + sc_len]
+            nalu_type = (header_byte >> 1) & 0x3F
+
+            # Find next NAL unit to determine this NAL's length
+            next_start = self._find_h265_nalu_start(data, start + sc_len + 1)
+            nalu_end = next_start if next_start > 0 else len(data)
+            nalu_data = data[start:nalu_end]
+
+            if nalu_type == 32:  # VPS
+                self._h265_vps = nalu_data
+                _LOGGER.debug("Extracted H265 VPS: %d bytes", len(nalu_data))
+            elif nalu_type == 33:  # SPS
+                self._h265_sps = nalu_data
+                _LOGGER.debug("Extracted H265 SPS: %d bytes", len(nalu_data))
+            elif nalu_type == 34:  # PPS
+                self._h265_pps = nalu_data
+                _LOGGER.debug("Extracted H265 PPS: %d bytes", len(nalu_data))
+
+            pos = nalu_end
+
+    def _inject_h265_header(self, data: bytes) -> bytes:
+        """Inject cached VPS/SPS/PPS before frame data if decoder needs them."""
+        if not (self._h265_vps and self._h265_sps and self._h265_pps):
+            return data
+
+        # Check if data already contains VPS/SPS/PPS
+        first_nalu_pos = self._find_h265_nalu_start(data, 0)
+        if first_nalu_pos >= 0:
+            sc_len = 4 if (first_nalu_pos + 3 < len(data) and
+                          data[first_nalu_pos + 2] == 0x00 and
+                          data[first_nalu_pos + 3] == 0x01) else 3
+            header_byte = data[first_nalu_pos + sc_len]
+            nalu_type = (header_byte >> 1) & 0x3F
+            # If first NAL is already VPS/SPS/PPS, no injection needed
+            if nalu_type in (32, 33, 34):
+                return data
+
+        # Prepend VPS + SPS + PPS with start codes
+        header = b'\x00\x00\x00\x01'
+        return (header + self._h265_vps[4:] +
+                header + self._h265_sps[4:] +
+                header + self._h265_pps[4:] +
+                data)
+
     def _on_video_callback(self, frame_data: MIoTCameraFrameData) -> None:
+        # Fast path: skip frames we don't need yet (before expensive decode)
+        now_ts = int(time.time() * 1000)
+        if now_ts - self._last_jpeg_ts < self._frame_interval:
+            return
+
         if not self._video_decoder:
             # Create video decoder
             if frame_data.codec_id == MIoTCameraCodec.VIDEO_H264:
@@ -207,41 +291,40 @@ class MIoTMediaDecoder(threading.Thread):
             elif frame_data.codec_id == MIoTCameraCodec.VIDEO_H265:
                 self._video_decoder = VideoCodecContext.create("hevc", "r")
             _LOGGER.info("video decoder created, %s", frame_data.codec_id)
-        pkt = Packet(frame_data.data)
+
+        # H265 fix: extract and inject VPS/SPS/PPS if missing from stream
+        data = frame_data.data
+        if frame_data.codec_id == MIoTCameraCodec.VIDEO_H265:
+            self._extract_h265_nalu_header(data, frame_data.frame_type)
+            data = self._inject_h265_header(data)
+
+        pkt = Packet(data)
         frames: List[VideoFrame] = self._video_decoder.decode(pkt)  # type: ignore
-        now_ts = int(time.time()*1000)
-        if now_ts - self._last_jpeg_ts >= self._frame_interval:
-            if not frames:
-                _LOGGER.info("video frame is empty, %d, %d", frame_data.codec_id, frame_data.timestamp)
-                self._last_jpeg_ts = now_ts
-                return
-            frame = frames[0]
-            # _LOGGER.debug("video frame, %d, %d", frame.height, frame.width)
-            rgb_frame: VideoFrame = frame.to_rgb()
-            img: Image.Image = rgb_frame.to_image()
-
-            # Resize image for AI vision analysis if configured
-            if self._vision_img_resolution > 0 and img.width > self._vision_img_resolution:
-                # Calculate new height maintaining aspect ratio
-                aspect_ratio = img.height / img.width
-                new_height = int(self._vision_img_resolution * aspect_ratio)
-                img = img.resize(
-                    (self._vision_img_resolution, new_height),
-                    Image.Resampling.LANCZOS
-                )
-                _LOGGER.debug(
-                    "Resized image for vision analysis: %dx%d -> %dx%d",
-                    frame.width, frame.height, img.width, img.height
-                )
-
-            buf: BytesIO = BytesIO()
-            img.save(buf, format="JPEG", quality=85)
-            jpeg_data = buf.getvalue()
-            self._main_loop.call_soon_threadsafe(
-                self._main_loop.create_task,
-                self._video_callback(jpeg_data, frame_data.timestamp, frame_data.channel)
-            )
+        if not frames:
+            _LOGGER.debug("video frame is empty, %d, %d", frame_data.codec_id, frame_data.timestamp)
             self._last_jpeg_ts = now_ts
+            return
+        frame = frames[0]
+        rgb_frame: VideoFrame = frame.to_rgb()
+        img: Image.Image = rgb_frame.to_image()
+
+        # Resize image for AI vision analysis if configured
+        if self._vision_img_resolution > 0 and img.width > self._vision_img_resolution:
+            aspect_ratio = img.height / img.width
+            new_height = int(self._vision_img_resolution * aspect_ratio)
+            img = img.resize(
+                (self._vision_img_resolution, new_height),
+                Image.Resampling.BILINEAR
+            )
+
+        buf: BytesIO = BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        jpeg_data = buf.getvalue()
+        self._main_loop.call_soon_threadsafe(
+            self._main_loop.create_task,
+            self._video_callback(jpeg_data, frame_data.timestamp, frame_data.channel)
+        )
+        self._last_jpeg_ts = now_ts
 
     def _on_audio_callback(self, frame_data: MIoTCameraFrameData) -> None:
         if not self._audio_decoder:

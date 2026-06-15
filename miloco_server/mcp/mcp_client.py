@@ -204,19 +204,33 @@ class MCPClientBase(ABC):
         return list(self._resources.values())
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Call tool"""
+        """Call tool (optimized: skips redundant ping, single context open)"""
         logger.info("MCP Server [%s] call_tool - tool_name: %s, arguments type: %s, arguments: %s",
                     self.config.server_name, tool_name, type(arguments), arguments)
 
         if not self.client:
             raise RuntimeError(f"MCP Server [{self.config.server_name}] instance does not exist")
 
+        if tool_name not in self._tools:
+            raise ValueError(f"Tool '{tool_name}' does not exist")
+
+        # Fast path: if connected, skip ping and call directly
+        if self._connected:
+            try:
+                async with self.client:
+                    result: CallToolResult = await self.client.call_tool(name=tool_name, arguments=arguments)
+                    logger.info("MCP Server [%s] call_tool - result: %s", self.config.server_name, result)
+                    return self._convert_call_tool_result(result)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.warning("MCP Server [%s] call_tool failed, attempting reconnect: %s",
+                               self.config.server_name, e)
+                self._connected = False
+                self.client = None
+
+        # Slow path: reconnect then call
         if not await self.ensure_connected():
             raise RuntimeError(
                 f"MCP Server [{self.config.server_name}] connection failed, cannot call tool '{tool_name}'")
-
-        if tool_name not in self._tools:
-            raise ValueError(f"Tool '{tool_name}' does not exist")
 
         async with self.client:
             result: CallToolResult = await self.client.call_tool(name=tool_name, arguments=arguments)

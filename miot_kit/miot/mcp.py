@@ -6,6 +6,7 @@ MCP server.
 """
 import json
 import logging
+import time
 from typing import Annotated, Any, Callable, Coroutine, Dict, Generic, List, Optional, TypeVar, Union
 from pydantic import BaseModel, Field
 
@@ -368,6 +369,22 @@ class MIoTDeviceMcpInterface(_BaseMcpInterface):
             pass
     """
 
+    get_props_async: Callable[[List[MIoTGetPropertyParam]], Coroutine[Any, Any, List]]
+
+    """
+    example:
+        async def get_props_async(params: List[MIoTGetPropertyParam]) -> List:
+            pass
+    """
+
+    set_props_async: Callable[[List[MIoTSetPropertyParam]], Coroutine[Any, Any, List]]
+
+    """
+    example:
+        async def set_props_async(params: List[MIoTSetPropertyParam]) -> List:
+            pass
+    """
+
 
 class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
     """MIoT MCP server."""
@@ -379,6 +396,10 @@ class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
     _TOOL_NAME_GET_DEVICE_SPEC: str = "get_device_spec"
     _TOOL_NAME_SEND_CTRL_RPC: str = "send_ctrl_rpc"
     _TOOL_NAME_SEND_GET_RPC: str = "send_get_rpc"
+    _TOOL_NAME_AUTO_CTRL: str = "auto_ctrl_device"
+    _TOOL_NAME_AUTO_GET: str = "auto_get_device_prop"
+    _TOOL_NAME_BATCH_GET_PROPS: str = "batch_get_props"
+    _TOOL_NAME_BATCH_SET_PROPS: str = "batch_set_props"
     _PROMPT_NAME_SEND_CTRL_RPC: str = "prompt_send_ctrl_rpc"
     _PROMPT_NAME_SEND_GET_RPC: str = "prompt_send_get_rpc"
     _spec_parser: MIoTSpecParser
@@ -390,6 +411,10 @@ class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
     _with_extra_info: bool
     # urn: spec_lite.
     _spec_lite_buffer: Dict[str, Dict[str, MIoTSpecDeviceLite]]
+
+    # Device list cache TTL in seconds
+    _DEVICES_CACHE_TTL: float = 60.0
+    _devices_cache_time: float = 0
 
     def __init__(
         self,
@@ -484,6 +509,30 @@ class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
                 "tool_name_send_get_rpc": self._TOOL_NAME_SEND_GET_RPC
             }
         )
+        # auto ctrl device (combined: auto-fetches SPEC + controls)
+        self.add_tool(
+            fn=self.auto_ctrl_device_async,
+            name=self._TOOL_NAME_AUTO_CTRL,
+            description_default="Control a Xiaomi Home device by property name. Automatically fetches SPEC and finds the correct iid. Use this to skip the get_device_spec step."
+        )
+        # auto get device prop (combined: auto-fetches SPEC + queries)
+        self.add_tool(
+            fn=self.auto_get_device_prop_async,
+            name=self._TOOL_NAME_AUTO_GET,
+            description_default="Get a Xiaomi Home device property value by name. Automatically fetches SPEC and finds the correct iid. Use this to skip the get_device_spec step."
+        )
+        # batch get props
+        self.add_tool(
+            fn=self.batch_get_props_async,
+            name=self._TOOL_NAME_BATCH_GET_PROPS,
+            description_default="Batch get multiple device properties in a single request. More efficient than calling send_get_rpc multiple times."
+        )
+        # batch set props
+        self.add_tool(
+            fn=self.batch_set_props_async,
+            name=self._TOOL_NAME_BATCH_SET_PROPS,
+            description_default="Batch set multiple device properties in a single request. More efficient than calling send_ctrl_rpc multiple times."
+        )
         # add prompts.
         # send ctrl rpc prompt.
         self.add_prompt(
@@ -500,6 +549,7 @@ class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
 
     async def get_area_info_async(self) -> Dict[str, McpMIoTAreaInfo]:
         """Get area(home or room) info, ONLY show the area with devices."""
+        await self._ensure_devices_loaded()
         homes = await self._interface.get_homes_async()
         result: Dict[str, McpMIoTAreaInfo] = {}
         for home_id, home in homes.items():
@@ -514,21 +564,29 @@ class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
         return result
 
     async def get_device_classes_async(self) -> Dict[str, str]:
-        """Get device class."""
-        self._devices = await self._interface.get_devices_async()
+        """Get device class (uses cache with 60s TTL)."""
+        await self._ensure_devices_loaded()
         result: Dict[str, str] = {}
         for device in self._devices.values():
             device_class = device.model.split(".")[1]
             result[device_class] = device_class
         return result
 
+    async def _ensure_devices_loaded(self) -> None:
+        """Load devices from interface if cache is stale."""
+        now = time.monotonic()
+        if self._devices and (now - self._devices_cache_time) < self._DEVICES_CACHE_TTL:
+            return
+        self._devices = await self._interface.get_devices_async()
+        self._devices_cache_time = now
+
     async def get_devices_async(
         self,
         area_id: Annotated[Optional[str], Field(description="Area Id(Home or room id), optional")] = None,
         device_class: Annotated[Optional[str], Field(description="Device class, optional")] = None,
     ) -> Dict[str, McpMIoTDeviceInfo]:
-        """Get device list."""
-        self._devices = await self._interface.get_devices_async()
+        """Get device list (uses cache with 60s TTL)."""
+        await self._ensure_devices_loaded()
         result = {
             did: McpMIoTDeviceInfo(
                 did=did,
@@ -809,9 +867,182 @@ class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
         _LOGGER.info("send get rpc: %s, %s -> %s", did, iid, result)
         return result
 
+    # Common property name aliases (Chinese → English keywords for matching)
+    _PROP_ALIASES: Dict[str, List[str]] = {
+        "温度": ["temperature", "temp", "当前温度"],
+        "湿度": ["humidity", "humid", "当前湿度"],
+        "亮度": ["brightness", "luminance", "light"],
+        "开关": ["switch", "on", "power", "状态"],
+        "色温": ["color_temperature", "color temp"],
+        "电量": ["battery", "soc"],
+        "功率": ["power", "watt", "watts"],
+        "电压": ["voltage"],
+        "电流": ["current"],
+        "PM2.5": ["pm2.5", "pm25", "pm_2_5"],
+        "CO2": ["co2", "carbon_dioxide"],
+        "甲醛": ["hcho", "formaldehyde"],
+        "噪音": ["noise", "sound"],
+        "光照度": ["illumination", "lux"],
+    }
+
+    def _find_prop_iid_from_spec(
+        self, spec: Dict[str, MIoTSpecDeviceLite], prop_name: str
+    ) -> Optional[str]:
+        """Find property iid from spec by name with alias support."""
+        prop_name_lower = prop_name.lower()
+        
+        # Get aliases for this property name
+        aliases = self._PROP_ALIASES.get(prop_name, [prop_name_lower])
+        if prop_name_lower not in [a.lower() for a in aliases]:
+            aliases.append(prop_name_lower)
+        
+        # Pass 1: exact substring match
+        for iid, item in spec.items():
+            if not iid.startswith("prop."):
+                continue
+            item_desc = (item.description or "").lower()
+            for alias in aliases:
+                alias_lower = alias.lower()
+                if alias_lower in item_desc or item_desc in alias_lower:
+                    return iid
+        
+        # Pass 2: word boundary match (for partial matches like "temp" in "temperature")
+        for iid, item in spec.items():
+            if not iid.startswith("prop."):
+                continue
+            item_desc = (item.description or "").lower()
+            for alias in aliases:
+                alias_lower = alias.lower()
+                # Check if any word in the description starts with the alias
+                for word in item_desc.split():
+                    if word.startswith(alias_lower) or alias_lower.startswith(word):
+                        return iid
+        
+        return None
+
+    def _find_action_iid_from_spec(
+        self, spec: Dict[str, MIoTSpecDeviceLite], action_name: str
+    ) -> Optional[str]:
+        """Find action iid from spec by name with alias support."""
+        action_name_lower = action_name.lower()
+        for iid, item in spec.items():
+            if not iid.startswith("action."):
+                continue
+            item_desc = (item.description or "").lower()
+            # Exact substring match
+            if action_name_lower in item_desc or item_desc in action_name_lower:
+                return iid
+            # Word boundary match
+            for word in item_desc.split():
+                if word.startswith(action_name_lower) or action_name_lower.startswith(word):
+                    return iid
+        return None
+
+    async def auto_ctrl_device_async(
+        self,
+        did: Annotated[str, "Device id"],
+        prop_name: Annotated[str, "Property or action name to control (e.g. 'switch', 'brightness', 'on')"],
+        value: Annotated[Union[int, bool, str, float, List], Field(description="Control value")]
+    ) -> bool:
+        """Control a device by property name. Automatically fetches SPEC, finds the iid, and sends the control command.
+        Use this instead of calling get_device_spec + send_ctrl_rpc separately — it saves one LLM round-trip.
+        """
+        # Ensure devices loaded
+        await self._ensure_devices_loaded()
+        if did not in self._devices:
+            raise ToolError(f"Device {did} not found. Use get_devices to find the correct device id.")
+
+        # Get or cache spec
+        urn = self._devices[did].urn
+        spec = self._spec_lite_buffer.get(urn)
+        if not spec:
+            spec = await self._spec_parser.parse_lite_async(urn=urn)
+            if not spec:
+                raise ToolError(f"Failed to get SPEC for device {did}")
+            self._spec_lite_buffer[urn] = spec
+
+        # Try to find as property first, then as action
+        iid = self._find_prop_iid_from_spec(spec, prop_name)
+        if iid:
+            return await self.send_ctrl_rpc_async(did=did, iid=iid, value=value)
+
+        iid = self._find_action_iid_from_spec(spec, prop_name)
+        if iid:
+            return await self.send_ctrl_rpc_async(did=did, iid=iid, value=value)
+
+        # List available props for helpful error
+        available = [
+            f"{item.description} ({iid})" for iid, item in spec.items()
+            if iid.startswith("prop.") or iid.startswith("action.")
+        ]
+        raise ToolError(
+            f"Cannot find property/action '{prop_name}' in device {did} SPEC. "
+            f"Available: {', '.join(available[:10])}"
+        )
+
+    async def auto_get_device_prop_async(
+        self,
+        did: Annotated[str, "Device id"],
+        prop_name: Annotated[str, "Property name to query (e.g. 'temperature', 'humidity', 'brightness')"]
+    ) -> Union[int, bool, str, float, None]:
+        """Get a device property value by name. Automatically fetches SPEC, finds the iid, and queries the value.
+        Use this instead of calling get_device_spec + send_get_rpc separately — it saves one LLM round-trip.
+        """
+        await self._ensure_devices_loaded()
+        if did not in self._devices:
+            raise ToolError(f"Device {did} not found. Use get_devices to find the correct device id.")
+
+        urn = self._devices[did].urn
+        spec = self._spec_lite_buffer.get(urn)
+        if not spec:
+            spec = await self._spec_parser.parse_lite_async(urn=urn)
+            if not spec:
+                raise ToolError(f"Failed to get SPEC for device {did}")
+            self._spec_lite_buffer[urn] = spec
+
+        iid = self._find_prop_iid_from_spec(spec, prop_name)
+        if not iid:
+            available = [
+                f"{item.description} ({iid})" for iid, item in spec.items()
+                if iid.startswith("prop.")
+            ]
+            raise ToolError(
+                f"Cannot find property '{prop_name}' in device {did} SPEC. "
+                f"Available properties: {', '.join(available[:10])}. "
+                f"TIP: If this device is also connected to Home Assistant, "
+                f"use ha_devices___send_get_rpc with the HA entity_id instead."
+            )
+        return await self.send_get_rpc_async(did=did, iid=iid)
+
+    async def batch_get_props_async(
+        self,
+        props: Annotated[List[Dict[str, Any]], Field(description="List of {did, siid, piid} objects to query")]
+    ) -> List[Dict[str, Any]]:
+        """Batch get multiple device properties in a single HTTP request.
+        More efficient than calling send_get_rpc multiple times.
+        Each item: {"did": "device_id", "siid": 2, "piid": 1}
+        """
+        params = [MIoTGetPropertyParam(**p) for p in props]
+        results = await self._interface.get_props_async(params)
+        return results
+
+    async def batch_set_props_async(
+        self,
+        props: Annotated[List[Dict[str, Any]], Field(
+            description="List of {did, siid, piid, value} objects to set"
+        )]
+    ) -> List[Dict[str, Any]]:
+        """Batch set multiple device properties in a single HTTP request.
+        More efficient than calling send_ctrl_rpc multiple times.
+        Each item: {"did": "device_id", "siid": 2, "piid": 1, "value": true}
+        """
+        params = [MIoTSetPropertyParam(**p) for p in props]
+        results = await self._interface.set_props_async(params)
+        return results
+
     async def __prompt_send_ctrl_rpc_async(self) -> PromptMessage:
         """Send control rpc prompt."""
-        self._devices = await self._interface.get_devices_async()
+        await self._ensure_devices_loaded()
         with_extra_info = len(self._devices) > self._prompt_device_count_max
         extra_device_infos: Optional[str] = None
         if with_extra_info:
@@ -845,7 +1076,7 @@ class MIoTDeviceMcp(_BaseMcp[MIoTDeviceMcpInterface]):
 
     async def __prompt_send_get_rpc_async(self) -> PromptMessage:
         """Send get rpc prompt."""
-        self._devices = await self._interface.get_devices_async()
+        await self._ensure_devices_loaded()
         with_extra_info = len(self._devices) > self._prompt_device_count_max
         extra_device_infos: Optional[str] = None
         if with_extra_info:
@@ -1031,6 +1262,10 @@ class HomeAssistantDeviceMcp(_BaseMcp[HomeAssistantDeviceMcpInterface]):
     _TOOL_NAME_SEND_GET_RPC: str = "send_get_rpc"
     _mcp: FastMCP
 
+    _DEVICES_CACHE_TTL: float = 60.0
+    _devices_cache_time: float = 0
+    _devices_cache: Optional[List[McpHADeviceInfo]] = None
+
     def __init__(
         self, interface: HomeAssistantDeviceMcpInterface
     ) -> None:
@@ -1039,6 +1274,15 @@ class HomeAssistantDeviceMcp(_BaseMcp[HomeAssistantDeviceMcpInterface]):
             name="Home Assistant Device MCP Server",
             instructions="Support querying and controlling Home Assistant devices."
         )
+
+    async def _ensure_devices_loaded(self) -> List[McpHADeviceInfo]:
+        """Load devices from interface if cache is stale."""
+        now = time.monotonic()
+        if self._devices_cache is not None and (now - self._devices_cache_time) < self._DEVICES_CACHE_TTL:
+            return self._devices_cache
+        self._devices_cache = await self._interface.get_devices_async()
+        self._devices_cache_time = now
+        return self._devices_cache
 
     async def init_async(self) -> None:
         """Init."""
@@ -1089,11 +1333,22 @@ class HomeAssistantDeviceMcp(_BaseMcp[HomeAssistantDeviceMcpInterface]):
                 "tool_name_send_get_rpc": self._TOOL_NAME_SEND_GET_RPC
             }
         )
+        # batch get states
+        self.add_tool(
+            fn=self.batch_get_states_async,
+            name="batch_get_states",
+            description_default="Batch get multiple HA device states in one call. More efficient than calling send_get_rpc multiple times."
+        )
+        # batch control devices
+        self.add_tool(
+            fn=self.batch_control_devices_async,
+            name="batch_control_devices",
+            description_default="Batch control multiple HA devices in one call. More efficient than calling send_ctrl_rpc multiple times."
+        )
 
     async def get_area_info_async(self) -> Dict[str, Any]:
         """Get the area list."""
-        # For HA, areas are part of device attributes, so we extract unique areas
-        devices = await self._interface.get_devices_async()
+        devices = await self._ensure_devices_loaded()
         areas = {}
         for device in devices:
             if device.area and device.area.strip():
@@ -1106,7 +1361,7 @@ class HomeAssistantDeviceMcp(_BaseMcp[HomeAssistantDeviceMcpInterface]):
 
     async def get_device_classes_async(self) -> Dict[str, str]:
         """Get the device class list."""
-        devices = await self._interface.get_devices_async()
+        devices = await self._ensure_devices_loaded()
         domains = {}
         for device in devices:
             if device.domain and device.domain.strip():
@@ -1115,12 +1370,11 @@ class HomeAssistantDeviceMcp(_BaseMcp[HomeAssistantDeviceMcpInterface]):
 
     async def get_devices_async(self) -> List[McpHADeviceInfo]:
         """Get the device list."""
-        return await self._interface.get_devices_async()
+        return await self._ensure_devices_loaded()
 
     async def get_device_spec_async(self, entity_id: str) -> Dict[str, Any]:
         """Get device spec definition."""
-        # For HA, we return device services as "spec"
-        devices = await self._interface.get_devices_async()
+        devices = await self._ensure_devices_loaded()
         for device in devices:
             if device.entity_id == entity_id:
                 # Create a basic spec with control service info
@@ -1152,7 +1406,7 @@ class HomeAssistantDeviceMcp(_BaseMcp[HomeAssistantDeviceMcpInterface]):
         entity_id: Annotated[str, "Entity ID"]
     ) -> Dict[str, Any]:
         """Get device status."""
-        devices = await self._interface.get_devices_async()
+        devices = await self._ensure_devices_loaded()
         for device in devices:
             if device.entity_id == entity_id:
                 return {
@@ -1160,3 +1414,49 @@ class HomeAssistantDeviceMcp(_BaseMcp[HomeAssistantDeviceMcpInterface]):
                     "state": device.state
                 }
         return {}
+
+    async def batch_get_states_async(
+        self,
+        entity_ids: Annotated[List[str], Field(description="List of entity IDs to query")]
+    ) -> List[Dict[str, Any]]:
+        """Batch get multiple device states from the cached device list.
+        More efficient than calling send_get_rpc multiple times.
+        """
+        devices = await self._ensure_devices_loaded()
+        device_map = {d.entity_id: d for d in devices}
+        results = []
+        for eid in entity_ids:
+            if eid in device_map:
+                d = device_map[eid]
+                results.append({
+                    "entity_id": d.entity_id,
+                    "name": d.name,
+                    "state": d.state,
+                    "domain": d.domain,
+                    "area": d.area,
+                })
+            else:
+                results.append({"entity_id": eid, "error": "not found"})
+        return results
+
+    async def batch_control_devices_async(
+        self,
+        controls: Annotated[List[Dict[str, Any]], Field(
+            description="List of {entity_id, domain, service, service_data?} objects"
+        )]
+    ) -> List[Dict[str, Any]]:
+        """Batch control multiple HA devices in sequence.
+        Each item: {"entity_id": "light.living_room", "domain": "light", "service": "turn_on"}
+        """
+        results = []
+        for ctrl in controls:
+            eid = ctrl.get("entity_id", "")
+            domain = ctrl.get("domain", "")
+            service = ctrl.get("service", "")
+            service_data = ctrl.get("service_data")
+            try:
+                ok = await self._interface.control_device_async(eid, domain, service, service_data)
+                results.append({"entity_id": eid, "success": ok})
+            except Exception as e:  # pylint: disable=broad-except
+                results.append({"entity_id": eid, "success": False, "error": str(e)})
+        return results
