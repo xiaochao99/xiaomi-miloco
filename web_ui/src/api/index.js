@@ -194,6 +194,12 @@ export const getRecordingSegmentsDurations = (segmentIds) =>
 export const getUpdateStatus = () => getApi('/api/system/update/status');
 export const checkForUpdates = () => getApi('/api/system/update/check');
 export const applyUpdate = (version = null, updateConfig = false) => postApi('/api/system/update/apply', { version, update_config: updateConfig });
+export const uploadUpdatePackage = (file, updateConfig = false) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('update_config', updateConfig);
+  return postApi('/api/system/update/upload', formData);
+};
 export const getUpdateLog = () => getApi('/api/system/update/log');
 export const listBackups = () => getApi('/api/system/backups');
 export const rollbackToBackup = (backupName) => postApi('/api/system/rollback', { backup_name: backupName });
@@ -208,8 +214,10 @@ export const getMusicStatus = () => getApi('/api/music/status');
 export const controlMusic = (data) => postApi('/api/music/control', data);
 export const getDLNADevices = () => getApi('/api/music/dlna/devices');
 export const discoverDLNADevices = (timeout = 5) => postApi('/api/music/dlna/discover', { timeout });
-export const castToDLNA = (deviceId, songId = null) => postApi('/api/music/dlna/cast', { device_id: deviceId, song_id: songId });
+export const castToDLNA = (deviceId, songId = null, audioUrl = null) => postApi('/api/music/dlna/cast', { device_id: deviceId, song_id: songId, audio_url: audioUrl });
 export const stopDLNACast = (deviceId) => postApi('/api/music/dlna/stop', { device_id: deviceId });
+export const pauseDLNA = (deviceId) => postApi('/api/music/dlna/pause', { device_id: deviceId });
+export const playDLNA = (deviceId) => postApi('/api/music/dlna/play', { device_id: deviceId });
 
 // Local Music Scan API
 export const scanLocalMusic = (path, recursive = true) => postApi('/api/music/scan/local', { path, recursive });

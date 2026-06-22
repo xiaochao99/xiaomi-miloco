@@ -4,7 +4,7 @@
   padding: 0 20px 20px;
 
   &::-webkit-scrollbar { width: 6px; }
-  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+  &::-webkit-scrollbar-thumb { background: var(--music-border-color); border-radius: 4px; }
   &::-webkit-scrollbar-track { background: transparent; }
 }
 
@@ -17,7 +17,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid var(--music-border-light);
   margin-bottom: 8px;
 }
 
@@ -27,12 +27,12 @@
   gap: 8px;
   font-size: 16px;
   font-weight: 600;
-  color: var(--text-primary, #eee);
+  color: var(--music-text-primary);
 }
 
 .sectionCount {
   font-size: 12px;
-  color: var(--text-secondary, #999);
+  color: var(--music-text-secondary);
 }
 
 .playAllBtn {
@@ -41,16 +41,16 @@
   gap: 4px;
   padding: 4px 12px;
   border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid var(--music-border-color);
   background: transparent;
-  color: var(--text-secondary, #999);
+  color: var(--music-text-secondary);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
   margin-left: auto;
 
   &:hover {
-    color: #5cd5e5;
+    color: var(--music-accent);
     border-color: rgba(92,213,229,0.3);
     background: rgba(92,213,229,0.08);
   }
@@ -64,15 +64,15 @@
   height: 28px;
   border-radius: 50%;
   border: none;
-  background: rgba(255,255,255,0.06);
-  color: var(--text-secondary, #999);
+  background: var(--music-border-light);
+  color: var(--music-text-secondary);
   cursor: pointer;
   transition: all 0.15s;
   flex-shrink: 0;
 
   &:hover {
     background: rgba(92,213,229,0.15);
-    color: #5cd5e5;
+    color: var(--music-accent);
   }
 }
 
@@ -94,14 +94,14 @@
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(255,255,255,0.06);
+    background: var(--music-border-light);
     .songIndex span { display: none; }
     .songIndexPlay { display: flex; }
   }
 
   &.songItemActive {
     background: rgba(92,213,229,0.08);
-    .songTitle { color: #5cd5e5; }
+    .songTitle { color: var(--music-accent); }
   }
 }
 
@@ -109,7 +109,7 @@
   width: 24px;
   text-align: center;
   font-size: 12px;
-  color: var(--text-tertiary, #666);
+  color: var(--music-text-placeholder);
   flex-shrink: 0;
 }
 
@@ -117,9 +117,9 @@
   display: none;
   align-items: center;
   justify-content: center;
-  color: var(--text-secondary, #999);
+  color: var(--music-text-secondary);
 
-  &:hover { color: #5cd5e5; }
+  &:hover { color: var(--music-accent); }
 }
 
 .playingBars {
@@ -131,7 +131,7 @@
 
   span {
     width: 3px;
-    background: #5cd5e5;
+    background: var(--music-accent);
     border-radius: 1px;
     animation: barPulse 0.8s ease-in-out infinite;
 
@@ -160,8 +160,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.2);
+  background: var(--music-border-light);
+  color: var(--music-text-placeholder);
 }
 
 .songInfo {
@@ -173,7 +173,7 @@
 
 .songTitle {
   font-size: 14px;
-  color: var(--text-primary, #eee);
+  color: var(--music-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -181,7 +181,7 @@
 
 .songArtist {
   font-size: 12px;
-  color: var(--text-secondary, #999);
+  color: var(--music-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -189,10 +189,21 @@
 
 .songDuration {
   font-size: 12px;
-  color: var(--text-tertiary, #888);
+  color: var(--music-text-placeholder);
   flex-shrink: 0;
   width: 44px;
   text-align: right;
+}
+
+.sourceTagOnline {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 16px;
+  background: rgba(92, 213, 229, 0.1);
+  color: var(--music-accent);
 }
 
 .addBtn {
@@ -200,14 +211,14 @@
   border: none;
   cursor: pointer;
   padding: 4px;
-  color: var(--text-tertiary, #888);
+  color: var(--music-text-placeholder);
   opacity: 0.4;
   transition: opacity 0.15s;
   flex-shrink: 0;
 
   &:hover {
     opacity: 1;
-    color: #5cd5e5;
+    color: var(--music-accent);
   }
 }
 
@@ -238,13 +249,13 @@
   align-items: center;
   gap: 12px;
   padding: 12px;
-  background: rgba(255,255,255,0.04);
+  background: var(--music-bg-hover);
   border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(255,255,255,0.08);
+    background: var(--music-border-color);
   }
 }
 
@@ -258,7 +269,7 @@
   justify-content: center;
   font-size: 20px;
   font-weight: 700;
-  color: #fff;
+  color: var(--music-text-primary);
   flex-shrink: 0;
 }
 
@@ -270,7 +281,7 @@
 .artistName {
   font-size: 14px;
   font-weight: 500;
-  color: var(--text-primary, #eee);
+  color: var(--music-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -278,7 +289,7 @@
 
 .artistCount {
   font-size: 12px;
-  color: var(--text-secondary, #999);
+  color: var(--music-text-secondary);
 }
 
 /* ─── Album List ─── */
@@ -294,13 +305,13 @@
   align-items: center;
   gap: 12px;
   padding: 12px;
-  background: rgba(255,255,255,0.04);
+  background: var(--music-bg-hover);
   border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(255,255,255,0.08);
+    background: var(--music-border-color);
   }
 }
 
@@ -310,11 +321,11 @@
   border-radius: 6px;
   overflow: hidden;
   flex-shrink: 0;
-  background: rgba(255,255,255,0.06);
+  background: var(--music-border-light);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255,255,255,0.2);
+  color: var(--music-text-placeholder);
 
   img {
     width: 100%;
@@ -331,7 +342,7 @@
 .albumName {
   font-size: 14px;
   font-weight: 500;
-  color: var(--text-primary, #eee);
+  color: var(--music-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -339,7 +350,7 @@
 
 .albumCount {
   font-size: 12px;
-  color: var(--text-secondary, #999);
+  color: var(--music-text-secondary);
 }
 
 /* ─── Empty State ─── */
@@ -355,10 +366,10 @@
 
 .emptyText {
   font-size: 14px;
-  color: var(--text-secondary, #999);
+  color: var(--music-text-secondary);
 }
 
 .emptyHint {
   font-size: 12px;
-  color: rgba(255,255,255,0.3);
+  color: var(--music-text-secondary);
 }

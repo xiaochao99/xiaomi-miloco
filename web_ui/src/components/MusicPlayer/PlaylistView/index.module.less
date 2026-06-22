@@ -1,12 +1,3 @@
-@text-primary: #e5eaf3;
-@text-regular: #cfd3dc;
-@text-secondary: #a3a6ad;
-@text-placeholder: #8d9095;
-@border-color: #2b2b2c;
-@accent: #5cd5e5;
-@bg-fill: #1d1d1d;
-@bg-hover: rgba(255, 255, 255, 0.04);
-@bg-active: rgba(92, 213, 229, 0.06);
 
 .playlistContainer {
   display: flex;
@@ -21,7 +12,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 28px;
-  border-bottom: 1px solid @border-color;
+  border-bottom: 1px solid var(--music-border-color);
   flex-shrink: 0;
   gap: 8px;
 }
@@ -35,7 +26,7 @@
 .toolbarBtnDanger {
   padding: 4px 10px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--music-border-color);
   background: transparent;
   font-size: 12px;
   cursor: pointer;
@@ -49,10 +40,10 @@
 }
 
 .toolbarBtn {
-  color: @text-secondary;
+  color: var(--music-text-secondary);
   &:hover:not(:disabled) {
-    color: @text-primary;
-    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--music-text-primary);
+    border-color: var(--music-text-placeholder);
   }
 }
 
@@ -67,7 +58,7 @@
 
 .songCount {
   font-size: 12px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
 }
 
 // ─── Checkbox ──────────────────────────────────────
@@ -84,7 +75,7 @@
   width: 16px;
   height: 16px;
   border-radius: 4px;
-  border: 2px solid rgba(255, 255, 255, 0.15);
+  border: 2px solid var(--music-text-placeholder);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -93,13 +84,13 @@
   flex-shrink: 0;
 
   &:hover {
-    border-color: @accent;
+    border-color: var(--music-accent);
   }
 }
 
 .checked {
-  background: @accent;
-  border-color: @accent;
+  background: var(--music-accent);
+  border-color: var(--music-accent);
 }
 
 .songRowSelected {
@@ -111,8 +102,8 @@
   align-items: center;
   padding: 10px 28px;
   font-size: 11px;
-  color: @text-placeholder;
-  border-bottom: 1px solid @border-color;
+  color: var(--music-text-placeholder);
+  border-bottom: 1px solid var(--music-border-color);
   flex-shrink: 0;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -125,7 +116,7 @@
 
   &::-webkit-scrollbar { width: 6px; }
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--music-border-color);
     border-radius: 4px;
   }
 }
@@ -153,7 +144,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   padding-right: 12px;
-  color: @text-secondary;
+  color: var(--music-text-secondary);
   font-size: 13px;
 }
 
@@ -164,7 +155,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   padding-right: 12px;
-  color: @text-secondary;
+  color: var(--music-text-secondary);
   font-size: 13px;
 }
 
@@ -173,7 +164,7 @@
   flex-shrink: 0;
   text-align: right;
   padding-right: 12px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -191,16 +182,16 @@
   cursor: pointer;
   transition: background 0.15s;
   font-size: 13px;
-  color: @text-regular;
+  color: var(--music-text-regular);
   border-radius: 4px;
   margin: 0 4px;
 
   &:nth-child(even) {
-    background: rgba(255, 255, 255, 0.01);
+    background: var(--music-bg-hover);
   }
 
   &:hover {
-    background: @bg-hover;
+    background: var(--music-bg-hover);
 
     .indexNum { display: none; }
     .indexPlay { display: flex; }
@@ -209,15 +200,15 @@
   }
 
   &.songRowActive {
-    background: @bg-active;
+    background: var(--music-bg-active);
 
-    .songName { color: @accent; }
+    .songName { color: var(--music-accent); }
   }
 }
 
 .indexNum {
   font-size: 12px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   font-variant-numeric: tabular-nums;
 }
 
@@ -225,15 +216,15 @@
   display: none;
   align-items: center;
   justify-content: center;
-  color: @text-secondary;
+  color: var(--music-text-secondary);
 
-  &:hover { color: @accent; }
+  &:hover { color: var(--music-accent); }
 }
 
 .playPauseBtn {
   background: none;
   border: none;
-  color: @accent;
+  color: var(--music-accent);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -250,7 +241,7 @@
 
   span {
     width: 3px;
-    background: @accent;
+    background: var(--music-accent);
     border-radius: 1px;
     animation: barPulse 0.8s ease-in-out infinite;
 
@@ -278,19 +269,19 @@
   width: 36px;
   height: 36px;
   border-radius: 4px;
-  background: @bg-fill;
+  background: var(--music-bg-fill);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.15);
+  color: var(--music-text-placeholder);
 }
 
 .songName {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: @text-primary;
+  color: var(--music-text-primary);
   font-weight: 400;
 }
 
@@ -311,13 +302,13 @@
 
 .sourceTagOnline {
   background: rgba(92, 213, 229, 0.1);
-  color: @accent;
+  color: var(--music-accent);
 }
 
 .removeBtn {
   background: none;
   border: none;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   cursor: pointer;
   opacity: 0;
   transition: all 0.15s;
@@ -341,12 +332,12 @@
 }
 
 .emptyText {
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   font-size: 14px;
 }
 
 .emptyHint {
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--music-text-placeholder);
   font-size: 12px;
   margin-top: 8px;
 }
@@ -376,22 +367,28 @@
   padding: 12px 20px;
   align-content: start;
   &::-webkit-scrollbar { width: 6px; }
-  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+  &::-webkit-scrollbar-thumb { background: var(--music-border-color); border-radius: 4px; }
   &::-webkit-scrollbar-track { background: transparent; }
 }
 
 .cardItem {
-  background: rgba(255,255,255,0.04);
+  background: var(--music-bg-hover);
   border-radius: 10px;
   padding: 10px;
   cursor: pointer;
   transition: all 0.15s;
   position: relative;
-  &:hover { background: rgba(255,255,255,0.08); }
+  &:hover { background: var(--music-border-color); }
 }
 .cardItemActive {
   background: rgba(92, 213, 229, 0.08) !important;
-  .cardTitle { color: @accent; }
+  .cardTitle { color: var(--music-accent); }
+}
+.cardCheckboxWrap {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 1;
 }
 
 .cardCover {
@@ -408,20 +405,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: @bg-fill;
-  color: rgba(255,255,255,0.12);
+  background: var(--music-bg-fill);
+  color: var(--music-border-color);
 }
 .cardInfo { flex: 1; min-width: 0; }
 .cardTitle {
   font-size: 13px;
-  color: @text-primary;
+  color: var(--music-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .cardArtist {
   font-size: 11px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -439,7 +436,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255,255,255,0.6);
+  color: var(--music-text-regular);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s;

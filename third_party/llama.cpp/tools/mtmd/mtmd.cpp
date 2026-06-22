@@ -1457,6 +1457,32 @@ void mtmd_input_chunks_free(mtmd_input_chunks * chunks) {
     }
 }
 
+// Compatibility helpers (removed from upstream, required by miloco)
+void mtmd_input_chunks_add_chunk(mtmd_input_chunks * chunks, const mtmd_input_chunk * chunk) {
+    chunks->entries.push_back(*chunk);
+}
+
+void mtmd_input_chunks_insert_chunk_front(mtmd_input_chunks * chunks, const mtmd_input_chunk * chunk) {
+    chunks->entries.insert(chunks->entries.begin(), *chunk);
+}
+
+mtmd_input_chunk * mtmd_create_text_chunk(std::vector<llama_token> tokens) {
+    auto chunk = new mtmd_input_chunk;
+    chunk->type = MTMD_INPUT_CHUNK_TYPE_TEXT;
+    chunk->tokens_text = std::move(tokens);
+    chunk->tokens_image = nullptr;
+    chunk->tokens_audio = nullptr;
+    return chunk;
+}
+
+mtmd_input_chunks * mtmd_create_text_chunks(std::vector<llama_token> tokens) {
+    auto chunks = mtmd_input_chunks_init();
+    auto chunk = mtmd_create_text_chunk(std::move(tokens));
+    mtmd_input_chunks_add_chunk(chunks, chunk);
+    mtmd_input_chunk_free(chunk);
+    return chunks;
+}
+
 // mtmd_input_chunk
 
 enum mtmd_input_chunk_type mtmd_input_chunk_get_type(const mtmd_input_chunk * chunk) {

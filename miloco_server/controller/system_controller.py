@@ -10,6 +10,7 @@ import asyncio
 import subprocess
 import json
 import os
+import signal
 import re
 import hashlib
 import shutil
@@ -19,7 +20,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, File, UploadFile
 from pydantic import BaseModel
 from miloco_server.schema.common_schema import NormalResponse
 
@@ -257,6 +258,7 @@ async def check_for_updates():
                 "release_body": release_data.get("body", ""),
                 "published_at": release_data.get("published_at", ""),
                 "has_config": False,
+                "pip_sync": False,
                 "assets": [
                     {"name": a["name"], "size": a["size"], "url": a["browser_download_url"]}
                     for a in release_data.get("assets", [])
@@ -277,6 +279,7 @@ async def check_for_updates():
                             mresp.raise_for_status()
                             mdata = mresp.json()
                             data["has_config"] = mdata.get("changes", {}).get("backend", {}).get("has_config", False)
+                            data["pip_sync"] = mdata.get("pip_sync", False)
                     except Exception as me:
                         logger.debug(f"Failed to fetch manifest.json: {me}")
             
@@ -315,37 +318,145 @@ async def _download_file(url: str, dest: str, auth_headers: dict = None) -> None
                     f.write(chunk)
 
 
+async def _apply_package_to_app(pkg_path: str, version: str, update_config: bool,
+                               log_lines: list, tmp_dir: str) -> dict:
+    """Extract and apply a hotfix tar.gz package to the app directory."""
+    global _update_status
+
+    # 1. Extract
+    extract_dir = os.path.join(tmp_dir, "extracted")
+    os.makedirs(extract_dir, exist_ok=True)
+    with tarfile.open(pkg_path, 'r:gz') as tf:
+        tf.extractall(extract_dir)
+
+    msg = "Package extracted"
+    log_lines.append(msg)
+    _update_status.update_log = "\n".join(log_lines)
+
+    # Find the actual content dir (tar may have a top-level dir)
+    content_dirs = [d for d in os.listdir(extract_dir) if os.path.isdir(os.path.join(extract_dir, d))]
+    if not content_dirs:
+        raise ValueError("Empty package")
+    content_dir = os.path.join(extract_dir, content_dirs[0])
+
+    # 2. Read manifest
+    manifest_path = os.path.join(content_dir, "manifest.json")
+    manifest = {}
+    if os.path.exists(manifest_path):
+        with open(manifest_path, 'r', encoding='utf-8-sig') as f:
+            manifest = json.load(f)
+
+    # 3. Create backup
+    backup_name = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(BACKUP_BASE_DIR, backup_name)
+    os.makedirs(backup_path, exist_ok=True)
+
+    msg = f"Backup created: {backup_path}"
+    log_lines.append(msg)
+    _update_status.update_log = "\n".join(log_lines)
+
+    # 4. Apply files - copy from package to /app
+    copy_count = 0
+    skip_config = not update_config
+    for root, dirs, files in os.walk(content_dir):
+        for fn in files:
+            if fn in ("manifest.json", "checksums.sha256"):
+                continue
+            src = os.path.join(root, fn)
+            rel = os.path.relpath(src, content_dir)
+
+            # Determine target path: strip the top dir from rel
+            # e.g., "miloco-hotfix-v1.0.1/backend/miloco_server/x.py" -> "miloco_server/x.py"
+            parts = Path(rel).parts
+            target_rel = str(Path(*parts[2:])) if len(parts) > 2 and parts[0].startswith("miloco-hotfix") else str(Path(*parts[1:])) if len(parts) > 1 else rel
+
+            # Resolve target based on source structure
+            if target_rel.startswith("backend/"):
+                target_rel = target_rel[len("backend/"):]
+
+            # Skip config files if user chose not to update config
+            if skip_config and target_rel.startswith("config/"):
+                log_lines.append(f"  Skipped (config): {target_rel}")
+                continue
+
+            target_path = os.path.join(APP_BASE_DIR, target_rel)
+
+            # Backup existing file
+            bk_file = os.path.join(backup_path, target_rel)
+            os.makedirs(os.path.dirname(bk_file), exist_ok=True)
+            if os.path.exists(target_path):
+                shutil.copy2(target_path, bk_file)
+
+            # Copy new file
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            shutil.copy2(src, target_path)
+            copy_count += 1
+            log_lines.append(f"  Updated: {target_rel}")
+
+    msg = f"Applied {copy_count} files"
+    log_lines.append(msg)
+
+    # 5. Sync pip dependencies if manifest requests it
+    pip_sync = manifest.get("pip_sync", False)
+    if pip_sync:
+        log_lines.append("Syncing pip dependencies...")
+        _update_status.update_log = "\n".join(log_lines)
+        success, pip_output = await _sync_pip_dependencies(
+            log_callback=lambda m: log_lines.append(m)
+        )
+        if not success:
+            logger.error(f"Pip sync failed:\n{pip_output}")
+            raise RuntimeError(f"Pip dependency sync failed: {pip_output}")
+        log_lines.append("Pip dependencies synced OK")
+
+    # 6. Save version
+    version_file = os.path.join(APP_BASE_DIR, "VERSION")
+    with open(version_file, 'w') as f:
+        f.write(version)
+
+    home_version_file = os.path.expanduser("~/.miloco/.hot_update_version")
+    os.makedirs(os.path.dirname(home_version_file), exist_ok=True)
+    with open(home_version_file, 'w') as f:
+        f.write(version)
+
+    _update_status.current_version = version
+    _update_status.last_update = datetime.now().isoformat()
+    _update_status.update_available = False
+
+    return {"success": True, "files_updated": copy_count, "backup": backup_name}
+
+
 async def _apply_update_internal(version: str, update_config: bool = False) -> dict:
-    """Core update logic - download package & apply files in-container"""
+    """Core update logic - download package from GitHub & apply files in-container"""
     global _update_status
     log_lines = []
-    
+
     try:
         _update_status.is_updating = True
         _update_status.update_log = "Starting update...\n"
-        
+
         auth_headers = {"Accept": "application/octet-stream"}
         if GITHUB_TOKEN:
             auth_headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
-        
+
         # 1. Download package
         pkg_name = f"miloco-hotfix-{version}.tar.gz"
         pkg_url = f"{GITHUB_DOWNLOAD_URL}/{version}/{pkg_name}"
-        
+
         msg = f"Downloading {pkg_url}..."
         logger.info(msg)
         log_lines.append(msg)
         _update_status.update_log = "\n".join(log_lines)
-        
+
         tmp_dir = tempfile.mkdtemp(prefix="miloco_hotfix_")
         pkg_path = os.path.join(tmp_dir, pkg_name)
-        
+
         await _download_file(pkg_url, pkg_path, auth_headers)
-        
+
         msg = f"Downloaded {os.path.getsize(pkg_path)} bytes"
         log_lines.append(msg)
         _update_status.update_log = "\n".join(log_lines)
-        
+
         # 2. Checksum verification
         checksum_url = f"{pkg_url}.sha256"
         checksum_path = os.path.join(tmp_dir, f"{pkg_name}.sha256")
@@ -360,103 +471,20 @@ async def _apply_update_internal(version: str, update_config: bool = False) -> d
             msg = "Checksum file not available, skipping verification"
         log_lines.append(msg)
         _update_status.update_log = "\n".join(log_lines)
-        
-        # 3. Extract
-        extract_dir = os.path.join(tmp_dir, "extracted")
-        os.makedirs(extract_dir, exist_ok=True)
-        with tarfile.open(pkg_path, 'r:gz') as tf:
-            tf.extractall(extract_dir)
-        
-        msg = "Package extracted"
-        log_lines.append(msg)
-        _update_status.update_log = "\n".join(log_lines)
-        
-        # Find the actual content dir (tar may have a top-level dir)
-        content_dirs = [d for d in os.listdir(extract_dir) if os.path.isdir(os.path.join(extract_dir, d))]
-        if not content_dirs:
-            raise ValueError("Empty package")
-        content_dir = os.path.join(extract_dir, content_dirs[0])
-        
-        # 4. Read manifest
-        manifest_path = os.path.join(content_dir, "manifest.json")
-        manifest = {}
-        if os.path.exists(manifest_path):
-            with open(manifest_path, 'r', encoding='utf-8-sig') as f:
-                manifest = json.load(f)
-        
-        # 5. Create backup
-        backup_name = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = os.path.join(BACKUP_BASE_DIR, backup_name)
-        os.makedirs(backup_path, exist_ok=True)
-        
-        msg = f"Backup created: {backup_path}"
-        log_lines.append(msg)
-        _update_status.update_log = "\n".join(log_lines)
-        
-        # 6. Apply files - copy from package to /app
-        copy_count = 0
-        skip_config = not update_config
-        for root, dirs, files in os.walk(content_dir):
-            for fn in files:
-                if fn in ("manifest.json", "checksums.sha256"):
-                    continue
-                src = os.path.join(root, fn)
-                rel = os.path.relpath(src, content_dir)
-                
-                # Determine target path: strip the top dir from rel
-                # e.g., "miloco-hotfix-v1.0.1/backend/miloco_server/x.py" -> "miloco_server/x.py"
-                parts = Path(rel).parts
-                target_rel = str(Path(*parts[2:])) if len(parts) > 2 and parts[0].startswith("miloco-hotfix") else str(Path(*parts[1:])) if len(parts) > 1 else rel
-                
-                # Resolve target based on source structure
-                if target_rel.startswith("backend/"):
-                    target_rel = target_rel[len("backend/"):]
-                
-                # Skip config files if user chose not to update config
-                if skip_config and target_rel.startswith("config/"):
-                    log_lines.append(f"  Skipped (config): {target_rel}")
-                    continue
-                
-                target_path = os.path.join(APP_BASE_DIR, target_rel)
-                
-                # Backup existing file
-                bk_file = os.path.join(backup_path, target_rel)
-                os.makedirs(os.path.dirname(bk_file), exist_ok=True)
-                if os.path.exists(target_path):
-                    shutil.copy2(target_path, bk_file)
-                
-                # Copy new file
-                os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                shutil.copy2(src, target_path)
-                copy_count += 1
-                log_lines.append(f"  Updated: {target_rel}")
-        
-        msg = f"Applied {copy_count} files"
-        log_lines.append(msg)
-        
-        # 7. Save version
-        version_file = os.path.join(APP_BASE_DIR, "VERSION")
-        with open(version_file, 'w') as f:
-            f.write(version)
-        
-        home_version_file = os.path.expanduser("~/.miloco/.hot_update_version")
-        os.makedirs(os.path.dirname(home_version_file), exist_ok=True)
-        with open(home_version_file, 'w') as f:
-            f.write(version)
-        
-        _update_status.current_version = version
-        _update_status.last_update = datetime.now().isoformat()
-        _update_status.update_available = False
-        
-        # 8. Cleanup temp
+
+        # 3. Extract & apply
+        result = await _apply_package_to_app(pkg_path, version, update_config, log_lines, tmp_dir)
+
+        # 4. Cleanup temp
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        
+
         msg = f"Update to {version} completed! Service will restart."
         log_lines.append(msg)
         _update_status.update_log = "\n".join(log_lines)
-        
-        return {"success": True, "message": msg, "files_updated": copy_count, "backup": backup_name}
-        
+
+        result["message"] = msg
+        return result
+
     except Exception as e:
         msg = f"Update error: {str(e)}"
         log_lines.append(msg)
@@ -489,6 +517,8 @@ async def apply_update(background_tasks: BackgroundTasks, req: ApplyUpdateReques
         try:
             result = await _apply_update_internal(target_version, update_config=req.update_config)
             _update_status.update_log = result.get("message", "")
+            # Validate critical files before restarting
+            _validate_critical_files()
             # Trigger restart after a short delay (let the response finish)
             await asyncio.sleep(2)
             _restart_service()
@@ -501,9 +531,236 @@ async def apply_update(background_tasks: BackgroundTasks, req: ApplyUpdateReques
     return NormalResponse(code=0, message="Update started in background", data={"version": target_version})
 
 
+@router.post("/system/update/upload", response_model=NormalResponse)
+async def upload_update(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    update_config: bool = False,
+):
+    """Upload a hotfix package (.tar.gz) from local and apply it."""
+    global _update_status
+
+    if _update_status.is_updating:
+        raise HTTPException(status_code=409, detail="Update already in progress")
+
+    # Validate file extension
+    if not file.filename or not file.filename.endswith(".tar.gz"):
+        raise HTTPException(status_code=400, detail="Only .tar.gz files are accepted")
+
+    # Save uploaded file to temp
+    tmp_dir = tempfile.mkdtemp(prefix="miloco_upload_")
+    pkg_path = os.path.join(tmp_dir, file.filename)
+
+    try:
+        content = await file.read()
+        with open(pkg_path, "wb") as f:
+            f.write(content)
+
+        # Extract briefly to read version from manifest
+        extract_dir = os.path.join(tmp_dir, "extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+        with tarfile.open(pkg_path, 'r:gz') as tf:
+            tf.extractall(extract_dir)
+
+        content_dirs = [d for d in os.listdir(extract_dir) if os.path.isdir(os.path.join(extract_dir, d))]
+        if not content_dirs:
+            raise ValueError("Empty package")
+        content_dir = os.path.join(extract_dir, content_dirs[0])
+
+        manifest_path = os.path.join(content_dir, "manifest.json")
+        manifest = {}
+        if os.path.exists(manifest_path):
+            with open(manifest_path, 'r', encoding='utf-8-sig') as f:
+                manifest = json.load(f)
+
+        target_version = manifest.get("version", "unknown")
+
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=f"Invalid package: {str(e)}")
+
+    # Run update in background
+    async def run_upload_update():
+        global _update_status
+        log_lines = []
+        try:
+            _update_status.is_updating = True
+            _update_status.update_log = f"Applying local upload: {file.filename}\n"
+            logger.info("Applying local upload: %s (version=%s, %d bytes)",
+                        file.filename, target_version, len(content))
+
+            result = await _apply_package_to_app(pkg_path, target_version, update_config, log_lines, tmp_dir)
+
+            # Cleanup temp
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+            msg = f"Update to {target_version} completed! Service will restart."
+            log_lines.append(msg)
+            _update_status.update_log = "\n".join(log_lines)
+
+            _validate_critical_files()
+            await asyncio.sleep(2)
+            _restart_service()
+
+        except Exception as e:
+            log_lines.append(f"Update error: {str(e)}")
+            _update_status.update_log = "\n".join(log_lines)
+            logger.exception("Local upload update failed")
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        finally:
+            _update_status.is_updating = False
+
+    background_tasks.add_task(run_upload_update)
+
+    return NormalResponse(
+        code=0,
+        message=f"Upload accepted: {file.filename} (version={target_version}). Update started in background.",
+        data={"version": target_version, "filename": file.filename, "size": len(content)}
+    )
+
+
 def _restart_service():
-    """Trigger service restart"""
-    os._exit(0)  # Force exit, Docker should restart the container
+    """Trigger service restart.
+    
+    Sends SIGTERM to trigger uvicorn's graceful shutdown (which properly
+    closes connections, flushes logs, and cleans up subprocesses).
+    Docker will then restart the container via restart policy.
+    
+    Falls back to SIGKILL if the process does not exit within 10 seconds.
+    """
+    logger.info("Restarting service via SIGTERM...")
+    
+    # Phase 1: Send SIGTERM for graceful shutdown
+    os.kill(os.getpid(), signal.SIGTERM)
+    
+    # Phase 2: If still alive after 10s, force kill
+    # (uvicorn's SIGTERM handler should exit within seconds)
+    def force_kill():
+        logger.warning("Graceful shutdown timed out, forcing exit...")
+        os.kill(os.getpid(), signal.SIGKILL)
+    
+    signal.signal(signal.SIGALRM, lambda signum, frame: force_kill())
+    signal.alarm(10)
+
+
+def _validate_elf_header(filepath: str) -> bool:
+    """Check if a file is a valid ELF shared library (starts with \\x7fELF)."""
+    try:
+        with open(filepath, "rb") as f:
+            header = f.read(4)
+        return header == b"\x7fELF"
+    except (OSError, IOError):
+        return False
+
+
+def _validate_critical_files():
+    """Validate critical shared libraries exist and are intact before restart.
+    
+    Raises RuntimeError if any critical file is missing or corrupt,
+    which will be caught by run_update() and prevent an unsafe restart.
+    """
+    import platform as _platform
+    if _platform.system().lower() != "linux":
+        return  # Only validate on Linux (the production environment)
+
+    miot_lib_dir = os.path.join(APP_BASE_DIR, "miot_kit", "miot", "libs")
+    machine = _platform.machine().lower()
+
+    if machine in ("x86_64", "amd64"):
+        arch = "x86_64"
+    elif machine in ("arm64", "aarch64"):
+        arch = "arm64"
+    else:
+        return  # Unknown arch, skip validation
+
+    critical_libs = [
+        os.path.join(miot_lib_dir, "linux", arch, "libmiot_camera_lite.so"),
+        os.path.join(miot_lib_dir, "linux", arch, "libcamera_rtsp.so"),
+    ]
+
+    for lib_path in critical_libs:
+        if not os.path.exists(lib_path):
+            raise RuntimeError(
+                f"Critical library missing after update: {lib_path}. "
+                "Refusing to restart. Please check the update package or restore from backup."
+            )
+        if not _validate_elf_header(lib_path):
+            file_size = os.path.getsize(lib_path) if os.path.exists(lib_path) else 0
+            raise RuntimeError(
+                f"Critical library appears corrupt: {lib_path} "
+                f"(size: {file_size} bytes). "
+                "The file may be an unresolved Git LFS pointer. "
+                "Refusing to restart. Please restore from backup."
+            )
+        logger.info("Pre-restart check OK: %s", lib_path)
+
+
+async def _sync_pip_dependencies(log_callback=None) -> tuple[bool, str]:
+    """Sync pip dependencies by installing miloco_server and miot_kit in editable mode.
+    
+    This mimics the Dockerfile's pip install steps, ensuring any new dependencies
+    declared in pyproject.toml are installed during hot update.
+    
+    Returns (success: bool, output: str)
+    """
+    output_lines = []
+
+    def log(msg: str):
+        output_lines.append(msg)
+        if log_callback:
+            log_callback(msg)
+        logger.info(f"[pip-sync] {msg}")
+
+    try:
+        miloco_server_dir = os.path.join(APP_BASE_DIR, "miloco_server")
+        miot_kit_dir = os.path.join(APP_BASE_DIR, "miot_kit")
+
+        # Use identical flags as the Dockerfile to ensure compatibility
+        pip_base = ["python3", "-m", "pip", "install", "--no-build-isolation"]
+
+        if os.path.exists(miloco_server_dir):
+            log(f"Syncing pip dependencies: {miloco_server_dir}")
+            proc = await asyncio.create_subprocess_exec(
+                *pip_base, "-e", miloco_server_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            out, err = stdout.decode(errors="replace"), stderr.decode(errors="replace")
+            if proc.returncode == 0:
+                log(f"  miloco_server deps synced OK")
+            else:
+                log(f"  miloco_server deps sync failed (rc={proc.returncode})")
+                if err.strip():
+                    log(f"  stderr: {err.strip()[-500:]}")
+                return False, "\n".join(output_lines)
+
+        if os.path.exists(miot_kit_dir):
+            log(f"Syncing pip dependencies: {miot_kit_dir}")
+            proc = await asyncio.create_subprocess_exec(
+                *pip_base, "-e", miot_kit_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            out, err = stdout.decode(errors="replace"), stderr.decode(errors="replace")
+            if proc.returncode == 0:
+                log(f"  miot_kit deps synced OK")
+            else:
+                log(f"  miot_kit deps sync failed (rc={proc.returncode})")
+                if err.strip():
+                    log(f"  stderr: {err.strip()[-500:]}")
+                return False, "\n".join(output_lines)
+
+        log("Pip dependency sync completed")
+        return True, "\n".join(output_lines)
+
+    except FileNotFoundError:
+        log("  WARNING: pip3 not found, skipping dependency sync")
+        return True, "\n".join(output_lines)
+    except Exception as e:
+        log(f"  ERROR: pip dependency sync failed: {e}")
+        return False, "\n".join(output_lines)
 
 
 @router.get("/system/update/log", response_model=NormalResponse)

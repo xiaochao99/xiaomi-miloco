@@ -160,8 +160,27 @@ class HaService:
             return
 
         try:
-            # Create HA device MCP client
+            ws_client = self._ha_proxy.ha_ws_client
+
             async def _get_devices() -> List[McpHADeviceInfo]:
+                """Get devices via WebSocket (fast) or REST (fallback)."""
+                if ws_client and ws_client.is_connected():
+                    # WebSocket path: single command, no HTTP overhead
+                    try:
+                        states = await ws_client.get_states()
+                        return [
+                            McpHADeviceInfo(
+                                entity_id=eid,
+                                name=state.friendly_name,
+                                state=state.state,
+                                area=state.attributes.get("area_id", ""),
+                                domain=state.domain,
+                            ) for eid, state in states.items()
+                        ]
+                    except Exception as e:  # pylint: disable=broad-except
+                        logger.debug("HA WS get_states failed, falling back to REST: %s", e)
+
+                # REST fallback
                 devices = await self.get_ha_device_list()
                 return [
                     McpHADeviceInfo(
@@ -169,13 +188,21 @@ class HaService:
                         name=d.name,
                         state=d.state,
                         area=d.room_name,
-                        domain=d.model # domain is stored in model
+                        domain=d.model
                     ) for d in devices
                 ]
 
             async def _control_device(
                 entity_id: str, domain: str, service: str, service_data: Optional[Dict[str, Any]] = None
             ) -> bool:
+                """Control device via WebSocket (fast) or REST (fallback)."""
+                if ws_client and ws_client.is_connected():
+                    try:
+                        return await ws_client.call_service(domain, service, service_data or {})
+                    except Exception as e:  # pylint: disable=broad-except
+                        logger.debug("HA WS call_service failed, falling back to REST: %s", e)
+
+                # REST fallback
                 try:
                     await self.control_ha_device(HAControlRequest(
                         entity_id=entity_id,

@@ -361,127 +361,44 @@ class EnhancedChatAgent(Actor):
         if persona_additions:
             base_prompt = persona_additions + "\n\n" + base_prompt
         
-        # Add ReAct workflow instructions
+        # Add ReAct workflow instructions (streamlined for faster LLM generation)
         env_section = self._build_env_context_section()
         react_instructions = f"""
 {env_section}
-# ReAct工作流 (必须严格遵守)
-思考（Think）：首先分析当前的用户需求和已知信息，进行逻辑推理。**这是最重要的一步**。你需要判断：
-1. 用户的问题是什么？
-2. 是否需要调用工具？为什么？
-3. 如果需要调用工具，应该调用哪个工具？
-4. 如果不需要工具，应该直接回答什么？
+# 工作流
+Think → Action → Observation → Think → ... → <final_answer>
 
-**🔴 无需使用工具的典型场景（必须直接回复，禁止调用工具）：**
-- 用户告知/陈述个人信息：如"我的车牌号是...""我住在...""我的手机号是..."
-- 简单确认/应答：如"知道了""好的""嗯"
-- 闲聊/问候/天气/知识问答等
+# 设备查询与控制 (HA优先策略)
 
-行动 (Action)：如果思考后确定需要与外部世界交互（查询状态、控制设备等），则生成一个或多个符合OpenAI Tool Calling格式的工具调用。
+**如果系统中配置了Home Assistant，优先使用HA工具：**
 
-观察 (Observation)：你会接收到调用工具后返回的结果。你必须基于这个新的信息，回到第1步（思考（Think）），判断是需要继续调用其他工具，还是已经可以提供最终答案。
+## HA设备查询 (1步)
+- `ha_devices___get_devices` → 获取HA设备列表(含entity_id、state、area、domain)
+- `ha_devices___send_get_rpc(entity_id)` → 直接查询设备状态，无需SPEC
+- `ha_devices___batch_get_states([entity_id1, entity_id2])` → 批量查询
+- 获取结果后**立即 <final_answer>**
 
-**⚡ 关键效率规则：如果工具返回的结果已经包含回答用户问题所需的全部信息，必须立即使用 <final_answer> 给出最终答案，不要继续调用任何工具！**
+## HA设备控制 (1步)
+- `ha_devices___send_ctrl_rpc(entity_id, domain, service)` → 直接控制
+- 例如: `ha_devices___send_ctrl_rpc("light.living_room", "light", "turn_on")`
+- 获取结果后**立即 <final_answer>**
 
-# 设备查询标准流程 (重要 - 严格按此执行)
+## MIoT设备 (备选 - 仅当HA无对应设备时使用)
+MIoT需要3步: get_devices → get_device_spec → send_get_rpc/send_ctrl_rpc
+或使用快捷工具: `auto_get_device_prop(did, prop_name)` / `auto_ctrl_device(did, prop_name, value)`
 
-**查询设备状态（如温度、湿度、亮度等）：**
-1. 第1步：调用 `get_devices` 获取目标设备（可带 device_class 或 area_id 过滤）
-2. 第2步：用返回的 did 调用 `get_device_spec` 获取设备SPEC定义
-3. 第3步：从SPEC定义中找到要查询的属性 iid，调用 `send_get_rpc(did, iid)` 查询具体属性值
-4. 第4步：**直接用 <final_answer> 回答用户，不要再调用任何工具**
+# 终止条件 (Critical)
+- 工具返回完整结果后 → **立即 <final_answer>**
+- 禁止重复调用相同工具
+- 米家工具返回错误或空结果时 → 立即切换到HA工具，不要反复重试米家
 
-**控制设备（如开灯、关空调）：**
-1. 第1步：调用 `get_devices` 找到目标设备的 did
-2. 第2步：用 did 调用 `get_device_spec` 获取设备SPEC定义
-3. 第3步：从SPEC定义中找到要控制的属性 iid，调用 `send_ctrl_rpc(did, iid, value)` 执行控制
-4. 第4步：**直接用 <final_answer> 告知操作结果**
+# 不使用工具的场景
+闲聊/问候/记忆/设定角色/天气(已在系统提示中) → 直接回答
 
-**示例：用户问"机柜温度"**
-- Step 1: 调用 `get_devices(area_id="机柜", device_class="sensor_ht")` → 返回温湿度计 did
-- Step 2: 调用 `get_device_spec(did=返回的did)` → 返回SPEC定义，找到温度属性的iid
-- Step 3: 调用 `send_get_rpc(did=返回的did, iid=从SPEC获取的iid)` → 返回温度值 24.5
-- Step 4: **立即回答**："机柜当前温度为 24.5°C" → <final_answer>结束
-
-**示例：用户问"打开玄关灯"**
-- Step 1: 调用 `get_devices(area_id="玄关", device_class="light")` → 返回灯的 did
-- Step 2: 调用 `get_device_spec(did=返回的did)` → 返回SPEC定义，找到开关属性的iid
-- Step 3: 调用 `send_ctrl_rpc(did=返回的did, iid=从SPEC获取的iid, value=控制值)` → 执行开灯
-- Step 4: **立即回答**："已为您打开玄关灯" → <final_answer>结束
-
-**禁止：**
-- ❌ 已经拿到温度/湿度等数值后还继续调用 `get_devices`
-- ❌ 同一个工具用相同参数重复调用
-- ❌ 查询到设备 did 后又重新查询设备列表
-- ❌ **跳过 get_device_spec 直接调用 send_get_rpc 或 send_ctrl_rpc（必须先获取SPEC定义才能知道正确的iid）**
-
-# 智能工具选择策略 (Important - AI自主决策)
-**工具选择原则：**
-- 根据用户意图和对话上下文智能选择工具
-- 不要预设只能使用某些工具，所有可用工具都可以根据需要使用
-- 优先考虑最直接、最高效的工具
-
-**何时使用工具：**
-- 天气信息已在系统提示中提供（见"当前家庭环境上下文"），询问天气/下雨/温度等**直接回答**，不需要调用任何工具
-- 环境数据已在系统提示中，**不需要**调用 `get_environment_context`。仅在用户明确要求"最新数据"或需要刷新时才调用，且每轮最多调用1次
-- 用户明确要求控制设备（开/关/调节）→ 使用 `send_ctrl_rpc`
-- 用户查询设备状态 → 使用 `send_get_rpc`
-- 用户需要创建自动化规则 → 使用 `create_rule`
-- 涉及图像分析 → 使用 `vision_understand`
-- 闲聊、设定角色、日常对话 → **不使用任何工具**
-
-**何时不使用工具：**
-- 闲聊、问候、日常对话
-- 设定AI角色或用户偏好
-- 询问AI的身份或能力
-- 用户只是表达情感或想法
-- 记忆相关操作（"记住XXX"、"我叫什么"、"我的XXX"等）→ 已由记忆系统自动处理，**绝不调用任何工具**
-- 任何可以用已有信息（记忆上下文、对话历史）直接回答的问题 → **绝不调用任何工具**
-
-**关键原则：不必要的情况绝不要调用工具！** 以下情况绝对不要调工具：
-- 闲聊、记忆、日常对话
-- 已经有足够信息可以回答的问题
-- 用户没有明确需要外部数据或设备操作
-
-# 多平台设备查询策略 (Important - 备选方案)
-**系统支持两个设备平台：**
-- 米家设备控制 (MIoT Device Control) - 前缀: `miot_devices___`
-- Home Assistant 设备控制 (HA Devices) - 前缀: `ha_devices___`
-
-**查询设备时的备选策略：**
-1. **优先尝试米家平台**：使用 `miot_devices___get_devices` 查询
-2. **米家失败时自动切换到HA**：如果米家返回空或错误，立即使用 `ha_devices___get_devices` 查询
-3. **控制设备时同样适用**：米家控制失败时，尝试使用HA控制
-
-**示例流程：**
-- 用户问"客厅人在状态"
-- 第1步：调用 `miot_devices___get_devices` 查询米家设备
-- 第2步：如果米家返回"没有找到设备"，立即调用 `ha_devices___get_devices` 查询HA设备
-- 第3步：根据HA返回结果查询具体状态
-
-# 错误处理与终止条件 (Critical)
-当工具调用返回错误时：
-1. **尝试备选平台**：如果是设备查询/控制，先尝试另一个平台（米家↔HA）
-2. **不要**盲目尝试其他可能的实体名称
-3. **立即停止**：如果所有平台都失败，使用 <final_answer> 标签告知用户无法完成操作
-4. **提供建议**：告知用户可能的解决方案
-
-# 禁止行为 (Strictly Forbidden)
-- ❌ 闲聊时调用任何工具
-- ❌ 设定角色时调用任何工具
-- ❌ 用户告知个人信息（如"我的车牌号是..."）时调用任何工具 —— 直接确认即可
-- ❌ 用户说"打开灯"时先查询状态再打开
-- ❌ 连续多次尝试不同实体名称
-- ❌ 一个平台失败后不尝试备选平台就直接放弃
-- ❌ 工具返回了完整结果后，继续调用相同工具（vision_understand、get_devices 等单次调用即可完成的工具）
-
-# 输出格式与严格约束 (Strictly Enforced)
-- Markdown格式: 所有输出必须使用Markdown格式。
-- 思考标签: 思考过程必须且只能被包裹在 <reflect> 和 </reflect> 标签内。
-- 最终答案标签: 当你确信已收集到所有必要信息，能够完整回答用户问题时，在最后的 <reflect> </reflect> 之后，必须使用 <final_answer> 和 </final_answer> 标签包裹最终的、面向用户的回复。
-- 工具调用格式: 工具调用必须严格遵循OpenAI的Tool Calling格式，并且不能出现在<reflect> 和 </reflect> 标签内部。
-- 禁止捏造: 绝对禁止编造任何工具的返回结果或设备状态。
-- 禁止无限重试: 当工具返回错误或实体不存在时，禁止连续尝试不同的实体名称，必须先使用搜索工具或结束对话。
+# 输出格式
+- 思考: `<reflect>...</reflect>`
+- 最终答案: `<final_answer>...</final_answer>`
+- 工具调用: OpenAI Tool Calling格式，不能在reflect标签内
 """
         
         return base_prompt + "\n\n" + react_instructions
@@ -691,13 +608,33 @@ class EnhancedChatAgent(Actor):
         error_message = None
         
         try:
+            # ── Fast path: try simple device control without LLM ──
+            fast_response = await self._try_fast_device_control(query)
+            if fast_response:
+                logger.info("[%s] Fast path succeeded: %s", self._request_id, fast_response[:100])
+                self._send_instruction(Template.ToastStream(stream=fast_response))
+                success = True
+                await self._run_finally_do(success, error_message)
+                return
+
+            # ── Fast path: skip ToolSelector for simple device queries ──
+            rule_tools = self._get_rule_based_tool_names(query)
+            if rule_tools is not None:
+                logger.info("[%s] Rule-based tool selection (skipping LLM): %s", self._request_id, rule_tools)
+                self._selected_tool_names = rule_tools
+
             tool_context = ToolContext(
                 query=query,
                 conversation_history=[m.to_dict() for m in self._conversation_context.messages],
             )
 
             memory_task = self._retrieve_memory_context(query)
-            tool_task = self._tool_selector.async_select_tools(tool_context, top_k=5) if self._tool_selector else None
+
+            # Only call ToolSelector LLM if rule-based didn't match
+            if self._selected_tool_names is None:
+                tool_task = self._tool_selector.async_select_tools(tool_context, top_k=5) if self._tool_selector else None
+            else:
+                tool_task = None
 
             gather_tasks = [memory_task]
             if tool_task is not None:
@@ -778,6 +715,256 @@ class EnhancedChatAgent(Actor):
                 self._adaptive_learner.record_interaction(learning_record)
             
             await self._run_finally_do(success, error_message)
+
+    async def _try_fast_device_control(self, query: str) -> Optional[str]:
+        """Fast path for simple device control queries. Skips LLM ReAct loop entirely.
+        
+        Handles patterns like:
+        - "打开客厅灯" / "关闭空调" / "开灯"
+        - "客厅温度多少" / "卧室湿度"
+        
+        Returns response string if handled, None to fall back to normal ReAct.
+        """
+        import re as _re
+        
+        query = query.strip()
+        
+        # ── Pattern 1: Control intent (打开/关闭/开/关 + device_name) ──
+        ctrl_match = _re.match(
+            r'^(打开|关闭|开|关|开启|熄灭)\s*(.+)$', query)
+        if ctrl_match:
+            action_word = ctrl_match.group(1)
+            device_hint = ctrl_match.group(2).strip()
+            # Remove common suffixes like "的灯", "灯", "一下"
+            device_hint = _re.sub(r'(的灯|一下|吧|呗|呗|嘛)$', '', device_hint)
+            if not device_hint:
+                return None  # Too ambiguous, e.g. just "开"
+            
+            value = action_word in ('打开', '开', '开启')
+            return await self._execute_fast_control(device_hint, value, query)
+        
+        # ── Pattern 2: Query intent (device_name + property) ──
+        query_match = _re.match(
+            r'^(.+?)(的)?(温度|湿度|亮度|状态|多少|怎么样|如何)$', query)
+        if query_match:
+            device_hint = query_match.group(1).strip()
+            if not device_hint:
+                return None
+            prop_name = query_match.group(3)
+            # Normalize property name
+            prop_map = {
+                '温度': 'temperature', '湿度': 'humidity', '亮度': 'brightness',
+                '状态': 'state', '多少': None, '怎么样': None, '如何': None,
+            }
+            prop = prop_map.get(prop_name)
+            if prop is None:
+                return None  # "状态/多少" are too ambiguous for fast path
+            return await self._execute_fast_query(device_hint, prop, query)
+        
+        return None
+
+    async def _execute_fast_control(
+        self, device_hint: str, value: bool, original_query: str
+    ) -> Optional[str]:
+        """Execute a fast device control via auto_ctrl_device tool."""
+        try:
+            # Find device from cached list
+            device_id, device_name = await self._find_device_by_hint(device_hint)
+            if not device_id:
+                return None  # Fall back to ReAct
+            
+            # Determine property name based on device type
+            prop_name = self._guess_control_prop(device_hint, value)
+            
+            logger.info("[%s] Fast path: controlling %s (%s) with prop=%s, value=%s",
+                        self._request_id, device_name, device_id, prop_name, value)
+            
+            result = await self._tool_executor.execute_tool_by_params(
+                client_id="miot_devices",
+                tool_name="auto_ctrl_device",
+                parameters={"did": device_id, "prop_name": prop_name, "value": value}
+            )
+            
+            if result.success:
+                return f"已为{'打开' if value else '关闭'}{device_name}"
+            
+            # If auto_ctrl failed, fall back to ReAct
+            logger.info("[%s] Fast path auto_ctrl failed, falling back to ReAct", self._request_id)
+            return None
+            
+        except Exception as e:  # pylint: disable=broad-except
+            logger.info("[%s] Fast path control failed: %s, falling back to ReAct", self._request_id, e)
+            return None
+
+    async def _execute_fast_query(
+        self, device_hint: str, prop_name: str, original_query: str
+    ) -> Optional[str]:
+        """Execute a fast device property query via auto_get_device_prop tool."""
+        try:
+            device_id, device_name = await self._find_device_by_hint(device_hint)
+            if not device_id:
+                return None
+            
+            logger.info("[%s] Fast path: querying %s (%s) prop=%s",
+                        self._request_id, device_name, device_id, prop_name)
+            
+            result = await self._tool_executor.execute_tool_by_params(
+                client_id="miot_devices",
+                tool_name="auto_get_device_prop",
+                parameters={"did": device_id, "prop_name": prop_name}
+            )
+            
+            if result.success and result.response is not None:
+                value = result.response
+                unit_map = {
+                    'temperature': '°C', 'humidity': '%', 'brightness': 'lux'
+                }
+                unit = unit_map.get(prop_name, '')
+                return f"{device_name}的{self._reverse_prop_name(prop_name)}为 {value}{unit}"
+            
+            return None
+            
+        except Exception as e:  # pylint: disable=broad-except
+            logger.info("[%s] Fast path query failed: %s, falling back to ReAct", self._request_id, e)
+            return None
+
+    async def _find_device_by_hint(self, hint: str) -> tuple[Optional[str], str]:
+        """Find device by name hint from cached device list.
+        Returns (did, device_name) or (None, "") if not found.
+        """
+        try:
+            from miloco_server.service.manager import get_manager
+            manager = get_manager()
+            mcp_manager = manager.mcp_client_manager
+            if not mcp_manager:
+                return None, ""
+            
+            client = mcp_manager.get_client("miot_devices")
+            if not client:
+                return None, ""
+            
+            # Access the underlying FastMCP server's cached tools
+            # The device list is cached by MIoTDeviceMcp._ensure_devices_loaded()
+            # We invoke the tool function directly to get cached results
+            tools = client.get_tools()
+            for tool in tools:
+                if tool.name == "get_devices":
+                    # tool.fn is the bound async method from MIoTDeviceMcp
+                    # It uses internal cache (60s TTL) so this is fast
+                    import inspect
+                    if inspect.iscoroutinefunction(tool.fn):
+                        devices = await tool.fn()
+                    else:
+                        devices = tool.fn()
+                    break
+            else:
+                return None, ""
+            
+            hint_lower = hint.lower()
+            best_match = None
+            best_score = 0
+            
+            for did, device_info in devices.items():
+                name = device_info.name if hasattr(device_info, 'name') else str(device_info)
+                name_lower = name.lower()
+                
+                # Exact match
+                if hint_lower == name_lower:
+                    return did, name
+                
+                # Containment match
+                if hint_lower in name_lower or name_lower in hint_lower:
+                    score = len(hint_lower) / max(len(name_lower), 1)
+                    if score > best_score:
+                        best_score = score
+                        best_match = (did, name)
+            
+            return best_match if best_match else (None, "")
+            
+        except Exception as e:  # pylint: disable=broad-except
+            logger.debug("Failed to find device by hint '%s': %s", hint, e)
+            return None, ""
+            
+            client = mcp_manager.get_client("miot_devices")
+            if not client:
+                return None, ""
+            
+            # Get cached tools to find the MCP server instance
+            # We access the underlying FastMCP server to call get_devices directly
+            # This is a shortcut that bypasses the MCP protocol overhead
+            tools = client.get_tools()
+            # Find the get_devices tool and invoke it
+            # Since this is a local MCP, we can call the tool function directly
+            for tool in tools:
+                if tool.name == "get_devices":
+                    # Invoke the tool function directly
+                    import asyncio
+                    result = asyncio.ensure_future(tool.fn())
+                    break
+            else:
+                return None, ""
+            
+            # Wait for result (with timeout)
+            import concurrent.futures
+            loop = asyncio.get_event_loop()
+            # The result should already be awaited since tool.fn() returns a coroutine
+            # We need to actually await it
+            devices = await result
+            
+            hint_lower = hint.lower()
+            best_match = None
+            best_score = 0
+            
+            for did, device_info in devices.items():
+                name = device_info.name if hasattr(device_info, 'name') else str(device_info)
+                name_lower = name.lower()
+                
+                # Exact match
+                if hint_lower == name_lower:
+                    return did, name
+                
+                # Containment match
+                if hint_lower in name_lower or name_lower in hint_lower:
+                    score = len(hint_lower) / max(len(name_lower), 1)
+                    if score > best_score:
+                        best_score = score
+                        best_match = (did, name)
+            
+            return best_match if best_match else (None, "")
+            
+        except Exception as e:  # pylint: disable=broad-except
+            logger.debug("Failed to find device by hint '%s': %s", hint, e)
+            return None, ""
+
+    def _guess_control_prop(self, device_hint: str, value: bool) -> str:
+        """Guess the control property name based on device hint."""
+        hint = device_hint.lower()
+        if any(kw in hint for kw in ['灯', 'light', 'lamp', 'led']):
+            return 'switch' if not value else 'switch'
+        if any(kw in hint for kw in ['空调', 'ac', 'air']):
+            return 'switch'
+        if any(kw in hint for kw in ['电视', 'tv', 'television']):
+            return 'power'
+        if any(kw in hint for kw in ['风扇', 'fan']):
+            return 'switch'
+        if any(kw in hint for kw in ['窗帘', 'curtain', 'blind']):
+            return 'motor_control'
+        if any(kw in hint for kw in ['加湿', 'humidifier']):
+            return 'switch'
+        if any(kw in hint for kw in ['除湿', 'dehumidifier']):
+            return 'switch'
+        if any(kw in hint for kw in ['插座', 'plug', 'socket']):
+            return 'switch'
+        # Default: try switch
+        return 'switch'
+
+    def _reverse_prop_name(self, prop: str) -> str:
+        """Reverse English prop name to Chinese for display."""
+        reverse_map = {
+            'temperature': '温度', 'humidity': '湿度', 'brightness': '亮度',
+            'switch': '开关状态', 'state': '状态',
+        }
+        return reverse_map.get(prop, prop)
 
     async def _cyclic_execute(self) -> tuple[bool, str | None]:
         """Cyclic execute agent steps with context tracking and optimization."""
@@ -987,6 +1174,65 @@ class EnhancedChatAgent(Actor):
         except Exception as e:
             logger.error("[%s] Error calling LLM: %s", self._request_id, str(e))
             raise
+
+    def _get_rule_based_tool_names(self, query: str) -> Optional[list[str]]:
+        """Fast rule-based tool selection. Returns tool list directly, skipping ToolSelector LLM.
+        Returns None if query is ambiguous (should fall through to ToolSelector).
+        Returns [] for chat/no-tool queries.
+        Returns a tool list for clear device queries. HA tools are prioritized.
+        """
+        query_lower = query.strip().lower()
+
+        # ── No-tool patterns (chat, memory, etc.) ──
+        no_tool_patterns = [
+            r"^(你好|hello|hi|hey|早上好|下午好|晚上好|早安|晚安|早|嗨)(\b.*)?$",
+            r"^(bye|再见|拜拜|晚安)(\b.*)?$",
+            r"^(谢谢|thanks|thank)(\b.*)?$",
+            r"^(知道了|好的|嗯|哦|行|OK|ok)(\b.*)?$",
+            r"^(我的|我)(手机|生日|年龄|名字|性别|信息|地址|密码|车牌号)(是)?(\b.*)?$",
+            r"^(明天|今天|后天|最近).*(有雨|天气|下雨|晴天|气温|冷|热)(吗)?(\b.*)?$",
+            r"^.*农历.*$",
+            r"^.*几点了.*$",
+            r"^.*现在(时间|几点).*$",
+        ]
+        for pattern in no_tool_patterns:
+            if re.match(pattern, query_lower):
+                return []
+
+        # ── Clear device control patterns (HA priority) ──
+        ctrl_match = re.match(
+            r'^(打开|关闭|开|关|开启|熄灭)\s*(.+)$', query)
+        if ctrl_match:
+            return ["ha_devices___get_devices", "ha_devices___send_ctrl_rpc",
+                    "miot_devices___get_devices", "miot_devices___get_device_spec",
+                    "miot_devices___send_ctrl_rpc", "miot_devices___auto_ctrl_device"]
+
+        # ── Clear device query patterns (HA priority) ──
+        query_match = re.match(
+            r'^(.+?)(的)?(温度|湿度|亮度|状态|多少|怎么样)$', query)
+        if query_match:
+            return ["ha_devices___get_devices", "ha_devices___send_get_rpc",
+                    "miot_devices___get_devices", "miot_devices___get_device_spec",
+                    "miot_devices___send_get_rpc", "miot_devices___auto_get_device_prop"]
+
+        # ── Keyword-based detection for device queries ──
+        device_query_keywords = [
+            "温度", "湿度", "亮度", "光照", "状态", "电量", "功耗", "能耗",
+            "机柜", "查询", "查看", "环境",
+        ]
+        if any(kw in query_lower for kw in device_query_keywords):
+            return ["ha_devices___get_devices", "ha_devices___send_get_rpc",
+                    "miot_devices___get_devices", "miot_devices___get_device_spec",
+                    "miot_devices___send_get_rpc", "miot_devices___auto_get_device_prop"]
+
+        device_ctrl_keywords = ["开灯", "关灯", "开空调", "关空调", "打开灯", "关闭灯"]
+        if any(kw in query_lower for kw in device_ctrl_keywords):
+            return ["ha_devices___get_devices", "ha_devices___send_ctrl_rpc",
+                    "miot_devices___get_devices", "miot_devices___get_device_spec",
+                    "miot_devices___send_ctrl_rpc", "miot_devices___auto_ctrl_device"]
+
+        # ── Ambiguous: fall through to ToolSelector ──
+        return None
 
     def _get_default_tool_names(self, query: str) -> list[str]:
         """Return a minimal default tool set based on query intent instead of all 21 tools."""
@@ -1218,6 +1464,16 @@ class EnhancedChatAgent(Actor):
         original_tool_name = tool_call.function.name
         tool_id = tool_call.id
         tool_call_content = ""
+
+        # Skip empty tool names (LLM hallucination)
+        if not original_tool_name or not original_tool_name.strip():
+            logger.warning("[%s] LLM returned empty tool name, skipping", self._request_id)
+            self._chat_history_messages.add_tool_call_res_content(
+                tool_id, "",
+                '{"error":"工具名称为空，请使用已注册的工具或直接回答。"}'
+            )
+            self._consecutive_skipped_calls += 1
+            return
 
         # Increment tool execution counter
         self._tool_execution_count += 1

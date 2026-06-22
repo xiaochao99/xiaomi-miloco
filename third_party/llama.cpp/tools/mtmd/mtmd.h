@@ -267,6 +267,12 @@ MTMD_API mtmd_input_chunks * mtmd_test_create_input_chunks(void);
 
 #ifdef __cplusplus
 } // extern "C"
+
+// Compatibility helpers — removed from upstream, required by miloco (C++ only)
+MTMD_API mtmd_input_chunk *  mtmd_create_text_chunk(std::vector<llama_token> tokens);
+MTMD_API mtmd_input_chunks * mtmd_create_text_chunks(std::vector<llama_token> tokens);
+MTMD_API void                 mtmd_input_chunks_add_chunk      (mtmd_input_chunks * chunks, const mtmd_input_chunk * chunk);
+MTMD_API void                 mtmd_input_chunks_insert_chunk_front(mtmd_input_chunks * chunks, const mtmd_input_chunk * chunk);
 #endif
 
 // Get memory usage of the current model in bytes, per backend device

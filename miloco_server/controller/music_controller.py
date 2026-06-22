@@ -258,6 +258,44 @@ async def stop_dlna_cast(device_id: str = Body(..., embed=True)):
         return NormalResponse(code=500, message=f"停止投屏失败: {str(e)}", data=None)
 
 
+@router.post("/dlna/pause", response_model=NormalResponse)
+async def pause_dlna_cast(device_id: str = Body(..., embed=True)):
+    """暂停DLNA投屏播放"""
+    try:
+        from miloco_server.dlna.dlna_service import get_dlna_service
+        dlna = get_dlna_service()
+        device = dlna.get_device(device_id)
+        if not device:
+            return NormalResponse(code=404, message="设备未找到", data=None)
+        success = await device.pause()
+        if success:
+            return NormalResponse(code=0, message="暂停成功", data=None)
+        else:
+            return NormalResponse(code=500, message="暂停失败", data=None)
+    except Exception as e:
+        logger.error("Failed to pause DLNA: %s", e)
+        return NormalResponse(code=500, message=f"暂停失败: {str(e)}", data=None)
+
+
+@router.post("/dlna/play", response_model=NormalResponse)
+async def play_dlna_cast(device_id: str = Body(..., embed=True)):
+    """恢复DLNA投屏播放"""
+    try:
+        from miloco_server.dlna.dlna_service import get_dlna_service
+        dlna = get_dlna_service()
+        device = dlna.get_device(device_id)
+        if not device:
+            return NormalResponse(code=404, message="设备未找到", data=None)
+        success = await device.play()
+        if success:
+            return NormalResponse(code=0, message="播放成功", data=None)
+        else:
+            return NormalResponse(code=500, message="播放失败", data=None)
+    except Exception as e:
+        logger.error("Failed to play DLNA: %s", e)
+        return NormalResponse(code=500, message=f"播放失败: {str(e)}", data=None)
+
+
 # ─── Scan Directory Management ────────────────────
 
 @router.get("/scan/dirs", response_model=NormalResponse)

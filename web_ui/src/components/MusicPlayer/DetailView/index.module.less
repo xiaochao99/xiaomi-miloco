@@ -1,11 +1,4 @@
-@bg-page: #0a0a0a;
-@text-primary: #e5eaf3;
-@text-regular: #cfd3dc;
-@text-secondary: #a3a6ad;
-@text-placeholder: #8d9095;
-@accent-cyan: #5cd5e5;
-@border-color: #2b2b2c;
-
+﻿
 .detailContainer {
   position: relative;
   height: 100%;
@@ -65,8 +58,8 @@
   width: 90%;
   aspect-ratio: 1;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: var(--music-bg-fill);
+  border: 2px solid var(--music-border-color);
   padding: 8px;
   display: flex;
   align-items: center;
@@ -83,8 +76,8 @@
         circle at center,
         transparent 0px,
         transparent 10px,
-        rgba(255, 255, 255, 0.02) 10px,
-        rgba(255, 255, 255, 0.02) 11px
+        var(--music-bg-hover) 10px,
+        var(--music-bg-hover) 11px
       );
     pointer-events: none;
   }
@@ -140,13 +133,13 @@
 .detailArtist {
   font-size: 15px;
   margin: 0 0 4px;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--music-text-regular);
 }
 
 .detailAlbum {
   font-size: 13px;
   margin: 0;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--music-text-secondary);
 }
 
 .lyricsSection {
@@ -178,7 +171,7 @@
 .lyricLine {
   font-size: 16px;
   line-height: 2.2;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--music-text-secondary);
   text-align: center;
   cursor: pointer;
   padding: 4px 20px;
@@ -186,11 +179,11 @@
   user-select: none;
 
   &:hover {
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--music-text-regular);
   }
 
   &.lyricPassed {
-    color: rgba(255, 255, 255, 0.2);
+    color: var(--music-text-placeholder);
     font-size: 14px;
   }
 
@@ -207,7 +200,7 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--music-text-placeholder);
   font-size: 15px;
 }
 
@@ -224,9 +217,9 @@
   height: 36px;
   border-radius: 50%;
   border: none;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--music-bg-fill);
   backdrop-filter: blur(8px);
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--music-text-regular);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -234,7 +227,7 @@
   transition: all 0.2s;
 
   &:hover {
-    background: rgba(0, 0, 0, 0.6);
+    background: var(--music-bg-fill);
     color: #fff;
     transform: scale(1.05);
   }
@@ -247,7 +240,7 @@
   height: 100%;
 
   :global(.ant-empty-description) {
-    color: @text-placeholder;
+    color: var(--music-text-placeholder);
   }
 }
 

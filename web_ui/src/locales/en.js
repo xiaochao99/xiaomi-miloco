@@ -847,6 +847,8 @@ export default {
     updateFailed: 'Update failed',
     confirmUpdate: 'Confirm Update',
     confirmUpdateDesc: 'The service will briefly restart during the update. Continue?',
+    localUpload: 'Local Upload',
+    invalidPackageFormat: 'Only .tar.gz packages are accepted',
     updateLog: 'Update Log',
     noUpdateLog: 'No update log available',
     rollbackToBackup: 'Rollback to Backup',
@@ -863,6 +865,7 @@ export default {
     updateNow: 'Update Now',
     updateConfigCheckbox: 'Also update configuration files',
     releaseNotes: 'Release Notes',
+    pipSyncNotice: 'This update includes new Python dependencies. pip install will run automatically during the update.',
   },
 
   login: {

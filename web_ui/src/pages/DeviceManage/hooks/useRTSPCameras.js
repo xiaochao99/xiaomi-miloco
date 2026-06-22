@@ -6,11 +6,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { message } from 'antd';
 import { useTranslation } from 'react-i18next';
-import { getRTSPCameras, createRTSPCamera, updateRTSPCamera, deleteRTSPCamera } from '@/api';
+import { getRTSPCameras, getCameraList, createRTSPCamera, updateRTSPCamera, deleteRTSPCamera } from '@/api';
 
 /**
- * Hook for managing RTSP cameras
- * @returns {Object} RTSP camera management methods and state
+ * Hook for managing all cameras (MiOT + RTSP)
+ * @returns {Object} Camera management methods and state
  */
 export const useRTSPCameras = () => {
   const { t } = useTranslation();
@@ -19,18 +19,40 @@ export const useRTSPCameras = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCamera, setEditingCamera] = useState(null);
 
-  // Fetch RTSP cameras
+  // Fetch all cameras (MiOT + RTSP)
   const fetchCameras = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getRTSPCameras();
-      if (res && res.code === 0) {
-        setCameras(res.data || []);
-      } else {
-        message.error(res?.message || t('deviceManage.rtsp.fetchFailed'));
-      }
+      const [rtspRes, allRes] = await Promise.all([
+        getRTSPCameras(),
+        getCameraList()
+      ]);
+
+      const rtspCameras = (rtspRes && rtspRes.code === 0) ? (rtspRes.data || []) : [];
+      const allCameras = (allRes && allRes.code === 0) ? (allRes.data || []) : [];
+
+      // Build a set of RTSP camera DIDs
+      const rtspDids = new Set(rtspCameras.map(c => c.did));
+
+      // MiOT cameras = all cameras that are NOT in RTSP list
+      const miotCameras = allCameras
+        .filter(c => !rtspDids.has(c.did))
+        .map(c => ({
+          ...c,
+          _isMiot: true,
+          rtsp_url: null,
+          enable_audio: false,
+          transport: 'tcp',
+          enabled: c.online !== false,
+        }));
+
+      // Mark RTSP cameras
+      const markedRtsp = rtspCameras.map(c => ({ ...c, _isMiot: false }));
+
+      // MiOT cameras first, then RTSP
+      setCameras([...miotCameras, ...markedRtsp]);
     } catch (error) {
-      console.error('Failed to fetch RTSP cameras:', error);
+      console.error('Failed to fetch cameras:', error);
       message.error(t('deviceManage.rtsp.fetchFailed'));
     } finally {
       setLoading(false);

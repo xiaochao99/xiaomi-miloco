@@ -124,20 +124,6 @@ export const MENU_ITEMS = [
     path: '/home/habitLearning',
   },
   {
-    key: '12',
-    label: 'home.menu.recordingConfig',
-    icon: 'menuDevice',
-    selectedIcon: 'menuDeviceSelected',
-    path: '/home/recordingConfig',
-  },
-  {
-    key: '13',
-    label: 'home.menu.recordingPlayback',
-    icon: 'menuLog',
-    selectedIcon: 'menuLogSelected',
-    path: '/home/recordingPlayback',
-  },
-  {
     key: '14',
     label: 'home.menu.musicPlayer',
     icon: 'menuMusic',

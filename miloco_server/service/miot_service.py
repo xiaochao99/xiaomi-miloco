@@ -413,12 +413,24 @@ class MiotService:
         Get RTSP server configuration.
 
         Returns:
-            dict: RTSP server configuration including enabled and port
+            dict: RTSP server configuration including enabled, port, and lan_ip
         """
+        import socket
         from miloco_server.config.normal_config import RTSP_SERVER_CONFIG
+
+        lan_ip = "127.0.0.1"
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            lan_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            pass
+
         return {
             "enabled": bool(RTSP_SERVER_CONFIG.get("enabled", True)),
             "port": int(RTSP_SERVER_CONFIG.get("port", 8554)),
+            "lan_ip": lan_ip,
         }
 
     def set_rtsp_server_config(self, enabled: bool, port: int) -> dict:

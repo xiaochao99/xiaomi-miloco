@@ -4,7 +4,7 @@ import { useRef, useState, useEffect } from 'react'
  * Only loads the image when it scrolls into the viewport.
  * Uses IntersectionObserver with a rootMargin to preload slightly before visible.
  */
-const LazyImage = ({ src, alt = '', className = '', onError, fallback = null, rootMargin = '200px' }) => {
+const LazyImage = ({ src, alt = '', className = '', style = {}, onError, fallback = null, rootMargin = '200px' }) => {
   const imgRef = useRef(null)
   const [shouldLoad, setShouldLoad] = useState(false)
   const [hasError, setHasError] = useState(false)
@@ -41,6 +41,7 @@ const LazyImage = ({ src, alt = '', className = '', onError, fallback = null, ro
       src={src}
       alt={alt}
       className={className}
+      style={style}
       onError={(e) => {
         setHasError(true)
         onError?.(e)

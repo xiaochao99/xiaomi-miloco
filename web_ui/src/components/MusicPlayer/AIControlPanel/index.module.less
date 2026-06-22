@@ -1,16 +1,14 @@
-@netease-red: #ec4141;
-@primary-teal: #00bdc3;
-
+﻿
 .panel {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: rgba(18, 18, 18, 0.98);
+  background: var(--music-bg-card);
 }
 
 .statusBar {
   padding: 14px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--music-border-light);
 }
 
 .statusGrid {
@@ -27,14 +25,14 @@
 
 .statusLabel {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--music-text-secondary);
   text-transform: uppercase;
   letter-spacing: 1px;
 }
 
 .statusValue {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--music-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -51,9 +49,9 @@
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--music-text-secondary);
   padding: 2px 8px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--music-bg-hover);
   border-radius: 4px;
 }
 
@@ -65,12 +63,12 @@
 
 .quickCommands {
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--music-border-light);
 }
 
 .quickLabel {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--music-text-secondary);
   margin-bottom: 8px;
   display: flex;
   align-items: center;
@@ -84,18 +82,18 @@
 }
 
 .quickBtn {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--music-text-regular);
   font-size: 12px;
   height: 28px;
   border-radius: 6px;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--music-border-color);
   transition: all 0.15s;
 
   &:hover {
     color: #fff;
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.15);
+    background: var(--music-border-light);
+    border-color: var(--music-text-placeholder);
   }
 }
 
@@ -108,7 +106,7 @@
   gap: 12px;
 
   &::-webkit-scrollbar { width: 3px; }
-  &::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
+  &::-webkit-scrollbar-thumb { background: var(--music-border-color); border-radius: 2px; }
 }
 
 .message {
@@ -121,7 +119,7 @@
 
     .avatar {
       background: rgba(236, 65, 65, 0.15);
-      color: @netease-red;
+      color: var(--music-red);
     }
 
     .bubble {
@@ -133,12 +131,12 @@
   &.assistant {
     .avatar {
       background: rgba(0, 189, 195, 0.15);
-      color: @primary-teal;
+      color: var(--music-accent);
     }
 
     .bubble {
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: var(--music-bg-hover);
+      border: 1px solid var(--music-border-light);
     }
   }
 
@@ -170,7 +168,7 @@
 }
 
 .messageText {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--music-text-primary);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -203,7 +201,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--music-text-secondary);
   animation: bounce 1.2s infinite;
 
   &:nth-child(2) { animation-delay: 0.2s; }
@@ -217,13 +215,13 @@
 
 .examples {
   padding: 12px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--music-border-light);
 }
 
 .examplesLabel {
   display: block;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--music-text-secondary);
   margin-bottom: 8px;
 }
 
@@ -238,15 +236,15 @@
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6) !important;
-  background: rgba(255, 255, 255, 0.04) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: var(--music-text-regular) !important;
+  background: var(--music-bg-hover) !important;
+  border: 1px solid var(--music-border-color) !important;
   transition: all 0.15s;
 
   &:hover {
     color: #fff !important;
     background: rgba(0, 189, 195, 0.1) !important;
-    border-color: @primary-teal !important;
+    border-color: var(--music-accent) !important;
   }
 }
 
@@ -255,21 +253,21 @@
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid var(--music-border-light);
+  background: var(--music-bg-hover);
 }
 
 .inputField {
   flex: 1;
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: var(--music-bg-fill) !important;
   border-radius: 10px !important;
   height: 38px;
   padding: 0 14px !important;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--music-text-primary);
 
   :global(.ant-input) {
-    color: rgba(255, 255, 255, 0.85);
-    &::placeholder { color: rgba(255, 255, 255, 0.25); }
+    color: var(--music-text-primary);
+    &::placeholder { color: var(--music-text-placeholder); }
   }
 }
 

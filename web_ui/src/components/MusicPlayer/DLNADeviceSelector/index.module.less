@@ -1,9 +1,3 @@
-@accent: #5cd5e5;
-@green: #52c41a;
-@text-primary: #e5eaf3;
-@text-regular: #cfd3dc;
-@text-secondary: #a3a6ad;
-@text-placeholder: #8d9095;
 
 .container {
   position: relative;
@@ -15,7 +9,7 @@
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: @text-secondary;
+  color: var(--music-text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -23,16 +17,16 @@
   transition: all 0.15s;
 
   &:hover {
-    color: @text-primary;
-    background: rgba(255, 255, 255, 0.06);
+    color: var(--music-text-primary);
+    background: var(--music-border-light);
   }
 }
 
 .castBtnActive {
-  color: @green;
+  color: var(--success-color);
 
   &:hover {
-    color: lighten(@green, 10%);
+    color: #73d13d;
     background: rgba(82, 196, 26, 0.08);
   }
 }
@@ -54,10 +48,10 @@
   right: 0;
   z-index: 1000;
   width: 320px;
-  background: rgba(20, 20, 20, 0.97);
+  background: var(--music-bg-card);
   backdrop-filter: blur(20px);
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--music-border-color);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   overflow: hidden;
 }
@@ -68,7 +62,7 @@
 
   &::-webkit-scrollbar { width: 4px; }
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--music-border-color);
     border-radius: 2px;
   }
 }
@@ -80,20 +74,20 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--music-border-light);
 }
 
 .headerLeft {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: @text-secondary;
+  color: var(--music-text-secondary);
 }
 
 .headerTitle {
   font-size: 13px;
   font-weight: 500;
-  color: @text-primary;
+  color: var(--music-text-primary);
 }
 
 .refreshBtn {
@@ -102,7 +96,7 @@
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: @text-secondary;
+  color: var(--music-text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -110,8 +104,8 @@
   transition: all 0.15s;
 
   &:hover:not(:disabled) {
-    color: @text-primary;
-    background: rgba(255, 255, 255, 0.06);
+    color: var(--music-text-primary);
+    background: var(--music-border-light);
   }
 
   &:disabled {
@@ -134,7 +128,7 @@
   width: 16px;
   height: 16px;
   border: 2px solid rgba(92, 213, 229, 0.2);
-  border-top-color: @accent;
+  border-top-color: var(--music-accent);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
@@ -144,7 +138,7 @@
 }
 
 .loadingText {
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   font-size: 13px;
 }
 
@@ -156,7 +150,7 @@
   padding: 32px 20px;
 
   p {
-    color: @text-placeholder;
+    color: var(--music-text-placeholder);
     font-size: 13px;
     margin: 0;
   }
@@ -167,7 +161,7 @@
   border-radius: 6px;
   border: 1px solid rgba(92, 213, 229, 0.3);
   background: transparent;
-  color: @accent;
+  color: var(--music-accent);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
@@ -192,7 +186,7 @@
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--music-bg-hover);
   }
 }
 
@@ -204,11 +198,11 @@
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--music-border-light);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: @text-secondary;
+  color: var(--music-text-secondary);
   flex-shrink: 0;
 }
 
@@ -222,7 +216,7 @@
 
 .deviceName {
   font-size: 13px;
-  color: @text-primary;
+  color: var(--music-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -230,7 +224,7 @@
 
 .deviceHost {
   font-size: 11px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
 }
 
 .castingBadge {
@@ -238,7 +232,7 @@
   padding: 2px 8px;
   border-radius: 4px;
   background: rgba(82, 196, 26, 0.15);
-  color: @green;
+  color: var(--success-color);
   white-space: nowrap;
 }
 
@@ -246,7 +240,7 @@
 
 .controlBar {
   padding: 12px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--music-border-light);
   background: rgba(82, 196, 26, 0.04);
 }
 
@@ -259,14 +253,14 @@
 
 .nowPlayingLabel {
   font-size: 10px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   text-transform: uppercase;
   letter-spacing: 1px;
 }
 
 .nowPlayingTitle {
   font-size: 13px;
-  color: @text-primary;
+  color: var(--music-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -281,16 +275,16 @@
 .controlBtn {
   padding: 5px 14px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--music-border-color);
   background: transparent;
-  color: @text-regular;
+  color: var(--music-text-regular);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.15);
+    background: var(--music-border-light);
+    border-color: var(--music-text-placeholder);
   }
 }
 

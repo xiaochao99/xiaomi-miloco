@@ -65,6 +65,7 @@ export const useMusicPlayerStore = create(
       dlnaDevices: [],
       selectedDLNADevice: null,
       isDLNACasting: false,
+      dlnaPlayState: 'stopped', // 'playing' | 'paused' | 'stopped'
       dlnaLoading: false,
 
       _audio: null,
@@ -218,6 +219,12 @@ export const useMusicPlayerStore = create(
           targetAudio.src = enriched.audio_url
           targetAudio.load()
           await targetAudio.play()
+
+          // Auto-sync DLNA: if casting, update the DLNA device with the new song
+          if (get().isDLNACasting && get().selectedDLNADevice) {
+            const deviceId = get().selectedDLNADevice.udn || get().selectedDLNADevice.id
+            api.castToDLNA(deviceId, enriched.id, enriched.audio_url).catch(() => {})
+          }
 
           // Fetch lyrics asynchronously AFTER starting playback (non-blocking)
           if (enriched.audio_url?.startsWith('/api/music/stream/') && !enriched.lyrics?.length) {
@@ -728,12 +735,12 @@ export const useMusicPlayerStore = create(
         set({ selectedDLNADevice: device })
       },
 
-      castToDLNA: async (deviceId, songId) => {
+      castToDLNA: async (deviceId, songId, audioUrl) => {
         try {
           set({ dlnaLoading: true })
-          const res = await api.castToDLNA(deviceId, songId)
+          const res = await api.castToDLNA(deviceId, songId, audioUrl)
           if (res?.code === 0) {
-            set({ isDLNACasting: true })
+            set({ isDLNACasting: true, dlnaPlayState: 'playing' })
             return true
           }
           set({ error: res?.message || '投屏失败' })
@@ -751,7 +758,7 @@ export const useMusicPlayerStore = create(
           set({ dlnaLoading: true })
           const res = await api.stopDLNACast(deviceId)
           if (res?.code === 0) {
-            set({ isDLNACasting: false })
+            set({ isDLNACasting: false, dlnaPlayState: 'stopped' })
             return true
           }
           return false
@@ -760,6 +767,34 @@ export const useMusicPlayerStore = create(
           return false
         } finally {
           set({ dlnaLoading: false })
+        }
+      },
+
+      pauseDLNA: async (deviceId) => {
+        try {
+          const res = await api.pauseDLNA(deviceId)
+          if (res?.code === 0) {
+            set({ dlnaPlayState: 'paused' })
+            return true
+          }
+          return false
+        } catch (e) {
+          console.error('Pause DLNA failed:', e)
+          return false
+        }
+      },
+
+      playDLNA: async (deviceId) => {
+        try {
+          const res = await api.playDLNA(deviceId)
+          if (res?.code === 0) {
+            set({ dlnaPlayState: 'playing' })
+            return true
+          }
+          return false
+        } catch (e) {
+          console.error('Play DLNA failed:', e)
+          return false
         }
       },
 

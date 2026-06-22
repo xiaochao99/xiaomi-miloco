@@ -1,6 +1,4 @@
-@netease-red: #ec4141;
-@primary-teal: #00bdc3;
-
+﻿
 .lyricsPanel {
   position: relative;
   height: 380px;
@@ -46,12 +44,12 @@
 }
 
 .emptyText {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--music-text-secondary);
   font-size: 15px;
 }
 
 .emptyHint {
-  color: rgba(255, 255, 255, 0.15);
+  color: var(--music-text-placeholder);
   font-size: 12px;
 }
 
@@ -60,7 +58,7 @@
   font-size: 14px;
   font-weight: 400;
   line-height: 1.6;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--music-text-secondary);
   text-align: center;
   cursor: pointer;
   padding: 8px 24px;
@@ -72,8 +70,8 @@
   user-select: none;
 
   &:hover {
-    color: rgba(255, 255, 255, 0.6);
-    background: rgba(255, 255, 255, 0.03);
+    color: var(--music-text-regular);
+    background: var(--music-bg-hover);
     border-radius: 8px;
   }
 

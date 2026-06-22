@@ -156,7 +156,9 @@ class MCPClientManager:
                     get_devices_async=miot_client.get_devices_async,
                     get_prop_async=miot_client.http_client.get_prop_async,
                     set_prop_async=miot_client.http_client.set_prop_async,
-                    action_async=miot_client.http_client.action_async
+                    action_async=miot_client.http_client.action_async,
+                    get_props_async=miot_client.http_client.get_props_async,
+                    set_props_async=miot_client.http_client.set_props_async,
                 ),
                 spec_parser=miot_client.spec_parser,
             )

@@ -9,7 +9,7 @@ import {Select, Switch, Button, Form, Input, Modal, message, Divider, Space, Typ
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { SettingOutlined, GlobalOutlined, BulbOutlined, KeyOutlined, ToolOutlined, PlusOutlined, CopyOutlined, DeleteOutlined, VideoCameraOutlined, UploadOutlined, AudioOutlined, SoundOutlined, ExperimentOutlined } from '@ant-design/icons';
-import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig, getRTSPServerConfig, setRTSPServerConfig, getXiaoAIConfig, updateXiaoAIConfig, restartXiaoAI, listVoiceClones, uploadVoiceClone, deleteVoiceClone, synthesizeWithVoiceClone, voiceDesignTTS, getUpdateStatus, checkForUpdates, applyUpdate, getUpdateLog, listBackups, rollbackToBackup, getSystemStatus } from '@/api';
+import { setHAAuth, getHAAuth, getLanguage, setLanguage, getAPITokenList, createAPIToken, deleteAPIToken, getCameraConfig, setCameraConfig as saveCameraConfig, getRTSPServerConfig, setRTSPServerConfig, getXiaoAIConfig, updateXiaoAIConfig, restartXiaoAI, listVoiceClones, uploadVoiceClone, deleteVoiceClone, synthesizeWithVoiceClone, voiceDesignTTS, getUpdateStatus, checkForUpdates, applyUpdate, uploadUpdatePackage, getUpdateLog, listBackups, rollbackToBackup, getSystemStatus } from '@/api';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSettingStore } from '@/stores/settingStore';
 import { Card, Header } from '@/components';
@@ -287,7 +287,8 @@ const Setting = () => {
             release_name: res.data.release_name || '',
             release_url: res.data.release_url || '',
             published_at: res.data.published_at || '',
-            has_config: res.data.has_config || false
+            has_config: res.data.has_config || false,
+            pip_sync: res.data.pip_sync || false
           });
           setUpdateConfigChecked(false);
           setUpdateContentVisible(true);
@@ -332,6 +333,40 @@ const Setting = () => {
     } finally {
       setLoadingUpdate(false);
     }
+  };
+
+  const handleLocalUpload = async (file) => {
+    if (!file.name.endsWith('.tar.gz')) {
+      message.error(t('setting.invalidPackageFormat'));
+      return false;
+    }
+    setLoadingUpdate(true);
+    try {
+      const res = await uploadUpdatePackage(file);
+      if (res && res.code === 0) {
+        message.success(t('setting.updateStarted'));
+        // Poll for update status
+        const pollInterval = setInterval(async () => {
+          const logRes = await getUpdateLog();
+          if (logRes && logRes.code === 0) {
+            setUpdateLog(logRes.data.log);
+            if (!logRes.data.is_updating) {
+              clearInterval(pollInterval);
+              fetchUpdateStatus();
+              message.success(t('setting.updateCompleted'));
+            }
+          }
+        }, 2000);
+      } else {
+        message.error(res?.message || t('setting.updateFailed'));
+      }
+    } catch (error) {
+      console.error('Failed to apply local update:', error);
+      message.error(t('setting.updateFailed'));
+    } finally {
+      setLoadingUpdate(false);
+    }
+    return false; // Prevent default Upload behavior
   };
 
   const handleViewLog = async () => {
@@ -1818,6 +1853,16 @@ const Setting = () => {
               <Button onClick={handleListBackups}>
                 {t('setting.rollback')}
               </Button>
+              
+              <Upload
+                accept=".tar.gz"
+                showUploadList={false}
+                beforeUpload={handleLocalUpload}
+              >
+                <Button icon={<UploadOutlined />}>
+                  {t('setting.localUpload')}
+                </Button>
+              </Upload>
             </div>
           </div>
         </Card>
@@ -2009,6 +2054,15 @@ const Setting = () => {
                 >
                   {t('setting.updateConfigCheckbox')}
                 </Checkbox>
+              </div>
+            )}
+            {updateContentData.pip_sync && (
+              <div style={{ marginBottom: 12 }}>
+                <Alert
+                  message={t('setting.pipSyncNotice')}
+                  type="info"
+                  showIcon
+                />
               </div>
             )}
             <div style={{

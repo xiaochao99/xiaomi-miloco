@@ -1,6 +1,4 @@
-@netease-red: #ec4141;
-@primary-teal: #00bdc3;
-
+﻿
 .manager {
   display: flex;
   flex-direction: column;
@@ -12,7 +10,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--music-bg-hover);
   border-radius: 10px;
 }
 
@@ -29,7 +27,7 @@
 }
 
 .watcherLabel {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--music-text-regular);
   font-size: 13px;
 }
 
@@ -74,19 +72,19 @@
 
 .dirItem {
   padding: 12px 16px !important;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--music-bg-hover);
   border-radius: 10px;
   margin-bottom: 6px;
   transition: background 0.15s;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--music-bg-fill);
   }
 }
 
 .dirIcon {
   font-size: 20px;
-  color: @primary-teal;
+  color: var(--music-accent);
   opacity: 0.7;
 }
 
@@ -94,7 +92,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--music-text-primary);
   font-size: 13px;
   font-weight: 500;
 }
@@ -105,11 +103,11 @@
   border-radius: 3px;
   background: rgba(0, 189, 195, 0.12) !important;
   border-color: rgba(0, 189, 195, 0.2) !important;
-  color: @primary-teal !important;
+  color: var(--music-accent) !important;
 }
 
 .dirPath {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--music-text-secondary);
   font-size: 12px;
   display: flex;
   flex-direction: column;
@@ -118,19 +116,19 @@
 }
 
 .lastScan {
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--music-text-placeholder);
   font-size: 11px;
 }
 
 .actionBtn {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--music-text-secondary);
   font-size: 14px;
-  &:hover { color: rgba(255, 255, 255, 0.8); }
+  &:hover { color: var(--music-text-primary); }
 }
 
 .empty {
   margin-top: 20px;
-  :global(.ant-empty-description) { color: rgba(255, 255, 255, 0.3); }
+  :global(.ant-empty-description) { color: var(--music-text-secondary); }
 }
 
 .form {
@@ -145,21 +143,21 @@
   gap: 6px;
 
   label {
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--music-text-regular);
     font-size: 13px;
   }
 
   :global(.ant-input) {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.85);
+    background: var(--music-bg-fill);
+    border: 1px solid var(--music-border-color);
+    color: var(--music-text-primary);
     border-radius: 8px;
-    &:focus { border-color: @primary-teal; box-shadow: 0 0 0 2px rgba(0, 189, 195, 0.1); }
+    &:focus { border-color: var(--music-accent); box-shadow: 0 0 0 2px rgba(0, 189, 195, 0.1); }
   }
 
   :global(.ant-input[disabled]) {
-    background: rgba(255, 255, 255, 0.03);
-    color: rgba(255, 255, 255, 0.4);
+    background: var(--music-bg-hover);
+    color: var(--music-text-secondary);
   }
 
   :global(.ant-switch) {
@@ -173,13 +171,13 @@
 
 .modal {
   :global(.ant-modal-content) {
-    background: rgba(24, 24, 24, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--music-bg-card);
+    border: 1px solid var(--music-border-color);
   }
   :global(.ant-modal-header) {
     background: transparent;
   }
   :global(.ant-modal-title) {
-    color: rgba(255, 255, 255, 0.85);
+    color: var(--music-text-primary);
   }
 }

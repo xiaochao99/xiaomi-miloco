@@ -38,10 +38,9 @@ const CloseIcon = () => (
 
 const DLNADeviceSelector = () => {
   const {
-    dlnaDevices, selectedDLNADevice, isDLNACasting, dlnaLoading,
+    dlnaDevices, selectedDLNADevice, isDLNACasting, dlnaPlayState, dlnaLoading,
     loadDLNADevices, discoverDLNADevices, selectDLNADevice,
-    castToDLNA, stopDLNACast, currentSong, playbackState,
-    play, pause,
+    castToDLNA, stopDLNACast, pauseDLNA, playDLNA, currentSong,
   } = useMusicPlayerStore()
 
   const [open, setOpen] = useState(false)
@@ -58,7 +57,8 @@ const DLNADeviceSelector = () => {
   const handleDeviceSelect = async (device) => {
     selectDLNADevice(device)
     const songId = currentSong?.id || null
-    await castToDLNA(device.udn || device.id, songId)
+    const audioUrl = currentSong?.audio_url || null
+    await castToDLNA(device.udn || device.id, songId, audioUrl)
     setOpen(false)
   }
 
@@ -69,7 +69,16 @@ const DLNADeviceSelector = () => {
     }
   }
 
-  const isPlaying = playbackState === 'playing'
+  const handleDlnaPlayPause = async (e) => {
+    e?.stopPropagation()
+    if (!selectedDLNADevice) return
+    const deviceId = selectedDLNADevice.udn || selectedDLNADevice.id
+    if (dlnaPlayState === 'playing') {
+      await pauseDLNA(deviceId)
+    } else {
+      await playDLNA(deviceId)
+    }
+  }
 
   return (
     <div className={styles.container}>
@@ -158,9 +167,9 @@ const DLNADeviceSelector = () => {
                   <div className={styles.controlActions}>
                     <button
                       className={styles.controlBtn}
-                      onClick={(e) => { e.stopPropagation(); isPlaying ? pause() : play() }}
+                      onClick={handleDlnaPlayPause}
                     >
-                      {isPlaying ? '暂停' : '播放'}
+                      {dlnaPlayState === 'playing' ? '暂停' : '播放'}
                     </button>
                     <button
                       className={styles.stopBtn}

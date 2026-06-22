@@ -10,6 +10,7 @@ import {
   Tooltip,
 } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import {
   ReloadOutlined,
   ClearOutlined,
@@ -78,6 +79,7 @@ let hevcRuntimeFailed = false;
 
 const RecordingPlayback = () => {
   const { t } = useTranslation();
+  const [searchParams] = useSearchParams();
 
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState(null);
@@ -277,7 +279,9 @@ const RecordingPlayback = () => {
       if (res && res.code === 0) {
         setCameras(res.data || []);
         if (res.data && res.data.length > 0) {
-          setSelectedCamera(res.data[0].did);
+          const cameraParam = searchParams.get('camera');
+          const found = cameraParam && res.data.find(c => c.did === cameraParam);
+          setSelectedCamera(found ? cameraParam : res.data[0].did);
         }
       }
     } catch (error) {

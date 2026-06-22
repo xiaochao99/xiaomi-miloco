@@ -186,6 +186,7 @@ logs/
 
 # Download Models (legacy location)
 models/
+!third_party/llama.cpp/src/models/
 
 # Built-in detection model (include in git using git lfs or force add)
 # Uncomment the line below if you want to ignore the built-in model

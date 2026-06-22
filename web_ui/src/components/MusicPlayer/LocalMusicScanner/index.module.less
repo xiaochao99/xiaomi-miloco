@@ -1,10 +1,3 @@
-@text-primary: #e5eaf3;
-@text-regular: #cfd3dc;
-@text-secondary: #a3a6ad;
-@text-placeholder: #8d9095;
-@accent: #5cd5e5;
-@bg-fill: #1d1d1d;
-@bg-hover: rgba(255, 255, 255, 0.04);
 
 .container {
   padding: 20px 28px;
@@ -23,7 +16,7 @@
 .title {
   font-size: 16px;
   font-weight: 600;
-  color: @text-primary;
+  color: var(--music-text-primary);
   margin: 0;
 }
 
@@ -35,7 +28,7 @@
 
 .count {
   font-size: 12px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
 }
 
 .playAllBtn {
@@ -46,7 +39,7 @@
   border-radius: 6px;
   border: none;
   background: rgba(92, 213, 229, 0.12);
-  color: @accent;
+  color: var(--music-accent);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
@@ -66,9 +59,9 @@
 
   &::-webkit-scrollbar { width: 6px; }
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--music-border-color);
     border-radius: 4px;
-    &:hover { background: rgba(255, 255, 255, 0.15); }
+    &:hover { background: var(--music-text-placeholder); }
   }
   &::-webkit-scrollbar-track { background: transparent; }
 }
@@ -83,14 +76,14 @@
   transition: background 0.15s;
 
   &:hover {
-    background: @bg-hover;
+    background: var(--music-bg-hover);
     .playBtn { opacity: 1; }
   }
 }
 
 .songItemActive {
   background: rgba(92, 213, 229, 0.06);
-  .songTitle { color: @accent; }
+  .songTitle { color: var(--music-accent); }
 }
 
 .songCover {
@@ -99,7 +92,7 @@
   border-radius: 4px;
   overflow: hidden;
   flex-shrink: 0;
-  background: @bg-fill;
+  background: var(--music-bg-fill);
 
   img {
     width: 100%;
@@ -114,7 +107,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.15);
+  color: var(--music-text-placeholder);
 }
 
 .songInfo {
@@ -127,7 +120,7 @@
 
 .songTitle {
   font-size: 13px;
-  color: @text-primary;
+  color: var(--music-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -136,7 +129,7 @@
 
 .songArtist {
   font-size: 11px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -144,7 +137,7 @@
 
 .songDuration {
   font-size: 12px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   min-width: 40px;
@@ -157,7 +150,7 @@
   border-radius: 50%;
   border: none;
   background: transparent;
-  color: @text-secondary;
+  color: var(--music-text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -167,7 +160,7 @@
   flex-shrink: 0;
 
   &:hover {
-    color: @accent;
+    color: var(--music-accent);
     background: rgba(92, 213, 229, 0.08);
   }
 }
@@ -184,7 +177,7 @@
   padding: 40px 0;
 
   p {
-    color: @text-placeholder;
+    color: var(--music-text-placeholder);
     font-size: 14px;
     margin: 0;
   }
@@ -192,7 +185,7 @@
 
 .emptyHint {
   font-size: 12px !important;
-  color: rgba(255, 255, 255, 0.25) !important;
+  color: var(--music-text-placeholder) !important;
 }
 
 // ─── Card Grid ──────────────────────────────────────
@@ -205,12 +198,12 @@
   overflow-y: auto;
   align-content: start;
   &::-webkit-scrollbar { width: 6px; }
-  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+  &::-webkit-scrollbar-thumb { background: var(--music-border-color); border-radius: 4px; }
   &::-webkit-scrollbar-track { background: transparent; }
 }
 
 .cardItem {
-  background: rgba(255,255,255,0.04);
+  background: var(--music-bg-hover);
   border-radius: 10px;
   padding: 12px;
   cursor: pointer;
@@ -218,11 +211,11 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  &:hover { background: rgba(255,255,255,0.08); }
+  &:hover { background: var(--music-border-color); }
 }
 .cardItemActive {
   background: rgba(92, 213, 229, 0.08);
-  .cardTitle { color: @accent; }
+  .cardTitle { color: var(--music-accent); }
 }
 
 .cardCover {
@@ -241,8 +234,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: @bg-fill;
-  color: rgba(255,255,255,0.1);
+  background: var(--music-bg-fill);
+  color: var(--music-border-color);
 }
 
 .cardPlayBtn {
@@ -253,7 +246,7 @@
   height: 36px;
   border-radius: 50%;
   border: none;
-  background: rgba(0,0,0,0.6);
+  background: var(--music-bg-fill);
   color: #fff;
   cursor: pointer;
   display: flex;
@@ -263,7 +256,7 @@
   transition: opacity 0.2s;
 }
 .cardItem:hover .cardPlayBtn { opacity: 1; }
-.cardPlayBtnActive { opacity: 1 !important; background: @accent; }
+.cardPlayBtnActive { opacity: 1 !important; background: var(--music-accent); }
 
 .cardInfo {
   flex: 1;
@@ -272,7 +265,7 @@
 
 .cardTitle {
   font-size: 13px;
-  color: @text-primary;
+  color: var(--music-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -281,7 +274,7 @@
 
 .cardArtist {
   font-size: 11px;
-  color: @text-placeholder;
+  color: var(--music-text-placeholder);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -311,14 +304,14 @@
 
 .cardAddBtn {
   background: none; border: none; cursor: pointer; padding: 4px;
-  color: var(--text-tertiary, #888); opacity: 0; transition: opacity 0.15s;
-  &:hover { color: @accent; opacity: 1; }
+  color: var(--music-text-placeholder); opacity: 0; transition: opacity 0.15s;
+  &:hover { color: var(--music-accent); opacity: 1; }
 }
 .cardItem:hover .cardAddBtn { opacity: 0.6; }
 
 .addToListBtn {
   background: none; border: none; cursor: pointer; padding: 4px;
-  color: var(--text-tertiary, #888); opacity: 0.5; transition: opacity 0.15s;
+  color: var(--music-text-placeholder); opacity: 0.5; transition: opacity 0.15s;
   flex-shrink: 0;
-  &:hover { opacity: 1; color: @accent; }
+  &:hover { opacity: 1; color: var(--music-accent); }
 }

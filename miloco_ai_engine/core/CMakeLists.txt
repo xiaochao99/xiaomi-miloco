@@ -16,9 +16,20 @@ include_directories(${PROJECT_SOURCE_DIR}
                     ${LLAMA_THIRD_PARTY_PATH}/include
                     ${LLAMA_THIRD_PARTY_PATH}/ggml/include
                     ${LLAMA_THIRD_PARTY_PATH}/src
-                    ${LLAMA_THIRD_PARTY_PATH}/mutil-modal
+                    ${LLAMA_THIRD_PARTY_PATH}/tools/mtmd
                     ${LLAMA_THIRD_PARTY_PATH}/common
-                    ${LLAMA_THIRD_PARTY_PATH}/common/vendor)
+                    ${LLAMA_THIRD_PARTY_PATH}/vendor)
+
+# Stub for llama_add_compile_flags (required by newer llama.cpp src/CMakeLists.txt)
+# The full function lives in cmake/common.cmake but includes relative paths that
+# don't resolve correctly when built as a subproject. The flags are only for
+# warnings/sanitizers which are not critical for our use case.
+function(llama_add_compile_flags)
+endfunction()
+
+# LLAMA_INSTALL_VERSION is normally set by top-level llama.cpp CMakeLists.txt from
+# git build info. We define a placeholder here since we only build a subdirectory.
+set(LLAMA_INSTALL_VERSION 0.0.0)
 
 add_subdirectory(${LLAMA_THIRD_PARTY_PATH}/ggml ${CMAKE_CURRENT_BINARY_DIR}/llama_third_party/ggml)
 add_subdirectory(${LLAMA_THIRD_PARTY_PATH}/src  ${CMAKE_CURRENT_BINARY_DIR}/llama_third_party/src)
@@ -35,5 +46,8 @@ add_subdirectory(cache_manager)
 add_subdirectory(batch_scheduling)
 # add_subdirectory(mutil-modal)
 
-
 install(TARGETS llama-mico DESTINATION lib)
+install(TARGETS llama ggml ggml-base DESTINATION lib)
+if (GGML_CUDA)
+    install(TARGETS ggml-cuda DESTINATION lib)
+endif()

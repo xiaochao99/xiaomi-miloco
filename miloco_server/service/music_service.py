@@ -612,18 +612,26 @@ class MusicService:
 
     async def cast_to_dlna(self, request: DLNACastRequest, base_url: str = "http://localhost:8000") -> bool:
         """投屏到DLNA设备"""
-        song = None
-        if request.song_id:
-            song = self._songs.get(request.song_id)
-        elif self._playback_status.current_song:
-            song = self._playback_status.current_song
+        audio_url = request.audio_url
 
-        if not song:
-            logger.error("No song to cast")
+        if not audio_url:
+            song = None
+            if request.song_id:
+                song = self._songs.get(request.song_id)
+            elif self._playback_status.current_song:
+                song = self._playback_status.current_song
+
+            if not song:
+                logger.error("No song to cast")
+                return False
+
+            audio_url = song.audio_url
+
+        if not audio_url:
+            logger.error("No audio URL to cast")
             return False
 
         # 构建完整的音频URL
-        audio_url = song.audio_url
         if not audio_url.startswith("http"):
             audio_url = f"{base_url.rstrip('/')}{audio_url}"
 

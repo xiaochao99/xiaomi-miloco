@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useEffect, useState } from 'react'
+import { Spin } from 'antd'
 import { useMusicPlayerStore } from '@/stores/musicPlayerStore'
+import * as musicApi from '@/api/musicApi'
 import LazyImage from '@/components/MusicPlayer/LazyImage'
 import styles from './index.module.less'
 
@@ -47,57 +49,46 @@ const SearchView = ({ keyword }) => {
     playSong, playAll, toggleFavorite, addToPlaylist, favoriteIds
   } = useMusicPlayerStore()
 
+  const [onlineResults, setOnlineResults] = useState([])
+  const [onlineLoading, setOnlineLoading] = useState(false)
+
   const kwLower = (keyword || '').toLowerCase()
 
-  const calculateRelevance = (text, kw) => {
-    if (!text || !kw) return 0
-    const textLower = text.toLowerCase()
-    if (textLower === kw) return 100
-    if (textLower.startsWith(kw)) return 80
-    if (textLower.includes(kw)) return 60
-    const words = kw.split(/\s+/)
-    let matchCount = 0
-    for (const word of words) {
-      if (word && textLower.includes(word)) matchCount++
+  // Online search with cover enrichment
+  useEffect(() => {
+    if (!keyword?.trim()) {
+      setOnlineResults([])
+      return
     }
-    if (matchCount > 0) return 40 + (matchCount / words.length) * 20
-    return 0
-  }
-
-  const sortSongsByRelevance = (songs, kw) => {
-    return [...songs].sort((a, b) => {
-      const scoreA = Math.max(
-        calculateRelevance(a.title, kw) * 1.5,
-        calculateRelevance(a.artist, kw) * 1.2,
-        calculateRelevance(a.album, kw)
-      )
-      const scoreB = Math.max(
-        calculateRelevance(b.title, kw) * 1.5,
-        calculateRelevance(b.artist, kw) * 1.2,
-        calculateRelevance(b.album, kw)
-      )
-      if (scoreA !== scoreB) return scoreB - scoreA
-      const isLocalA = String(a.id).startsWith('local_') ? 1 : 0
-      const isLocalB = String(b.id).startsWith('local_') ? 1 : 0
-      if (isLocalA !== isLocalB) return isLocalB - isLocalA
-      return 0
+    let cancelled = false
+    setOnlineLoading(true)
+    musicApi.searchSongs(keyword.trim(), { count: 20 }).then(async (results) => {
+      if (cancelled) return
+      const enriched = await musicApi.batchBuildCoverUrls(results || [])
+      if (!cancelled) setOnlineResults(enriched)
+    }).catch(() => {
+      if (!cancelled) setOnlineResults([])
+    }).finally(() => {
+      if (!cancelled) setOnlineLoading(false)
     })
-  }
+    return () => { cancelled = true }
+  }, [keyword])
 
   const sortByNameRelevance = (items, kw) => {
     return [...items].sort((a, b) => {
-      const scoreA = calculateRelevance(a.name, kw)
-      const scoreB = calculateRelevance(b.name, kw)
+      const scoreA = (a.name || '').toLowerCase().includes(kw) ? 1 : 0
+      const scoreB = (b.name || '').toLowerCase().includes(kw) ? 1 : 0
       return scoreB - scoreA
     })
   }
 
+  // Local search: always filter library directly (no store dependency)
   const results = useMemo(() => {
-    if (!kwLower) return { songs: [], artists: [], albums: [], online: [] }
+    if (!kwLower) return { songs: [], artists: [], albums: [] }
 
     const localSongs = library.filter(s => String(s.id).startsWith('local_'))
 
-    const matchedSongs = library.filter(s =>
+    const matchedSongs = localSongs.filter(s =>
       (s.title || '').toLowerCase().includes(kwLower) ||
       (s.artist || '').toLowerCase().includes(kwLower) ||
       (s.album || '').toLowerCase().includes(kwLower)
@@ -119,15 +110,14 @@ const SearchView = ({ keyword }) => {
     }))
 
     return {
-      songs: sortSongsByRelevance(matchedSongs, kwLower),
+      songs: matchedSongs,
       artists: sortByNameRelevance(matchedArtists, kwLower),
-      albums: sortByNameRelevance(matchedAlbums, kwLower),
-      online: []
+      albums: sortByNameRelevance(matchedAlbums, kwLower)
     }
   }, [library, categories, kwLower])
 
   const totalLocal = results.songs.length + results.artists.length + results.albums.length
-  const hasResults = totalLocal > 0
+  const hasResults = totalLocal > 0 || onlineResults.length > 0 || onlineLoading
 
   if (!keyword) return null
 
@@ -167,6 +157,7 @@ const SearchView = ({ keyword }) => {
                   <div className={styles.songCover}>
                     {song.cover_url ? (
                       <LazyImage src={song.cover_url} alt={song.title}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                         fallback={<div className={styles.coverPlaceholder}><MusicIcon /></div>} />
                     ) : (
                       <div className={styles.coverPlaceholder}><MusicIcon /></div>
@@ -251,6 +242,79 @@ const SearchView = ({ keyword }) => {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ─── 在线音乐 ─── */}
+      {(onlineResults.length > 0 || onlineLoading) && (
+        <div className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div className={styles.sectionTitle}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" />
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+              <span>在线音乐</span>
+            </div>
+            {onlineLoading ? (
+              <Spin size="small" />
+            ) : (
+              <span className={styles.sectionCount}>{onlineResults.length} 首</span>
+            )}
+            {onlineResults.length > 0 && (
+              <button className={styles.playAllBtn} onClick={() => playAll(onlineResults)}>
+                <PlayIcon />
+                <span>播放全部</span>
+              </button>
+            )}
+          </div>
+          {onlineResults.length > 0 && (
+            <div className={styles.songList}>
+              {onlineResults.map((song, i) => {
+                const isCurrent = currentSong?.id === song.id
+                const isPlaying = isCurrent && playbackState === 'playing'
+                return (
+                  <div
+                    key={`online-${song.id}`}
+                    className={`${styles.songItem} ${isCurrent ? styles.songItemActive : ''}`}
+                    onClick={() => playSong(song)}
+                  >
+                    <div className={styles.songIndex}>
+                      {isPlaying ? (
+                        <div className={styles.playingBars}><span /><span /><span /></div>
+                      ) : (
+                        <span>{i + 1}</span>
+                      )}
+                    </div>
+                    <div className={styles.songCover}>
+                      {song.cover_url ? (
+                        <LazyImage src={song.cover_url} alt={song.title}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          fallback={<div className={styles.coverPlaceholder}><MusicIcon /></div>} />
+                      ) : (
+                        <div className={styles.coverPlaceholder}><MusicIcon /></div>
+                      )}
+                    </div>
+                    <div className={styles.songInfo}>
+                      <div className={styles.songTitle}>{song.title}</div>
+                      <div className={styles.songArtist}>{song.artist} — {song.album}</div>
+                    </div>
+                    <span className={styles.sourceTagOnline}>在线</span>
+                    <button className={styles.addBtn} title="添加到播放列表"
+                      onClick={(e) => { e.stopPropagation(); addToPlaylist(song) }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </button>
+                    <button className={`${styles.heartBtn} ${favoriteIds.includes(song.id) ? styles.heartBtnLiked : ''}`}
+                      onClick={(e) => { e.stopPropagation(); toggleFavorite(song.id) }}>
+                      <HeartIcon filled={favoriteIds.includes(song.id)} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 

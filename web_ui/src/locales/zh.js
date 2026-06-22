@@ -568,7 +568,7 @@ export default {
     noHADevice: '暂无HA设备',
     miotDevices: '米家设备',
     haDevices: 'HA设备',
-    rtspCameras: 'RTSP摄像头',
+      rtspCameras: '摄像头',
     defaultRoom: '未分配区域',
     defaultArea: '未分配区域',
     entities: '个实体',
@@ -862,6 +862,8 @@ export default {
     updateFailed: '更新失败',
     confirmUpdate: '确认更新',
     confirmUpdateDesc: '更新过程中服务会短暂重启，是否继续？',
+    localUpload: '本地上传',
+    invalidPackageFormat: '仅支持 .tar.gz 格式的更新包',
     updateLog: '更新日志',
     noUpdateLog: '暂无更新日志',
     rollbackToBackup: '回滚到备份',
@@ -878,6 +880,7 @@ export default {
     updateNow: '立即更新',
     updateConfigCheckbox: '同时更新配置文件',
     releaseNotes: '更新说明',
+    pipSyncNotice: '此更新包含新的 Python 依赖包，更新过程中将自动执行 pip install 安装依赖',
   },
 
   login: {
