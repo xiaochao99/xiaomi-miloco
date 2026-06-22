@@ -460,7 +460,15 @@ class RTSPCameraInstance:
     def __on_raw_data(self, frame_header_ptr: Any, data: bytes) -> None:
         """Callback for raw data."""
         frame_header: _RTSPCameraFrameHeaderC = frame_header_ptr.contents
-        codec_id: MIoTCameraCodec = MIoTCameraCodec(frame_header.codec_id)
+        try:
+            codec_id: MIoTCameraCodec = MIoTCameraCodec(frame_header.codec_id)
+        except ValueError:
+            _LOGGER.warning(
+                "rtsp raw data invalid codec_id=%s, did=%s, ignoring frame",
+                frame_header.codec_id,
+                self._camera_info.did,
+            )
+            return
         channel: int = frame_header.channel
         # Keep runtime codec synced with actual stream for downstream consumers.
         if self._camera_info.codec != codec_id:

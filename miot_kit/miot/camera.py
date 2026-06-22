@@ -450,7 +450,15 @@ class MIoTCameraInstance:
     def __on_raw_data(self, frame_header_ptr: Any, data: bytes) -> None:
         """Callback for raw data."""
         frame_header: _MIoTCameraFrameHeaderC = frame_header_ptr.contents
-        codec_id: MIoTCameraCodec = MIoTCameraCodec(frame_header.codec_id)
+        try:
+            codec_id: MIoTCameraCodec = MIoTCameraCodec(frame_header.codec_id)
+        except ValueError:
+            _LOGGER.warning(
+                "raw data invalid codec_id=%s, did=%s, ignoring frame",
+                frame_header.codec_id,
+                self._did,
+            )
+            return
         channel: int = frame_header.channel
         frame_data = MIoTCameraFrameData(
             codec_id=codec_id,
