@@ -69,6 +69,18 @@ export default {
       hiphopChart: '说唱榜',
       classicChart: '经典榜',
       songCount: '{count} 首',
+      // Online music disclaimer
+      onlineMusic: '在线音乐',
+      onlineMusicDesc: '启用后可搜索和播放在线音乐资源',
+      onlineMusicDisclaimerTitle: '免责声明',
+      onlineMusicDisclaimerContent: '在线音乐功能所提供的音乐资源来源于第三方，本软件不拥有这些音乐的版权。这些音乐仅供个人学习和研究使用，不得用于商业用途。使用本功能即表示您已知晓并同意以下条款：',
+      onlineMusicDisclaimerItem1: '这些音乐资源可能涉及版权问题',
+      onlineMusicDisclaimerItem2: '仅供个人学习、研究和欣赏使用',
+      onlineMusicDisclaimerItem3: '不得将这些音乐用于商业目的',
+      onlineMusicDisclaimerItem4: '如因使用这些音乐产生任何法律纠纷，由用户自行承担',
+      onlineMusicDisclaimerAgree: '我已阅读并同意以上条款',
+      onlineMusicDisclaimerEnable: '启用在线音乐',
+      onlineMusicDisclaimerCancel: '取消',
     },
     sidebar: {
       newChat: '新对话',

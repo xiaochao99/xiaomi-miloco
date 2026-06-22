@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { message } from 'antd'
+import { message, Modal, Checkbox } from 'antd'
 import { useMusicPlayerStore } from '@/stores/musicPlayerStore'
 import styles from './index.module.less'
 
@@ -55,6 +55,7 @@ const MusicSettings = () => {
     scanLocalMusicPath, clearScanResults,
     scanDirs, loadScanDirs, addScanDir, removeScanDir,
     loadPlaylistFromBackend,
+    onlineMusicEnabled, setOnlineMusicEnabled,
   } = useMusicPlayerStore()
 
   // Quick scan
@@ -66,6 +67,10 @@ const MusicSettings = () => {
   const [newDirPath, setNewDirPath] = useState('')
   const [newDirName, setNewDirName] = useState('')
   const [newDirRecursive, setNewDirRecursive] = useState(true)
+
+  // Online music disclaimer
+  const [showDisclaimer, setShowDisclaimer] = useState(false)
+  const [disclaimerAgreed, setDisclaimerAgreed] = useState(false)
 
   useEffect(() => {
     loadScanDirs()
@@ -120,8 +125,65 @@ const MusicSettings = () => {
     await loadPlaylistFromBackend()
   }
 
+  // ─── Online Music Toggle ──────────────────────────
+
+  const handleOnlineMusicToggle = () => {
+    if (onlineMusicEnabled) {
+      // Disable directly
+      setOnlineMusicEnabled(false)
+      message.success('在线音乐已关闭')
+    } else {
+      // Show disclaimer before enabling
+      setShowDisclaimer(true)
+      setDisclaimerAgreed(false)
+    }
+  }
+
+  const handleDisclaimerEnable = () => {
+    if (!disclaimerAgreed) {
+      message.warning('请先同意免责条款')
+      return
+    }
+    setOnlineMusicEnabled(true)
+    setShowDisclaimer(false)
+    message.success('在线音乐已启用')
+  }
+
+  const handleDisclaimerCancel = () => {
+    setShowDisclaimer(false)
+    setDisclaimerAgreed(false)
+  }
+
   return (
     <div className={styles.container}>
+      {/* ── Section: Online Music ───────────────── */}
+      <div className={styles.sectionHeader}>
+        <h3 className={styles.sectionTitle}>在线音乐</h3>
+      </div>
+
+      <div className={styles.onlineMusicSetting}>
+        <div className={styles.onlineMusicInfo}>
+          <span className={styles.onlineMusicLabel}>启用在线音乐</span>
+          <span className={styles.onlineMusicDesc}>启用后可搜索和播放在线音乐资源（无版权，仅供学习研究）</span>
+        </div>
+        <label
+          className={styles.toggle}
+          onClick={handleOnlineMusicToggle}
+        >
+          <span className={`${styles.checkbox} ${onlineMusicEnabled ? styles.checked : ''}`}>
+            {onlineMusicEnabled && (
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            )}
+          </span>
+          <span className={styles.toggleLabel}>{onlineMusicEnabled ? '已启用' : '已关闭'}</span>
+        </label>
+      </div>
+
+      {/* ── Divider ─────────────────────────────── */}
+      <div className={styles.divider} />
+
       {/* ── Section: Scan Directories ────────────── */}
       <div className={styles.sectionHeader}>
         <h3 className={styles.sectionTitle}>扫描目录</h3>
@@ -292,6 +354,39 @@ const MusicSettings = () => {
           <span>扫描完成 — 共 {scanResult.total || 0} 首，新增 {scanResult.new_count || 0} 首</span>
         </div>
       )}
+
+      {/* ── Disclaimer Modal ────────────────────── */}
+      <Modal
+        title="在线音乐免责声明"
+        open={showDisclaimer}
+        onOk={handleDisclaimerEnable}
+        onCancel={handleDisclaimerCancel}
+        okText="启用在线音乐"
+        cancelText="取消"
+        okButtonProps={{ disabled: !disclaimerAgreed }}
+        maskClosable={false}
+      >
+        <div className={styles.disclaimerContent}>
+          <p className={styles.disclaimerIntro}>
+            在线音乐功能所提供的音乐资源来源于第三方，本软件不拥有这些音乐的版权。
+            这些音乐仅供个人学习和研究使用，不得用于商业用途。
+            使用本功能即表示您已知晓并同意以下条款：
+          </p>
+          <ul className={styles.disclaimerList}>
+            <li>这些音乐资源可能涉及版权问题</li>
+            <li>仅供个人学习、研究和欣赏使用</li>
+            <li>不得将这些音乐用于商业目的</li>
+            <li>如因使用这些音乐产生任何法律纠纷，由用户自行承担</li>
+          </ul>
+          <Checkbox
+            checked={disclaimerAgreed}
+            onChange={(e) => setDisclaimerAgreed(e.target.checked)}
+            className={styles.disclaimerCheckbox}
+          >
+            我已阅读并同意以上条款
+          </Checkbox>
+        </div>
+      </Modal>
     </div>
   )
 }

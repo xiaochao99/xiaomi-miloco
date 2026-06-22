@@ -78,10 +78,12 @@ const DiscIcon = () => (
 
 // ─── Sidebar Nav Items ─────────────────────────────
 
-const NAV_ITEMS = [
+const NAV_ITEMS_ONLINE = [
   { key: 'discover', label: '发现音乐', Icon: DiscoverIcon },
   { key: 'ranking', label: '排行榜', Icon: RankingIcon },
-  { key: 'search', label: '搜索', Icon: SearchIcon },
+]
+
+const NAV_ITEMS_LOCAL = [
   { key: 'local', label: '歌曲', Icon: NoteIcon },
   { key: 'artists', label: '歌手', Icon: NoteIcon },
   { key: 'albums', label: '专辑', Icon: DiscIcon },
@@ -99,11 +101,17 @@ const MusicPlayer = () => {
     activeView, setActiveView,
     showDetail, setShowDetail,
     displayModes, toggleDisplayMode,
+    onlineMusicEnabled,
   } = useMusicPlayerStore()
   const curMode = displayModes[activeView] || 'list'
 
   const [searchValue, setSearchValue] = useState('')
   const [showSearchResults, setShowSearchResults] = useState(false)
+
+  // Determine which nav items to show based on online music setting
+  const navItems = onlineMusicEnabled
+    ? [...NAV_ITEMS_ONLINE, { key: 'search', label: '搜索', Icon: SearchIcon }, ...NAV_ITEMS_LOCAL]
+    : [...NAV_ITEMS_LOCAL]
 
   // Load persisted songs and favorites from backend on mount
   useEffect(() => {
@@ -111,6 +119,13 @@ const MusicPlayer = () => {
     store.loadPlaylistFromBackend()
     store.loadFavorites()
   }, [])
+
+  // Redirect to local view when online music is disabled
+  useEffect(() => {
+    if (!onlineMusicEnabled && ['discover', 'ranking', 'search'].includes(activeView)) {
+      setActiveView('local')
+    }
+  }, [onlineMusicEnabled, activeView, setActiveView])
 
   useEffect(() => {
     if (error) {
@@ -165,11 +180,11 @@ const MusicPlayer = () => {
 
     switch (activeView) {
       case 'discover':
-        return <RecommendView />
+        return onlineMusicEnabled ? <RecommendView /> : <LocalMusicScanner />
       case 'ranking':
-        return <RankingView />
+        return onlineMusicEnabled ? <RankingView /> : <LocalMusicScanner />
       case 'search':
-        return <SearchView keyword={searchKeyword} />
+        return onlineMusicEnabled ? <SearchView keyword={searchKeyword} /> : <LocalMusicScanner />
       case 'local':
         return <LocalMusicScanner />
 
@@ -224,7 +239,7 @@ const MusicPlayer = () => {
           </div>
 
           <nav className={styles.sidebarNav}>
-            {NAV_ITEMS.map(({ key, label, Icon }) => (
+            {navItems.map(({ key, label, Icon }) => (
               <button
                 key={key}
                 className={`${styles.navItem} ${activeView === key ? styles.navItemActive : ''}`}

@@ -53,6 +53,9 @@ export const useMusicPlayerStore = create(
       categories: { artists: [], albums: [] },
       categoriesLoading: false,
 
+      // Online music feature toggle
+      onlineMusicEnabled: false,
+
       // Local scanner state
       scanDirs: [],
       scanDirsLoading: false,
@@ -155,11 +158,13 @@ export const useMusicPlayerStore = create(
             (s.artist || '').toLowerCase().includes(kwLower) ||
             (s.album || '').toLowerCase().includes(kwLower)
           ).map(s => get()._trimSong(s))
-          // Search online (async)
+          // Search online (async) — only if online music is enabled
           let onlineResults = []
-          try {
-            onlineResults = await musicApi.searchSongs(kw)
-          } catch { /* ignore online search errors */ }
+          if (get().onlineMusicEnabled) {
+            try {
+              onlineResults = await musicApi.searchSongs(kw)
+            } catch { /* ignore online search errors */ }
+          }
           set({ searchResults: [...localResults, ...onlineResults] })
         } catch (e) {
           console.error('Search failed:', e)
@@ -519,6 +524,9 @@ export const useMusicPlayerStore = create(
         }
       },
 
+      // Online music toggle
+      setOnlineMusicEnabled: (enabled) => set({ onlineMusicEnabled: enabled }),
+
       // View management
       setActiveView: (view) => set({ activeView: view }),
       toggleDetail: () => set((s) => ({ showDetail: !s.showDetail })),
@@ -874,6 +882,7 @@ export const useMusicPlayerStore = create(
         activeView: state.activeView,
         displayModes: state.displayModes,
         favoriteIds: state.favoriteIds || [],
+        onlineMusicEnabled: state.onlineMusicEnabled,
         library: state.library.map((s) => ({
           id: s.id,
           title: s.title,
@@ -900,6 +909,7 @@ export const useMusicPlayerStore = create(
           ...persisted,
           library,
           songs: [], // Always start with empty play queue
+          onlineMusicEnabled: persisted.onlineMusicEnabled ?? false,
         }
       },
     }

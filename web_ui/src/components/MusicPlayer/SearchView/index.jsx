@@ -46,7 +46,8 @@ const AlbumIcon = () => (
 const SearchView = ({ keyword }) => {
   const {
     library, categories, currentSong, playbackState,
-    playSong, playAll, toggleFavorite, addToPlaylist, favoriteIds
+    playSong, playAll, toggleFavorite, addToPlaylist, favoriteIds,
+    onlineMusicEnabled,
   } = useMusicPlayerStore()
 
   const [onlineResults, setOnlineResults] = useState([])
@@ -56,7 +57,7 @@ const SearchView = ({ keyword }) => {
 
   // Online search with cover enrichment
   useEffect(() => {
-    if (!keyword?.trim()) {
+    if (!keyword?.trim() || !onlineMusicEnabled) {
       setOnlineResults([])
       return
     }
@@ -72,7 +73,7 @@ const SearchView = ({ keyword }) => {
       if (!cancelled) setOnlineLoading(false)
     })
     return () => { cancelled = true }
-  }, [keyword])
+  }, [keyword, onlineMusicEnabled])
 
   const sortByNameRelevance = (items, kw) => {
     return [...items].sort((a, b) => {
@@ -117,7 +118,7 @@ const SearchView = ({ keyword }) => {
   }, [library, categories, kwLower])
 
   const totalLocal = results.songs.length + results.artists.length + results.albums.length
-  const hasResults = totalLocal > 0 || onlineResults.length > 0 || onlineLoading
+  const hasResults = totalLocal > 0 || (onlineMusicEnabled && (onlineResults.length > 0 || onlineLoading))
 
   if (!keyword) return null
 
@@ -246,7 +247,7 @@ const SearchView = ({ keyword }) => {
       )}
 
       {/* ─── 在线音乐 ─── */}
-      {(onlineResults.length > 0 || onlineLoading) && (
+      {onlineMusicEnabled && (onlineResults.length > 0 || onlineLoading) && (
         <div className={styles.section}>
           <div className={styles.sectionHeader}>
             <div className={styles.sectionTitle}>

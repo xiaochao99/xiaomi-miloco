@@ -1,4 +1,4 @@
-﻿
+
 .container {
   padding: 20px 28px;
   display: flex;
@@ -391,6 +391,73 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  font-size: 13px;
+  color: var(--music-text-primary);
+}
+
+// ─── Online Music Setting ─────────────────────────
+
+.onlineMusicSetting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: var(--music-bg-hover);
+  border: 1px solid var(--music-border-light);
+  border-radius: 8px;
+}
+
+.onlineMusicInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.onlineMusicLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--music-text-primary);
+}
+
+.onlineMusicDesc {
+  font-size: 11px;
+  color: var(--music-text-placeholder);
+}
+
+// ─── Disclaimer Modal ─────────────────────────────
+
+.disclaimerContent {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.disclaimerIntro {
+  font-size: 13px;
+  color: var(--music-text-regular);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.disclaimerList {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--music-text-secondary);
+  line-height: 1.5;
+
+  li {
+    color: #faad14;
+  }
+}
+
+.disclaimerCheckbox {
+  margin-top: 8px;
   font-size: 13px;
   color: var(--music-text-primary);
 }
