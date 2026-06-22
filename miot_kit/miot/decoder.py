@@ -240,7 +240,7 @@ class MIoTMediaDecoder(threading.Thread):
             # Find next NAL unit to determine this NAL's length
             next_start = self._find_h265_nalu_start(data, start + sc_len + 1)
             nalu_end = next_start if next_start > 0 else len(data)
-            nalu_data = data[start:nalu_end]
+            nalu_data = data[start + sc_len:nalu_end]
 
             if nalu_type == 32:  # VPS
                 self._h265_vps = nalu_data
@@ -273,9 +273,9 @@ class MIoTMediaDecoder(threading.Thread):
 
         # Prepend VPS + SPS + PPS with start codes
         header = b'\x00\x00\x00\x01'
-        return (header + self._h265_vps[4:] +
-                header + self._h265_sps[4:] +
-                header + self._h265_pps[4:] +
+        return (header + self._h265_vps +
+                header + self._h265_sps +
+                header + self._h265_pps +
                 data)
 
     def _on_video_callback(self, frame_data: MIoTCameraFrameData) -> None:
@@ -302,7 +302,6 @@ class MIoTMediaDecoder(threading.Thread):
         frames: List[VideoFrame] = self._video_decoder.decode(pkt)  # type: ignore
         if not frames:
             _LOGGER.debug("video frame is empty, %d, %d", frame_data.codec_id, frame_data.timestamp)
-            self._last_jpeg_ts = now_ts
             return
         frame = frames[0]
         rgb_frame: VideoFrame = frame.to_rgb()

@@ -1465,6 +1465,16 @@ MIoT需要3步: get_devices → get_device_spec → send_get_rpc/send_ctrl_rpc
         tool_id = tool_call.id
         tool_call_content = ""
 
+        # Skip empty tool names (LLM hallucination)
+        if not original_tool_name or not original_tool_name.strip():
+            logger.warning("[%s] LLM returned empty tool name, skipping", self._request_id)
+            self._chat_history_messages.add_tool_call_res_content(
+                tool_id, "",
+                '{"error":"工具名称为空，请使用已注册的工具或直接回答。"}'
+            )
+            self._consecutive_skipped_calls += 1
+            return
+
         # Increment tool execution counter
         self._tool_execution_count += 1
 
