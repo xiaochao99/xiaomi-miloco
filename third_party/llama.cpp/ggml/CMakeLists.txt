@@ -321,24 +321,24 @@ include(CMakePackageConfigHelpers)
 
 # all public headers
 set(GGML_PUBLIC_HEADERS
-    include/ggml.h
-    include/ggml-cpu.h
-    include/ggml-alloc.h
-    include/ggml-backend.h
-    include/ggml-blas.h
-    include/ggml-cann.h
-    include/ggml-cpp.h
-    include/ggml-cuda.h
-    include/ggml-opt.h
-    include/ggml-metal.h
-    include/ggml-rpc.h
-    include/ggml-virtgpu.h
-    include/ggml-sycl.h
-    include/ggml-vulkan.h
-    include/ggml-webgpu.h
-    include/ggml-zendnn.h
-    include/ggml-openvino.h
-    include/gguf.h)
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-cpu.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-alloc.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-backend.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-blas.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-cann.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-cpp.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-cuda.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-opt.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-metal.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-rpc.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-virtgpu.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-sycl.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-vulkan.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-webgpu.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-zendnn.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ggml-openvino.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/gguf.h)
 
 set_target_properties(ggml PROPERTIES PUBLIC_HEADER "${GGML_PUBLIC_HEADERS}")
 #if (GGML_METAL)
