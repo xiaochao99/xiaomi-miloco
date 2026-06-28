@@ -219,7 +219,7 @@ RUN if [ "${FACE_BACKEND}" = "cuda" ]; then \
         # At runtime, FACE_INFERENCE_PROVIDER=cpu|cuda decides which backend to use.
         pip install --no-build-isolation --break-system-packages -e "/app/miloco_ai_engine[face]" \
         && pip uninstall -y onnxruntime onnxruntime-gpu onnxruntime-openvino 2>/dev/null || true \
-        && pip install --no-cache-dir --break-system-packages "onnxruntime-gpu>=1.16.0" \
+        && pip install --no-cache-dir --break-system-packages "onnxruntime-gpu>=1.16.0,<1.22" \
         && echo "Pre-downloading InsightFace buffalo_l model into image..." \
         && mkdir -p /root/.insightface/models/buffalo_l \
         && python3 -c "import onnxruntime; print('face deps ok, providers=', onnxruntime.get_available_providers())" \
