@@ -54,30 +54,36 @@ void LlmScheduler::submit_token_infer(llama_batch text_batch) {
     }
 
     std::function<void()> task = [this, text_batch]() {
+        struct BatchGuard {
+            llama_batch batch;
+            ~BatchGuard() { llama_batch_free(batch); }
+        } batch_guard{text_batch};
+        llama_batch& batch = batch_guard.batch;
+
         int64_t t1 = ggml_time_ms();
-        if (llama_decode(context_->lctx, text_batch)) {
+        if (llama_decode(context_->lctx, batch)) {
             LOG_ERR("text infer: failed to decode token\n");
-            for (int32_t i = 0; i < text_batch.n_tokens; i++)
-                context_->get_seq_state(text_batch.seq_id[i][0]).last_token.store(-1);
+            for (int32_t i = 0; i < batch.n_tokens; i++)
+                context_->get_seq_state(batch.seq_id[i][0]).last_token.store(-1);
         } else {
-            for (int32_t i = 0; i < text_batch.n_tokens; i++) {
-                if (text_batch.logits[i]) {
+            for (int32_t i = 0; i < batch.n_tokens; i++) {
+                if (batch.logits[i]) {
                     llama_token token_id = common_sampler_sample(context_->smpl, context_->lctx, i);
                     common_sampler_accept(context_->smpl, token_id, true);
 
-                    for (int32_t j = 0; j < text_batch.n_seq_id[i]; ++j)
-                        context_->get_seq_state(text_batch.seq_id[i][j]).last_token.store(token_id);
+                    for (int32_t j = 0; j < batch.n_seq_id[i]; ++j)
+                        context_->get_seq_state(batch.seq_id[i][j]).last_token.store(token_id);
                 } else {
                     // NOTE: only one seq_id in each token
-                    context_->get_seq_state(text_batch.seq_id[i][0]).last_token.store(0);
+                    context_->get_seq_state(batch.seq_id[i][0]).last_token.store(0);
                 }
             }
         }
-        LOG_DBG("text decode in %" PRId64 " ms, count %d token\n", ggml_time_ms() - t1, text_batch.n_tokens);
+        LOG_DBG("text decode in %" PRId64 " ms, count %d token\n", ggml_time_ms() - t1, batch.n_tokens);
         // Uniformly delete seq_id
         std::unique_lock<std::mutex> lock(this->seq_set_mutex_);
-        for (int32_t i = 0; i < text_batch.n_tokens; i++) {
-            if (this->running_seq_[text_batch.seq_id[i][0]] > 0) --this->running_seq_[text_batch.seq_id[i][0]];
+        for (int32_t i = 0; i < batch.n_tokens; i++) {
+            if (this->running_seq_[batch.seq_id[i][0]] > 0) --this->running_seq_[batch.seq_id[i][0]];
 
             this->finish_condition_.notify_all();
         }

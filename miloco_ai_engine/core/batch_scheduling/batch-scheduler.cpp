@@ -200,6 +200,8 @@ void BatchScheduler::process_text_batch(std::vector<std::shared_ptr<SycChunkTask
     if (text_batch.n_tokens > 0) {
         llm_scheduler_->submit_token_infer(text_batch);
         for (int t = last_uncomplie; t < text_buffer.size(); t++) text_buffer[t]->status.store(TaskStatus::IN_PROGRESS);
+    } else {
+        llama_batch_free(text_batch);
     }
     finish_condition_.notify_all();
 }
